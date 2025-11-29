@@ -11,6 +11,46 @@ logger = logging.getLogger(__name__)
 
 MODEL_ID = "google/nano-banana"
 
+# ========================================
+# 🔧 КАСТОМНЫЙ ПРОМПТ (РЕДАКТИРУЕМЫЙ)
+# ========================================
+#
+# ИНСТРУКЦИЯ:
+# Редактируй этот промпт как хочешь!
+# {room_name} и {style_description} автоматически подставляются из словарей ниже.
+#
+# Пример использования:
+# room_name = "living room" (из ROOM_NAMES)
+# style_description = "modern minimalist style..." (из STYLE_PROMPTS)
+#
+
+CUSTOM_PROMPT_TEMPLATE = """
+You are a world-renowned professional interior designer.
+
+You know all the latest trends in interior design, from basements to ducal villas. 
+You create masterpieces for everyday people.
+
+Your task is to create a simple, modern, yet practical design for the client, 
+choosing the right materials for the walls, ceiling, and floor depending on the room's purpose.
+
+You select furniture, interior design, paint colors,
+ and lighting based on the chosen space and style.
+ 
+If you are redesigning a room from a photo, you have the right to remove unnecessary furniture or
+ personal items to create a true design, but do not change the layout of the room.
+
+You detail every detail in the interior so that the client says, "WOW, 
+this is exactly what I need."
+
+Prohibited:
+1. Rugs on the floor
+
+""".strip()
+
+# ========================================
+# СТИЛИ (НЕ ТРОГАЙ - используются для подстановки)
+# ========================================
+
 STYLE_PROMPTS = {
     'modern': 'modern minimalist style with clean lines and neutral colors',
     'minimalist': 'minimalist style, simple forms, functional space, uncluttered design',
@@ -24,6 +64,10 @@ STYLE_PROMPTS = {
     'artdeco': 'Art Deco style with geometric patterns and luxurious details',
 }
 
+# ========================================
+# КОМНАТЫ (НЕ ТРОГАЙ - используются для подстановки)
+# ========================================
+
 ROOM_NAMES = {
     'living_room': 'living room',
     'bedroom': 'bedroom',
@@ -36,12 +80,32 @@ ROOM_NAMES = {
 
 def get_prompt(style: str, room: str) -> str:
     """
-    Формирование промпта для генерации дизайна.
+    Формирование финального промпта с подстановкой стиля и комнаты.
+
+    🔧 КАК ИЗМЕНИТЬ ПРОМПТ:
+    1. Найди CUSTOM_PROMPT_TEMPLATE выше ↑
+    2. Редактируй его как хочешь
+    3. {room_name} и {style_description} подставятся автоматически!
+
+    Args:
+        style: Ключ стиля из STYLE_PROMPTS ('modern', 'scandinavian', и т.д.)
+        room: Ключ комнаты из ROOM_NAMES ('living_room', 'bedroom', и т.д.)
+
+    Returns:
+        Готовый промпт для отправки в nano-banana
     """
     style_desc = STYLE_PROMPTS.get(style, 'modern minimalist style')
     room_name = ROOM_NAMES.get(room, room.replace('_', ' '))
 
-    return f"Make the {room_name} in {style_desc}. Make the scene natural and realistic, professional interior design photography."
+    # Подстановка значений в кастомный промпт
+    final_prompt = CUSTOM_PROMPT_TEMPLATE.format(
+        room_name=room_name,
+        style_description=style_desc
+    )
+
+    logger.info(f"📝 Финальный промпт:\n{final_prompt}")
+
+    return final_prompt
 
 
 async def get_telegram_file_url(photo_file_id: str, bot_token: str) -> str | None:
@@ -109,7 +173,7 @@ async def generate_image(photo_file_id: str, room: str, style: str, bot_token: s
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # Формирование промпта
+        # Формирование промпта с подстановкой стиля и комнаты
         prompt = get_prompt(style, room)
         logger.info(f"🎨 Генерация: {room} → {style}")
         logger.info(f"📝 Промпт: {prompt}")
@@ -125,7 +189,6 @@ async def generate_image(photo_file_id: str, room: str, style: str, bot_token: s
             }
         )
 
-        # Обработка результата
         # Обработка результата
         if output:
             # google/nano-banana возвращает FileOutput объект
@@ -148,8 +211,6 @@ async def generate_image(photo_file_id: str, room: str, style: str, bot_token: s
                 result_url = str(output)
                 logger.info(f"✅ Генерация успешна (str): {result_url}")
                 return result_url
-
-
 
         logger.error("❌ Пустой результат от Replicate")
         return None

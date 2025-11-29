@@ -162,7 +162,10 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
             parse_mode="Markdown"
         )
         menu = await callback.message.answer(
-            "Что дальше?",
+            "Что дальше? "
+            "1. Вы можете сделать повторный дизайн этого же стиля. "
+            "Каждый раз создается новый дизайн помещения!  "
+            "2. Вы можете другой стиль дизайна этого помещения.",
             reply_markup=get_post_generation_keyboard()
         )
         await state.update_data(menu_message_id=menu.message_id)
