@@ -174,26 +174,14 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
                                get_main_menu_keyboard())
 
 
-
 @router.callback_query(F.data == "change_style")
 async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
     await state.set_state(CreationStates.choose_style)
     await show_single_menu(callback.message, state, CHOOSE_STYLE_TEXT, get_style_keyboard())
     await callback.answer()
 
-@router.callback_query(F.data == "show_profile")
-async def show_profile_handler(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    balance = await db.get_balance(user_id)
-    username = callback.from_user.username or "Не указано"
-    text = PROFILE_TEXT.format(
-        user_id=user_id,
-        username=username,
-        balance=balance,
-        reg_date="Недавно"
-    )
-    await show_single_menu(callback.message, state, text, get_profile_keyboard())
-    await callback.answer()
+# ===== ДУБЛИКАТ УДАЛЁН =====
+# Хэндлер show_profile теперь только в handlers/user_start.py
 
 @router.message(CreationStates.waiting_for_photo)
 async def invalid_photo(message: Message):

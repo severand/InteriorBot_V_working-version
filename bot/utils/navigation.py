@@ -8,6 +8,9 @@ import logging
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
+from utils.texts import START_TEXT  # ← ДОБАВЬ ИМПОРТ
+from keyboards.inline import get_main_menu_keyboard
+
 
 logger = logging.getLogger(__name__)
 
@@ -79,31 +82,30 @@ async def edit_menu(
         return False
 
 
-async def show_main_menu(callback: CallbackQuery, state: FSMContext):
+async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
     Показать главное меню.
     Очищает все состояния FSM и возвращает в начальный экран.
     """
-    from keyboards.inline import get_main_menu_keyboard
-    from utils.texts import START_TEXT
-    
+    user_id = callback.from_user.id
+
     # Очищаем все данные, КРОМЕ menu_message_id
     data = await state.get_data()
     menu_message_id = data.get('menu_message_id')
-    
+
     await state.clear()
-    
+
     # Восстанавливаем menu_message_id
     if menu_message_id:
         await state.update_data(menu_message_id=menu_message_id)
-    
-    logger.debug(f"🏠 Returning to main menu for user {callback.from_user.id}")
-    
+
+    logger.debug(f"🏠 Returning to main menu for user {user_id}")
+
     await edit_menu(
         callback=callback,
         state=state,
         text=START_TEXT,
-        keyboard=get_main_menu_keyboard()
+        keyboard=get_main_menu_keyboard(is_admin=user_id in admins)
     )
 
 
@@ -153,3 +155,7 @@ async def update_menu_after_photo(
     except Exception as e:
         logger.error(f"Unexpected error updating menu: {e}")
         return False
+
+
+
+

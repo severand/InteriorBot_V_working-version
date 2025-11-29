@@ -13,5 +13,10 @@ class CreationStates(StatesGroup):
 
 
 # Класс состояний для других процессов (если понадобятся, например, админка)
-class OtherStates(StatesGroup):
+class AdminStates(StatesGroup):
+    """Состояния админ-панели"""
+    waiting_for_user_id = State()
+    adding_balance = State()
+    removing_balance = State()
+    setting_balance = State()
     pass

@@ -30,10 +30,12 @@ STYLE_TYPES = [
     ("artdeco", "Ар‑деко"),
 ]
 
-def get_main_menu_keyboard() -> InlineKeyboardMarkup:
+def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🎨 Создать дизайн", callback_data="create_design"))
     builder.row(InlineKeyboardButton(text="👤 Профиль", callback_data="show_profile"))
+    if is_admin:
+        builder.row(InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel"))
     builder.adjust(1)
     return builder.as_markup()
 
@@ -94,3 +96,7 @@ def get_post_generation_keyboard() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     builder.adjust(1)
     return builder.as_markup()
+
+
+
+

@@ -1,5 +1,6 @@
 # --- ИСПРАВЛЕНИЯ ВЕРСИИ: bot/main.py ---
 # [2025-11-22 11:35 CET] Исправление: Уровень логирования изменен на DEBUG для детальной отладки срабатывания хэндлеров.
+# [2025-11-29 18:43 MSK] Добавлен импорт и регистрация роутера admin
 # ----
 
 import asyncio
@@ -12,7 +13,8 @@ from config import ADMIN_IDS
 # Импорты конфигурации (на уровне проекта)
 from config import config
 from database.db import Database
-from handlers import user_start, creation, payment
+from handlers import user_start, creation, payment, admin  # ← ДОБАВЛЕН admin
+
 
 # Configure logging
 logging.basicConfig(
@@ -46,6 +48,7 @@ async def main():
         user_start.router,
         creation.router,
         payment.router,
+        admin.router,  # ← ДОБАВЛЕНО ЗДЕСЬ
     )
 
     # Передаем ADMIN_IDS и BOT_TOKEN в контекст для использования в хэндлерах
