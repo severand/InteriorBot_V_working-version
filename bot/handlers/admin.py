@@ -191,7 +191,13 @@ async def show_users_page(callback: CallbackQuery, page: int, admins: list[int])
         user_id_str = user['user_id']
         username = user['username']
         balance = user['balance']
-        users_text += f"{idx}. ID: `{user_id_str}` | @{username} | 💰 {balance}\n"
+
+        # ===== ИСПРАВЛЕНИЕ: Экранируем username =====
+        # Убираем @ и экранируем спецсимволы Markdown
+        username_clean = username.replace('@', '').replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(
+            ']', '\\]').replace('`', '\\`')
+
+        users_text += f"{idx}. ID: `{user_id_str}` | {username_clean} | 💰 {balance}\n"
 
     try:
         await callback.message.edit_text(
@@ -239,9 +245,14 @@ async def show_payments_history(callback: CallbackQuery, admins: list[int]):
     payments_text = "💰 **ИСТОРИЯ ПЛАТЕЖЕЙ** (последние 20)\n\n"
     for idx, payment in enumerate(payments, start=1):
         status_emoji = "✅" if payment['status'] == 'succeeded' else "⏳"
+        # Экранируем username
+        username_clean = payment['username'].replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']',
+                                                                                                                 '\\]').replace(
+            '`', '\\`')
+
         payments_text += (
             f"{idx}. {status_emoji} `{payment['user_id']}` | "
-            f"@{payment['username']} | "
+            f"{username_clean} | "
             f"**{payment['amount']} руб.** | "
             f"{payment['tokens']} токенов\n"
         )
@@ -384,7 +395,13 @@ async def cmd_list_users(message: Message, admins: list[int]):
             user_id_str = user.get('user_id', 'Unknown')
             username = user.get('username', 'Не указано')
             balance = user.get('balance', 0)
-            text += f"{idx}. ID: `{user_id_str}` | @{username} | 💰 {balance}\n"
+
+            # Экранируем username
+            username_clean = username.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']',
+                                                                                                          '\\]').replace(
+                '`', '\\`')
+
+            text += f"{idx}. ID: `{user_id_str}` | {username_clean} | 💰 {balance}\n"
 
         await message.answer(text, parse_mode="Markdown")
 
