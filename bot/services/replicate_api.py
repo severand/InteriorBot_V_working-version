@@ -25,7 +25,6 @@ MODEL_ID = "google/nano-banana"
 # You're a truly amazing designer; all of Europe's bohemians are in awe of you!
 
 CUSTOM_PROMPT_TEMPLATE = """ 
-
 Create a completely different design for this space, unique and unmatched online.
 - Create new furniture
 - Create new furnishings
