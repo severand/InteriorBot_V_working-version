@@ -10,13 +10,21 @@ PACKAGES = {
 
 # --- Настройки комнат ---
 ROOM_TYPES = {
-    "living_room": "Гостиная 🛋️",
-    "bedroom": "Спальня 🛌",
-    "kitchen": "Кухня 🍽️",
-    "office": "Офис 🖥️",
+    "living_room": "Гостиная",
+    "bedroom": "Спальня",
+    "kitchen": "Кухня",
+    "dining_room": "Столовая",
+    "home_office": "Кабинет",
+    "bathroom_full": "Ванная",
+    "toilet": "Санузел",
+    "wardrobe": "Гардеробная",
+    "nursery": "Детская (малыш)",
+    "teen_room_boy": "Комната подростка (М)",
+    "teen_room_girl": "Комната подростка (Ж)",
+    "man_cave": "Мужская берлога",
 }
 
-# --- 10 стилей, 2 кнопки в ряд ---
+# --- 16 стилей, 2 кнопки в ряд ---
 STYLE_TYPES = [
     ("modern", "Современный"),
     ("minimalist", "Минимализм"),
@@ -28,7 +36,15 @@ STYLE_TYPES = [
     ("mediterranean", "Средиземноморский"),
     ("midcentury", "Mid‑century / винтаж"),
     ("artdeco", "Ар‑деко"),
+    # ===== НОВЫЕ СТИЛИ =====
+    ("hitech", "Хай-тек"),
+    ("classic", "Классический"),
+    ("contemporary", "Контемпорари"),
+    ("eclectic", "Эклектика"),
+    ("transitional", "Переходный"),
+    ("coastal", "Прибрежный"),
 ]
+
 
 def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
@@ -51,8 +67,9 @@ def get_room_keyboard() -> InlineKeyboardMarkup:
     for key, text in ROOM_TYPES.items():
         builder.row(InlineKeyboardButton(text=text, callback_data=f"room_{key}"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
-    builder.adjust(1)
+    builder.adjust(2)  # 2 кнопки в ряд
     return builder.as_markup()
+
 
 def get_style_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
