@@ -3,6 +3,8 @@
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
 # ВЕРСИЯ: 3.2 (2025-12-23) - ОБНОВЛеНО: От prompt translation integration
 # АВТОР: Project Owner
+# https://docs.kie.ai/market/google/nano-banana
+# https://docs.kie.ai/market/google/nano-banana-edit
 # ========================================
 # [‵2025-12-23 15:30] ОБНОВЛЕНО: интеграция с translator.py
 
