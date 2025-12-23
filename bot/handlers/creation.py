@@ -5,6 +5,10 @@
 # [2025-12-07 11:09] Заменён go_to_main_menu на использование show_main_menu() из navigation.py
 # [2025-12-07 11:09] Все переходы используют единую систему навигации
 # [2025-12-06] Фиксы разметки Markdown/HTML, безопасные подписи
+# --- ОБНОВЛЕНО: 2025-12-23 - Интегрирована Smart Fallback система (KIE.AI + Replicate) ---
+# [2025-12-23 11:33] Заменены вызовы генерации на smart_* функции из api_fallback.py
+# [2025-12-23 11:33] Сохранена 100% совместимость с именами обработчиков кнопок
+# [2025-12-23 11:33] Добавлена логика fallback: KIE.AI -> Replicate
 
 import asyncio
 import logging
@@ -27,10 +31,11 @@ from keyboards.inline import (
     get_what_is_in_photo_keyboard  # ДОБАВИТЬ ЭТУ СТРОКУ
 )
 
-from services.replicate_api import (
-    generate_image_auto,
-    clear_space_image,
-    generate_with_text_prompt  # ДОБАВИТЬ ЭТУ СТРОКУ
+# ОБНОВЛЕНО: 2025-12-23 - Использование Smart Fallback системы
+from services.api_fallback import (
+    smart_generate_interior,
+    smart_generate_with_text,
+    smart_clear_space,
 )
 
 from states.fsm import CreationStates
@@ -285,7 +290,7 @@ async def exterior_prompt_received(message: Message, state: FSMContext, admins: 
     НОВЫЙ ОБРАБОТЧИК: Получен текстовый промпт для экстерьера → запуск генерации
 
     Дата создания: 2025-12-08
-    Использует новую функцию generate_with_text_prompt()
+    Использует новую функцию smart_generate_with_text() из api_fallback.py
     """
     user_prompt = message.text.strip()
     user_id = message.from_user.id
@@ -360,12 +365,12 @@ async def exterior_prompt_received(message: Message, state: FSMContext, admins: 
         except:
             pass
 
-    # ЗАПУСК ГЕНЕРАЦИИ С ТЕКСТОВЫМ ПРОМПТОМ
+    # ЗАПУСК ГЕНЕРАЦИИ С ТЕКСТОВЫМ ПРОМПТОМ (с использованием Smart Fallback)
     try:
-        result_image_url = await generate_with_text_prompt(
-            photo_id,
-            user_prompt,
-            bot_token,
+        result_image_url = await smart_generate_with_text(
+            photo_file_id=photo_id,
+            user_prompt=user_prompt,
+            bot_token=bot_token,
             scene_type=scene_type
         )
         success = result_image_url is not None
@@ -502,6 +507,7 @@ async def room_description_received(message: Message, state: FSMContext, admins:
     """
     ОБНОВЛЕНО: 2025-12-08 16:01
     [2025-12-08 16:01] Добавлено сохранение file_id после отправки фото
+    [2025-12-23 11:33] Обновлено для использования smart_generate_with_text из api_fallback.py
 
     НОВЫЙ ОБРАБОТЧИК: Получено описание "Другого помещения"
 
@@ -580,12 +586,12 @@ async def room_description_received(message: Message, state: FSMContext, admins:
         except:
             pass
 
-    # ЗАПУСК ГЕНЕРАЦИИ С ТЕКСТОВЫМ ПРОМПТОМ
+    # ЗАПУСК ГЕНЕРАЦИИ С ТЕКСТОВЫМ ПРОМПТОМ (с использованием Smart Fallback)
     try:
-        result_image_url = await generate_with_text_prompt(
-            photo_id,
-            room_description,
-            bot_token,
+        result_image_url = await smart_generate_with_text(
+            photo_file_id=photo_id,
+            user_prompt=room_description,
+            bot_token=bot_token,
             scene_type="other_room"
         )
         success = result_image_url is not None
@@ -861,6 +867,8 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     # Добавлено: Сохранение file_id очищенного фото в FSM для генерации дизайна
     # Теперь дизайн создаётся на основе ОЧИЩЕННОГО фото, а не исходного
     # Меню появляется ПОД картинкой (единое меню)
+    # --- ОБНОВЛЕНО: 2025-12-23 ---
+    # Использует smart_clear_space из api_fallback.py для Smart Fallback
 
     Выполнение очистки пространства
     """
@@ -903,8 +911,9 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     )
     await callback.answer()
 
+    # ЗАПУСК ГЕНЕРАЦИИ С ИСПОЛЬЗОВАНИЕМ SMART FALLBACK
     try:
-        result_image_url = await clear_space_image(photo_id, bot_token)
+        result_image_url = await smart_clear_space(photo_id, bot_token)
         success = result_image_url is not None
     except Exception as e:
         logger.error(f"Критическая ошибка очистки пространства: {e}")
@@ -1027,6 +1036,8 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     # Добавлен fallback-механизм отправки фото: сначала URL, при ошибке - BufferedInputFile
     # Решена проблема ClientOSError: [Errno 22] на Windows
     # Соблюдена технология единого меню
+    # --- ОБНОВЛЕНО: 2025-12-23 ---
+    # Использует smart_generate_interior из api_fallback.py для Smart Fallback
 
     Обработка выбора стиля и генерация дизайна
     """
@@ -1082,9 +1093,9 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     )
     await callback.answer()
 
-    # Генерация
+    # ЗАПУСК ГЕНЕРАЦИИ С ИСПОЛЬЗОВАНИЕМ SMART FALLBACK
     try:
-        result_image_url = await generate_image_auto(photo_id, room, style, bot_token)
+        result_image_url = await smart_generate_interior(photo_id, room, style, bot_token)
         success = result_image_url is not None
     except Exception as e:
         logger.error(f"Критическая ошибка генерации: {e}")
