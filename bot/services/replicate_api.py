@@ -1,5 +1,5 @@
 # ========================================
-# ФАЙЛ ОБЪЕДИНЁН: 2025-12-05 14:02 (UTC+3)
+# ФАЙЛ ОБЪЕДИНЈН: 2025-12-05 14:02 (UTC+3)
 # ========================================
 # ОСНОВА: PyCharm (рабочая версия)
 # ДОБАВЛЕНО из GitHub: функция clear_space_image() (2025-12-05)
@@ -9,6 +9,7 @@
 #           Теперь используются функции из design_styles.py и prompts.py
 #           Удалена функция get_prompt() - заменена на build_design_prompt()
 # ========================================
+# [‵2025-12-23 15:30] ОБНОВЛЕНО: интеграция с translator.py для автоматического перевода
 
 import os
 import logging
@@ -16,6 +17,7 @@ import httpx
 from config import config
 from services.design_styles import get_room_name, get_style_description, is_valid_room, is_valid_style
 from services.prompts import build_design_prompt, build_clear_space_prompt
+from services.translator import translate_prompt_to_english
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +51,12 @@ async def get_telegram_file_url(photo_file_id: str, bot_token: str) -> str | Non
             )
 
             if response.status_code != 200:
-                logger.error(f"❗ Не удалось получить файл: {response.text}")
+                logger.error(f"❌ Не удалось получить файл: {response.text}")
                 return None
 
             result = response.json()
             if not result.get('ok'):
-                logger.error(f"❗ API ошибка: {result}")
+                logger.error(f"❌ API ошибка: {result}")
                 return None
 
             file_path = result['result']['file_path']
@@ -80,18 +82,19 @@ async def generate_image(
 ) -> str | None:
     """
     Генерация дизайна интерьера с помощью google/nano-banana.
+    [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
     """
     logger.info("=" * 70)
-    logger.info("🎨 ГЕНЕРАЦИЯ ДИЗАЙНА [STANDARD]")
+    logger.info("🎈 ГЕНЕРАЦИЯ ДИЗАЙНА [STANDARD via Replicate]")
     logger.info(f"   Комната: {room} → {get_room_name(room)}")
     logger.info(f"   Стиль: {style}")
     logger.info("=" * 70)
 
     if not is_valid_room(room):
-        logger.warning(f"⚠️ Комната '{room}' не найдена в ROOM_NAMES")
+        logger.warning(f"⚠️  Комната '{room}' не найдена в ROOM_NAMES")
 
     if not is_valid_style(style):
-        logger.warning(f"⚠️ Стиль '{style}' не найден в STYLE_PROMPTS")
+        logger.warning(f"⚠️  Стиль '{style}' не найден в STYLE_PROMPTS")
 
     if not config.REPLICATE_API_TOKEN:
         logger.error("❌ REPLICATE_API_TOKEN не настроен")
@@ -102,15 +105,17 @@ async def generate_image(
 
         os.environ["REPLICATE_API_TOKEN"] = config.REPLICATE_API_TOKEN
 
-        logger.info("📸 Получение фото из Telegram...")
+        logger.info("📃 Получение фото из Telegram...")
         image_url = await get_telegram_file_url(photo_file_id, bot_token)
 
         if not image_url:
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        prompt = build_design_prompt(style, room)
-        logger.info(f"📄 Начало промпта:\n{prompt[:1500]}...")
+        # [‵2025-12-23 15:30] ОБНОВЛЕНО: async с переводом
+        prompt = await build_design_prompt(style, room, translate=True)
+        logger.info(f"📄 Промпт сгенерирован и переведен (длина: {len(prompt)} символов)")
+        logger.info(f"\ud83d\udc4b Начало промпта:\n{prompt[:500]}...")
 
         logger.info(f"⏳ Запуск {MODEL_ID}...")
         output = replicate.run(
@@ -160,9 +165,10 @@ async def generate_image_pro(
 ) -> str | None:
     """
     Генерация дизайна интерьера с помощью google/nano-banana-pro.
+    [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
     """
     logger.info("=" * 70)
-    logger.info("🚀 ГЕНЕРАЦИЯ ДИЗАЙНА [PRO]")
+    logger.info("🚀 ГЕНЕРАЦИЯ ДИЗАЙНА [PRO via Replicate]")
     logger.info(f"   Модель: {MODEL_ID_PRO}")
     logger.info(f"   Комната: {room} → {get_room_name(room)}")
     logger.info(f"   Стиль: {style}")
@@ -173,10 +179,10 @@ async def generate_image_pro(
     logger.info("=" * 70)
 
     if not is_valid_room(room):
-        logger.warning(f"⚠️ [PRO] Комната '{room}' не найдена в ROOM_NAMES")
+        logger.warning(f"⚠️  [PRO] Комната '{room}' не найдена в ROOM_NAMES")
 
     if not is_valid_style(style):
-        logger.warning(f"⚠️ [PRO] Стиль '{style}' не найден в STYLE_PROMPTS")
+        logger.warning(f"⚠️  [PRO] Стиль '{style}' не найден в STYLE_PROMPTS")
 
     if not config.REPLICATE_API_TOKEN:
         logger.error("❌ [PRO] REPLICATE_API_TOKEN не настроен")
@@ -187,15 +193,17 @@ async def generate_image_pro(
 
         os.environ["REPLICATE_API_TOKEN"] = config.REPLICATE_API_TOKEN
 
-        logger.info("📸 [PRO] Получение фото из Telegram...")
+        logger.info("📃 [PRO] Получение фото из Telegram...")
         image_url = await get_telegram_file_url(photo_file_id, bot_token)
 
         if not image_url:
             logger.error("❌ [PRO] Не удалось получить URL фото")
             return None
 
-        prompt = build_design_prompt(style, room)
-        logger.info(f"📄 [PRO] Начало промпта:\n{prompt[:500]}...")
+        # [‵2025-12-23 15:30] ОБНОВЛЕНО: async с переводом
+        prompt = await build_design_prompt(style, room, translate=True)
+        logger.info(f"📄 [PRO] Промпт сгенерирован и переведен")
+        logger.info(f"\ud83d\udc4b [PRO] Начало промпта:\n{prompt[:500]}...")
 
         logger.info(f"⏳ [PRO] Запуск {MODEL_ID_PRO}...")
         output = replicate.run(
@@ -239,7 +247,7 @@ async def generate_image_pro(
 
 
 # ========================================
-# ОБЁРТКА С УЧЁТОМ ФЛАГА
+# ОБЁРТКА С УЧЕТОМ ФЛАГА
 # ========================================
 
 async def generate_image_auto(
@@ -254,7 +262,7 @@ async def generate_image_auto(
     вызывает либо обычную, либо PRO-версию.
     """
     if USE_NANO_BANANA_PRO:
-        logger.info("🔁 [AUTO] Используем PRO версию nano-banana-pro")
+        logger.info("🔄 [AUTO] Отправляем в PRO версию nano-banana-pro")
         return await generate_image_pro(
             photo_file_id=photo_file_id,
             room=room,
@@ -263,7 +271,7 @@ async def generate_image_auto(
             **pro_kwargs
         )
     else:
-        logger.info("🔁 [AUTO] Используем стандартную версию nano-banana")
+        logger.info("🔄 [AUTO] Отправляем в стандартную версию nano-banana")
         return await generate_image(
             photo_file_id=photo_file_id,
             room=room,
@@ -276,6 +284,7 @@ async def generate_image_auto(
 # ДОБАВЛЕНО ИЗ GITHUB: 2025-12-05 14:02
 # Функция очистки пространства от мебели
 # ОБНОВЛЕНО: 2025-12-10 - использует build_clear_space_prompt() из prompts.py
+# [‵2025-12-23 15:30] ОБНОВЛЕНО: async с переводом
 # ========================================
 
 async def clear_space_image(photo_file_id: str, bot_token: str) -> str | None:
@@ -283,11 +292,11 @@ async def clear_space_image(photo_file_id: str, bot_token: str) -> str | None:
     Очистка пространства от мебели и предметов.
     Использует промпт без стилей для удаления всех объектов.
 
-    ИСТОЧНИК: GitHub версия (2025-12-05)
+    ИсТОЧНИК: GitHub версия (2025-12-05)
     АДАПТИРОВАНО: Использует nano-banana вместо FLUX
     """
     logger.info("=" * 70)
-    logger.info("🧽 ОЧИСТКА ПРОСТРАНСТВА")
+    logger.info("🧾 ОЧИСТКА ПОСТРАНСТВА [via Replicate]")
     logger.info("=" * 70)
 
     if not config.REPLICATE_API_TOKEN:
@@ -298,17 +307,17 @@ async def clear_space_image(photo_file_id: str, bot_token: str) -> str | None:
         import replicate
         os.environ["REPLICATE_API_TOKEN"] = config.REPLICATE_API_TOKEN
 
-        logger.info("📸 Получение фото из Telegram...")
+        logger.info("📃 Получение фото из Telegram...")
         image_url = await get_telegram_file_url(photo_file_id, bot_token)
 
         if not image_url:
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # Получаем промпт из prompts.py
-        prompt = build_clear_space_prompt()
+        # [‵2025-12-23 15:30] ОБНОВЛЕНО: async с переводом
+        prompt = await build_clear_space_prompt(translate=True)
+        logger.info(f"📄 Промпт очистки (переведен): {prompt}")
 
-        logger.info(f"📄 Промпт очистки: {prompt}")
         logger.info(f"⏳ Запуск {MODEL_ID}...")
 
         output = replicate.run(
@@ -346,6 +355,7 @@ async def clear_space_image(photo_file_id: str, bot_token: str) -> str | None:
 # ДОБАВЛЕНО: 2025-12-08 13:50
 # Функция генерации с пользовательским текстовым промптом
 # Используется для экстерьера (дом/участок) и "Другого помещения"
+# [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод пользовательского текста
 # ========================================
 
 async def generate_with_text_prompt(
@@ -359,7 +369,7 @@ async def generate_with_text_prompt(
 
     Используется для:
     - Экстерьера (дом, участок) - пользователь описывает желаемые изменения
-    - "Другого помещения" - пользователь описывает тип помещения и стиль
+    - "Другого помещения" - пользователь описывает тип помещения и стил
 
     Args:
         photo_file_id: ID фото из Telegram
@@ -371,11 +381,12 @@ async def generate_with_text_prompt(
         URL сгенерированного изображения или None при ошибке
 
     СОЗДАНО: 2025-12-08 по аналогии с clear_space_image()
+    [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод пользовательского текста
     """
     logger.info("=" * 70)
-    logger.info("✍️ ГЕНЕРАЦИЯ С ТЕКСТОВЫМ ПРОМПТОМ")
+    logger.info("✍️  ГЕНЕРАЦИЯ С ПОЛЬЗОВАТЕЛЬСКИМ ПРОМПТОМ [via Replicate]")
     logger.info(f"   Тип сцены: {scene_type}")
-    logger.info(f"   Промпт пользователя: {user_prompt[:100]}...")
+    logger.info(f"   Пользовательский промпт: {user_prompt[:100]}...")
     logger.info("=" * 70)
 
     if not config.REPLICATE_API_TOKEN:
@@ -386,16 +397,18 @@ async def generate_with_text_prompt(
         import replicate
         os.environ["REPLICATE_API_TOKEN"] = config.REPLICATE_API_TOKEN
 
-        logger.info("📸 Получение фото из Telegram...")
+        logger.info("📃 Получение фото из Telegram...")
         image_url = await get_telegram_file_url(photo_file_id, bot_token)
 
         if not image_url:
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        final_prompt = f"Create an photorealistic - {user_prompt}"
+        # [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод пользовательского текста
+        translated_prompt = await translate_prompt_to_english(user_prompt)
+        final_prompt = f"Create a photorealistic - {translated_prompt}"
 
-        logger.info(f"📄 Финальный промпт:\n{final_prompt[:500]}...")
+        logger.info(f"📄 Финальный промпт (переведен):\n{final_prompt[:500]}...")
         logger.info(f"⏳ Запуск {MODEL_ID}...")
 
         output = replicate.run(
@@ -427,7 +440,3 @@ async def generate_with_text_prompt(
     except Exception as e:
         logger.error(f"❌ Ошибка при генерации с текстовым промптом: {e}")
         return None
-
-
-
-
