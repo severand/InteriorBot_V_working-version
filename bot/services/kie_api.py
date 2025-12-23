@@ -1,18 +1,15 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 2.1 (2025-12-23) - КОРРЕКТНЫЙ ENDPOINT
+# ВЕРСИЯ: 2.2 (2025-12-23) - FIXES
 # АВТОР: Project Owner
-# ========================================
-# НОВО: Основной endpoint:
-# POST https://api.kie.ai/api/v1/jobs/createTask
-# (А не /generate)
 # ========================================
 
 import os
 import logging
 import httpx
 import json
+import asyncio
 import time
 from typing import Optional, Dict, Any, List
 from config import config
@@ -160,6 +157,8 @@ class KieApiClient:
     ) -> Optional[Dict[str, Any]]:
         """
         Получить результат задачи.
+        
+        Пытаемся несколько вариантов endpoint'a.
 
         Args:
             task_id: ID задачи
@@ -167,11 +166,23 @@ class KieApiClient:
         Returns:
             Ответ с результатами или None
         """
-        return await self._make_request(
-            "GET",
-            f"api/v1/jobs/getResult",
-            params={"taskId": task_id}
-        )
+        # Пытаем несколько вариантов
+        endpoints = [
+            ("api/v1/jobs/queryJobResult", {"taskId": task_id}),  # Вариант 1
+            (f"api/v1/jobs/{task_id}", None),  # Вариант 2
+            ("api/v1/jobs/getResult", {"taskId": task_id}),  # Вариант 3 (старый)
+        ]
+
+        for endpoint, params in endpoints:
+            logger.debug(f"📈 Пытаем {endpoint}...")
+            result = await self._make_request("GET", endpoint, params=params)
+            
+            if result and result.get("code") == 200:
+                logger.debug(f"✅ Получен результат от {endpoint}")
+                return result
+
+        logger.error("❌ Не удалось получить результат от ни одного endpoint'a")
+        return None
 
     async def poll_task_result(
         self,
@@ -464,8 +475,6 @@ async def clear_space_with_kie(
 
 if __name__ == "__main__":
     # Для тестирования
-    import asyncio
-
     async def test():
         client = KieApiClient()
         logger.info("KieApiClient initialized")
