@@ -1,12 +1,12 @@
 # ========================================
 # ФАЙЛ: bot/services/api_fallback.py
 # НАЗНАЧЕНИЕ: Smart Fallback система для генерации дизайна
-# ВЕРСИЯ: 1.0 (2025-12-23)
+# ВЕРСИЯ: 1.1 (2025-12-23) - NANO BANANA PRIMARY
 # АВТОР: Project Owner
 # ========================================
 # ЛОГИКА:
-# 1. Попытка 1: KIE.AI (если USE_KIE_API=True)
-# 2. Попытка 2: Replicate (всегда)
+# 1. ОСНОВНОЙ: Replicate NANO BANANA (быстрая, дешевая, стабильная)
+# 2. РЕЗЕРВНЫЙ: KIE.AI (если USE_KIE_API=True)
 # 3. Результат: URL или None
 #
 # ИСПОЛЬЗОВАНИЕ:
@@ -44,9 +44,9 @@ KIE_API_KEY = os.getenv('KIE_API_KEY')
 # Логирование конфига при старте модуля
 logger.info("=" * 70)
 logger.info("🔄 SMART FALLBACK SYSTEM INITIALIZED")
-logger.info(f"   USE_KIE_API: {USE_KIE_API}")
+logger.info(f"   PRIMARY: Replicate NANO BANANA")
+logger.info(f"   FALLBACK: KIE.AI (if USE_KIE_API={USE_KIE_API})")
 logger.info(f"   KIE_API_KEY configured: {bool(KIE_API_KEY)}")
-logger.info(f"   Fallback chain: KIE.AI → Replicate")
 logger.info("=" * 70)
 
 
@@ -63,8 +63,8 @@ async def smart_generate_interior(
     """
     Smart Fallback для генерации дизайна интерьера.
 
-    Попытка 1: KIE.AI Flux Kontext (если включен)
-    Попытка 2: Replicate nano-banana (всегда)
+    Попытка 1: Replicate NANO BANANA (основной, быстрый, дешевый)
+    Попытка 2: KIE.AI (если USE_KIE_API=True)
 
     Args:
         photo_file_id: ID фото из Telegram
@@ -90,11 +90,39 @@ async def smart_generate_interior(
     result_url = None
 
     # ========================================
-    # ПОПЫТКА 1: KIE.AI Flux Kontext
+    # ПОПЫТКА 1: Replicate NANO BANANA (ОСНОВНОЙ)
+    # ========================================
+    logger.info("")
+    logger.info("🔄 [ATTEMPT 1/2] Replicate NANO BANANA (PRIMARY)")
+    logger.info("-" * 70)
+
+    try:
+        logger.info("⏳ Запуск Replicate NANO BANANA...")
+        result_url = await generate_image_auto(
+            photo_file_id=photo_file_id,
+            room=room,
+            style=style,
+            bot_token=bot_token,
+        )
+
+        if result_url:
+            logger.info("✅ [ATTEMPT 1] SUCCESS - Replicate NANO BANANA")
+            logger.info(f"   Result: {result_url[:80]}...")
+            logger.info("=" * 70)
+            return result_url
+        else:
+            logger.warning("⚠️ [ATTEMPT 1] FAILED - No result from Replicate")
+
+    except Exception as e:
+        logger.error(f"❌ [ATTEMPT 1] ERROR - Replicate NANO BANANA")
+        logger.error(f"   Exception: {str(e)[:200]}")
+
+    # ========================================
+    # ПОПЫТКА 2: KIE.AI (РЕЗЕРВНЫЙ)
     # ========================================
     if USE_KIE_API and KIE_API_KEY:
         logger.info("")
-        logger.info("🔄 [ATTEMPT 1/2] KIE.AI Flux Kontext")
+        logger.info("🔄 [ATTEMPT 2/2] KIE.AI Flux Kontext (FALLBACK)")
         logger.info("-" * 70)
 
         try:
@@ -108,50 +136,19 @@ async def smart_generate_interior(
             )
 
             if result_url:
-                logger.info("✅ [ATTEMPT 1] SUCCESS - KIE.AI Flux Kontext")
+                logger.info("✅ [ATTEMPT 2] SUCCESS - KIE.AI Flux Kontext")
                 logger.info(f"   Result: {result_url[:80]}...")
                 logger.info("=" * 70)
                 return result_url
             else:
-                logger.warning("⚠️ [ATTEMPT 1] FAILED - No result from KIE.AI")
+                logger.warning("⚠️ [ATTEMPT 2] FAILED - No result from KIE.AI")
 
         except Exception as e:
-            logger.error(f"❌ [ATTEMPT 1] ERROR - KIE.AI Flux Kontext")
+            logger.error(f"❌ [ATTEMPT 2] ERROR - KIE.AI Flux Kontext")
             logger.error(f"   Exception: {str(e)[:200]}")
 
     else:
-        if not USE_KIE_API:
-            logger.info("⏭️  [ATTEMPT 1] SKIPPED - USE_KIE_API=False")
-        else:
-            logger.warning("⏭️  [ATTEMPT 1] SKIPPED - KIE_API_KEY not configured")
-
-    # ========================================
-    # ПОПЫТКА 2: Replicate nano-banana
-    # ========================================
-    logger.info("")
-    logger.info("🔄 [ATTEMPT 2/2] Replicate nano-banana (FALLBACK)")
-    logger.info("-" * 70)
-
-    try:
-        logger.info("⏳ Запуск Replicate nano-banana...")
-        result_url = await generate_image_auto(
-            photo_file_id=photo_file_id,
-            room=room,
-            style=style,
-            bot_token=bot_token,
-        )
-
-        if result_url:
-            logger.info("✅ [ATTEMPT 2] SUCCESS - Replicate nano-banana")
-            logger.info(f"   Result: {result_url[:80]}...")
-            logger.info("=" * 70)
-            return result_url
-        else:
-            logger.error("❌ [ATTEMPT 2] FAILED - No result from Replicate")
-
-    except Exception as e:
-        logger.error(f"❌ [ATTEMPT 2] ERROR - Replicate nano-banana")
-        logger.error(f"   Exception: {str(e)[:200]}")
+        logger.info("⏭️  [ATTEMPT 2] SKIPPED - KIE.AI not configured")
 
     # ========================================
     # ПОЛНАЯ ОШИБКА
@@ -182,8 +179,8 @@ async def smart_generate_with_text(
     - Экстерьера (дом, участок)
     - "Другого помещения"
 
-    Попытка 1: KIE.AI Nano Banana Edit (если включен)
-    Попытка 2: Replicate nano-banana (всегда)
+    Попытка 1: Replicate nano-banana (основной)
+    Попытка 2: KIE.AI (если включен)
 
     Args:
         photo_file_id: ID фото из Telegram
@@ -204,45 +201,10 @@ async def smart_generate_with_text(
     result_url = None
 
     # ========================================
-    # ПОПЫТКА 1: KIE.AI Nano Banana Edit
-    # ========================================
-    if USE_KIE_API and KIE_API_KEY:
-        logger.info("")
-        logger.info("🔄 [ATTEMPT 1/2] KIE.AI Nano Banana Edit")
-        logger.info("-" * 70)
-
-        try:
-            logger.info("⏳ Запуск KIE.AI Nano Banana Edit...")
-            result_url = await generate_interior_with_nano_banana(
-                photo_file_id=photo_file_id,
-                room=f"custom_{scene_type}",
-                style="text_prompt",
-                bot_token=bot_token,
-            )
-
-            if result_url:
-                logger.info("✅ [ATTEMPT 1] SUCCESS - KIE.AI Nano Banana Edit")
-                logger.info(f"   Result: {result_url[:80]}...")
-                logger.info("=" * 70)
-                return result_url
-            else:
-                logger.warning("⚠️ [ATTEMPT 1] FAILED - No result from KIE.AI")
-
-        except Exception as e:
-            logger.error(f"❌ [ATTEMPT 1] ERROR - KIE.AI Nano Banana Edit")
-            logger.error(f"   Exception: {str(e)[:200]}")
-
-    else:
-        if not USE_KIE_API:
-            logger.info("⏭️  [ATTEMPT 1] SKIPPED - USE_KIE_API=False")
-        else:
-            logger.warning("⏭️  [ATTEMPT 1] SKIPPED - KIE_API_KEY not configured")
-
-    # ========================================
-    # ПОПЫТКА 2: Replicate nano-banana
+    # ПОПЫТКА 1: Replicate nano-banana (ОСНОВНОЙ)
     # ========================================
     logger.info("")
-    logger.info("🔄 [ATTEMPT 2/2] Replicate nano-banana (FALLBACK)")
+    logger.info("🔄 [ATTEMPT 1/2] Replicate nano-banana (PRIMARY)")
     logger.info("-" * 70)
 
     try:
@@ -255,16 +217,47 @@ async def smart_generate_with_text(
         )
 
         if result_url:
-            logger.info("✅ [ATTEMPT 2] SUCCESS - Replicate nano-banana")
+            logger.info("✅ [ATTEMPT 1] SUCCESS - Replicate nano-banana")
             logger.info(f"   Result: {result_url[:80]}...")
             logger.info("=" * 70)
             return result_url
         else:
-            logger.error("❌ [ATTEMPT 2] FAILED - No result from Replicate")
+            logger.error("❌ [ATTEMPT 1] FAILED - No result from Replicate")
 
     except Exception as e:
-        logger.error(f"❌ [ATTEMPT 2] ERROR - Replicate nano-banana")
+        logger.error(f"❌ [ATTEMPT 1] ERROR - Replicate nano-banana")
         logger.error(f"   Exception: {str(e)[:200]}")
+
+    # ========================================
+    # ПОПЫТКА 2: KIE.AI (РЕЗЕРВНЫЙ)
+    # ========================================
+    if USE_KIE_API and KIE_API_KEY:
+        logger.info("")
+        logger.info("🔄 [ATTEMPT 2/2] KIE.AI Nano Banana Edit (FALLBACK)")
+        logger.info("-" * 70)
+
+        try:
+            logger.info("⏳ Запуск KIE.AI Nano Banana Edit...")
+            result_url = await generate_interior_with_nano_banana(
+                photo_file_id=photo_file_id,
+                room=f"custom_{scene_type}",
+                style="text_prompt",
+                bot_token=bot_token,
+            )
+
+            if result_url:
+                logger.info("✅ [ATTEMPT 2] SUCCESS - KIE.AI Nano Banana Edit")
+                logger.info(f"   Result: {result_url[:80]}...")
+                logger.info("=" * 70)
+                return result_url
+            else:
+                logger.warning("⚠️ [ATTEMPT 2] FAILED - No result from KIE.AI")
+
+        except Exception as e:
+            logger.error(f"❌ [ATTEMPT 2] ERROR - KIE.AI Nano Banana Edit")
+            logger.error(f"   Exception: {str(e)[:200]}")
+    else:
+        logger.info("⏭️  [ATTEMPT 2] SKIPPED - KIE.AI not configured")
 
     # ========================================
     # ПОЛНАЯ ОШИБКА
@@ -289,8 +282,8 @@ async def smart_clear_space(
     """
     Smart Fallback для очистки пространства от мебели.
 
-    Попытка 1: KIE.AI Flux Kontext (если включен)
-    Попытка 2: Replicate nano-banana (всегда)
+    Попытка 1: Replicate nano-banana (основной, быстрый, дешевый)
+    Попытка 2: KIE.AI (если USE_KIE_API=True)
 
     Args:
         photo_file_id: ID фото из Telegram
@@ -307,43 +300,10 @@ async def smart_clear_space(
     result_url = None
 
     # ========================================
-    # ПОПЫТКА 1: KIE.AI Flux Kontext
-    # ========================================
-    if USE_KIE_API and KIE_API_KEY:
-        logger.info("")
-        logger.info("🔄 [ATTEMPT 1/2] KIE.AI Flux Kontext")
-        logger.info("-" * 70)
-
-        try:
-            logger.info("⏳ Запуск KIE.AI Flux Kontext для очистки...")
-            result_url = await clear_space_with_kie(
-                photo_file_id=photo_file_id,
-                bot_token=bot_token,
-            )
-
-            if result_url:
-                logger.info("✅ [ATTEMPT 1] SUCCESS - KIE.AI Flux Kontext")
-                logger.info(f"   Result: {result_url[:80]}...")
-                logger.info("=" * 70)
-                return result_url
-            else:
-                logger.warning("⚠️ [ATTEMPT 1] FAILED - No result from KIE.AI")
-
-        except Exception as e:
-            logger.error(f"❌ [ATTEMPT 1] ERROR - KIE.AI Flux Kontext")
-            logger.error(f"   Exception: {str(e)[:200]}")
-
-    else:
-        if not USE_KIE_API:
-            logger.info("⏭️  [ATTEMPT 1] SKIPPED - USE_KIE_API=False")
-        else:
-            logger.warning("⏭️  [ATTEMPT 1] SKIPPED - KIE_API_KEY not configured")
-
-    # ========================================
-    # ПОПЫТКА 2: Replicate nano-banana
+    # ПОПЫТКА 1: Replicate nano-banana (ОСНОВНОЙ)
     # ========================================
     logger.info("")
-    logger.info("🔄 [ATTEMPT 2/2] Replicate nano-banana (FALLBACK)")
+    logger.info("🔄 [ATTEMPT 1/2] Replicate nano-banana (PRIMARY)")
     logger.info("-" * 70)
 
     try:
@@ -354,16 +314,45 @@ async def smart_clear_space(
         )
 
         if result_url:
-            logger.info("✅ [ATTEMPT 2] SUCCESS - Replicate nano-banana")
+            logger.info("✅ [ATTEMPT 1] SUCCESS - Replicate nano-banana")
             logger.info(f"   Result: {result_url[:80]}...")
             logger.info("=" * 70)
             return result_url
         else:
-            logger.error("❌ [ATTEMPT 2] FAILED - No result from Replicate")
+            logger.error("❌ [ATTEMPT 1] FAILED - No result from Replicate")
 
     except Exception as e:
-        logger.error(f"❌ [ATTEMPT 2] ERROR - Replicate nano-banana")
+        logger.error(f"❌ [ATTEMPT 1] ERROR - Replicate nano-banana")
         logger.error(f"   Exception: {str(e)[:200]}")
+
+    # ========================================
+    # ПОПЫТКА 2: KIE.AI (РЕЗЕРВНЫЙ)
+    # ========================================
+    if USE_KIE_API and KIE_API_KEY:
+        logger.info("")
+        logger.info("🔄 [ATTEMPT 2/2] KIE.AI Flux Kontext (FALLBACK)")
+        logger.info("-" * 70)
+
+        try:
+            logger.info("⏳ Запуск KIE.AI Flux Kontext для очистки...")
+            result_url = await clear_space_with_kie(
+                photo_file_id=photo_file_id,
+                bot_token=bot_token,
+            )
+
+            if result_url:
+                logger.info("✅ [ATTEMPT 2] SUCCESS - KIE.AI Flux Kontext")
+                logger.info(f"   Result: {result_url[:80]}...")
+                logger.info("=" * 70)
+                return result_url
+            else:
+                logger.warning("⚠️ [ATTEMPT 2] FAILED - No result from KIE.AI")
+
+        except Exception as e:
+            logger.error(f"❌ [ATTEMPT 2] ERROR - KIE.AI Flux Kontext")
+            logger.error(f"   Exception: {str(e)[:200]}")
+    else:
+        logger.info("⏭️  [ATTEMPT 2] SKIPPED - KIE.AI not configured")
 
     # ========================================
     # ПОЛНАЯ ОШИБКА
@@ -388,12 +377,12 @@ async def get_fallback_status() -> dict:
         Dict с информацией о доступных провайдерах
     """
     return {
+        "primary_provider": "Replicate NANO BANANA",
+        "fallback_provider": "KIE.AI Flux Kontext" if (USE_KIE_API and KIE_API_KEY) else "None",
         "kie_api_enabled": USE_KIE_API,
         "kie_api_key_configured": bool(KIE_API_KEY),
         "replicate_available": bool(os.getenv('REPLICATE_API_TOKEN')),
-        "primary_provider": "KIE.AI Flux Kontext" if USE_KIE_API else "Replicate nano-banana",
-        "fallback_provider": "Replicate nano-banana",
-        "fallback_chain": "KIE.AI → Replicate",
+        "fallback_chain": "Replicate → KIE.AI (if enabled)",
     }
 
 
