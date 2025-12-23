@@ -1,13 +1,14 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.3 (2025-12-23) - ДОБАВЛЕНА ФУНКЦИЯ ДЛЯ ТЕКСТОВЫХ ПРОМПТОВ
+# ВЕРСИЯ: 3.4 (2025-12-23 23:20) - ИСПРАВЛЕНЫ ИМПОРТЫ ДЛЯ ТЕКСТОВЫХ ПРОМПТОВ
 # АВТОР: Project Owner
 # https://docs.kie.ai/market/google/nano-banana
 # https://docs.kie.ai/market/google/nano-banana-edit
 # ========================================
 # [2025-12-23 15:30] ОБНОВЛЕНО: интеграция с translator.py
 # [2025-12-23 23:02] ДОБАВЛЕНО: generate_interior_with_text_nano_banana() для поддержки текстовых промптов
+# [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт translate_to_english в начало файла
 
 import os
 import logging
@@ -20,6 +21,7 @@ from config import config
 
 from services.design_styles import get_room_name, get_style_description, is_valid_room, is_valid_style
 from services.prompts import build_design_prompt, build_clear_space_prompt
+from services.translator import translate_to_english  # ✅ ИМПОРТ В НАЧАЛО!
 
 logger = logging.getLogger(__name__)
 
@@ -399,6 +401,7 @@ async def generate_interior_with_text_nano_banana(
     Генерация дизайна с текстовым промптом от пользователя через Nano Banana.
     
     [2025-12-23 23:02] ДОБАВЛЕНО: Новая функция для поддержки текстовых промптов
+    [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт в начало файла
     
     Используется для:
     - "Другого помещения"
@@ -428,13 +431,11 @@ async def generate_interior_with_text_nano_banana(
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # 🔥 КЛЮЧЕВОЙ МОМЕНТ: Используем пользовательский промпт напрямую (с переводом если нужно)
-        # Можно добавить автоматический перевод если нужно
-        from services.translator import translate_to_english
-        
+        # ✅ ИСПРАВЛЕНО: Импорт в начало файла, используем напрямую
+        logger.info("📝 Перевод промпта на английский...")
         try:
             english_prompt = await translate_to_english(user_prompt)
-            logger.info(f"📄 Промпт переведен на английский")
+            logger.info(f"✅ Промпт переведен на английский")
         except Exception as translate_error:
             logger.warning(f"⚠️  Не удалось перевести, используем оригинальный: {translate_error}")
             english_prompt = user_prompt
@@ -469,7 +470,7 @@ async def clear_space_with_kie(
     [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
     """
     logger.info("="*70)
-    logger.info("🧾 ОЧИСТКА ПОСТРАНСТВА [Kie.ai]")
+    logger.info("🧾 ОЧИСТКА ПРОСТРАНСТВА [Kie.ai]")
     logger.info("="*70)
 
     try:
