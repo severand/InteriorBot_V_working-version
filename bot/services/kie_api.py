@@ -1,9 +1,10 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.1 (2025-12-23) - DETAILED LOGGING
+# ВЕРСИЯ: 3.2 (2025-12-23) - ОБНОВЛеНО: От prompt translation integration
 # АВТОР: Project Owner
 # ========================================
+# [‵2025-12-23 15:30] ОБНОВЛЕНО: интеграция с translator.py
 
 import os
 import logging
@@ -27,6 +28,7 @@ KIE_API_BASE_URL = "https://api.kie.ai"
 KIE_API_CREATE_ENDPOINT = "api/v1/jobs/createTask"
 KIE_API_STATUS_ENDPOINT = "api/v1/jobs/recordInfo"  # ✅ ПРАВИЛЬНЫЙ ENDPOINT!
 KIE_API_TIMEOUT = 300  # 5 минут
+
 KIE_API_POLLING_INTERVAL = 3  # Проверять каждые 3 секунды
 KIE_API_MAX_POLLS = 100  # Макс 100 попыток = 5 минут
 
@@ -50,7 +52,7 @@ class KieApiClient:
         self.timeout = KIE_API_TIMEOUT
 
         if not self.api_key:
-            logger.warning("⚠️ KIE_API_KEY не установлен")
+            logger.warning("⚠️  KIE_API_KEY не установлен")
 
     def _get_headers(self) -> Dict[str, str]:
         return {
@@ -118,26 +120,26 @@ class KieApiClient:
 
         # 🔥 ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ЗАПРОСА
         logger.info("")
-        logger.info("=" * 70)
-        logger.info("📤 KIE.AI REQUEST DETAILS")
-        logger.info("=" * 70)
+        logger.info("="*70)
+        logger.info("📄 KIE.AI REQUEST DETAILS")
+        logger.info("="*70)
         logger.info(f"Model: {model}")
         logger.info(f"Image URLs: {input_data.get('image_urls', [])}")
         logger.info(f"Output Format: {input_data.get('output_format')}")
         logger.info(f"Image Size: {input_data.get('image_size')}")
         logger.info("")
-        logger.info("📝 FULL PROMPT SENT TO KIE.AI:")
-        logger.info("-" * 70)
+        logger.info("📄 FULL PROMPT SENT TO KIE.AI:")
+        logger.info("-"*70)
         prompt = input_data.get('prompt', '')
         # Логируем промпт построчно для читаемости
         for line in prompt.split('\n'):
             if line.strip():
                 logger.info(f"   {line}")
-        logger.info("-" * 70)
-        logger.info("=" * 70)
+        logger.info("-"*70)
+        logger.info("="*70)
         logger.info("")
 
-        logger.debug(f"📤 Отправка задачи...")
+        logger.debug(f"📄 Отправка задачи...")
         response = await self._make_request("POST", KIE_API_CREATE_ENDPOINT, data)
 
         if response and response.get("code") == 200 and "data" in response:
@@ -187,7 +189,7 @@ class KieApiClient:
                 continue
 
             state = status_data.get("state")
-            logger.debug(f"📊 [{attempt+1}/{max_polls}] State: {state}")
+            logger.debug(f"📈 [{attempt+1}/{max_polls}] State: {state}")
 
             # ✅ Успешная генерация
             if state == "success":
@@ -214,7 +216,7 @@ class KieApiClient:
             # ❌ Ошибка генерации
             elif state == "fail":
                 fail_msg = status_data.get("failMsg", "Unknown error")
-                logger.error(f"❌ Генерация провалена: {fail_msg}")
+                logger.error(f"❌ Генерация провалилась: {fail_msg}")
                 return None
 
             # ⏳ Генерация в процессе
@@ -225,7 +227,7 @@ class KieApiClient:
                 await asyncio.sleep(poll_interval)
 
             else:
-                logger.warning(f"⚠️ Неизвестный state: {state}")
+                logger.warning(f"⚠️  Неизвестный state: {state}")
                 await asyncio.sleep(poll_interval)
 
         logger.error(f"❌ Таймаут: результат не получен за {max_polls * poll_interval}s")
@@ -245,7 +247,7 @@ class NanoBananaClient(KieApiClient):
     ) -> Optional[str]:
         """Генерация изображения из текста."""
         logger.info("="*70)
-        logger.info("🎨 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana)")
+        logger.info("🎈 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana)")
         logger.info(f"   Промпт: {prompt[:100]}...")
         logger.info(f"   Размер: {image_size}")
         logger.info("="*70)
@@ -280,7 +282,7 @@ class NanoBananaClient(KieApiClient):
     ) -> Optional[str]:
         """Редактирование изображения."""
         logger.info("="*70)
-        logger.info("✍️  РЕДАКТИРОВАНИЕ ИЗОБРАЖЕНИЯ (Google Nano Banana Edit)")
+        logger.info("✍️  ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana Edit)")
         logger.info(f"   Промпт: {prompt[:100]}...")
         logger.info(f"   Кол-во изображений: {len(image_urls)}")
         logger.info("="*70)
@@ -348,6 +350,7 @@ async def generate_interior_with_nano_banana(
 ) -> Optional[str]:
     """
     Генерация дизайна интерьера через Nano Banana (Kie.ai).
+    [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
     """
     logger.info("="*70)
     logger.info("⚡ ГЕНЕРАЦИЯ ДИЗАЙНА [NANO BANANA via Kie.ai]")
@@ -356,15 +359,16 @@ async def generate_interior_with_nano_banana(
     logger.info("="*70)
 
     try:
-        logger.info("📸 Получение фото из Telegram...")
+        logger.info("📃 Получение фото из Telegram...")
         image_url = await get_telegram_file_url(photo_file_id, bot_token)
 
         if not image_url:
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        prompt = build_design_prompt(style, room)
-        logger.info(f"📄 Промпт сгенерирован (длина: {len(prompt)} символов)")
+        # [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
+        prompt = await build_design_prompt(style, room, translate=True)
+        logger.info(f"📄 Промпт сгенерирован и переведен (длина: {len(prompt)} символов)")
 
         client = NanoBananaClient()
         result = await client.edit_image(
@@ -387,21 +391,23 @@ async def clear_space_with_kie(
 ) -> Optional[str]:
     """
     Очистка пространства через Nano Banana.
+    [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
     """
     logger.info("="*70)
-    logger.info("🧽 ОЧИСТКА ПРОСТРАНСТВА [Kie.ai]")
+    logger.info("🧾 ОЧИСТКА ПОСТРАНСТВА [Kie.ai]")
     logger.info("="*70)
 
     try:
-        logger.info("📸 Получение фото из Telegram...")
+        logger.info("📃 Получение фото из Telegram...")
         image_url = await get_telegram_file_url(photo_file_id, bot_token)
 
         if not image_url:
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        prompt = build_clear_space_prompt()
-        logger.info(f"📄 Промпт очистки: {prompt}")
+        # [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
+        prompt = await build_clear_space_prompt(translate=True)
+        logger.info(f"📄 Промпт очистки (переведен): {prompt}")
 
         client = NanoBananaClient()
         result = await client.edit_image(
