@@ -1,7 +1,7 @@
 # ========================================
 # ФАЙЛ: bot/services/api_fallback.py
 # НАЗНАЧЕНИЕ: Smart Fallback система для генерации дизайна
-# ВЕРСИЯ: 2.0 (2025-12-23) - KIE NANO BANANA PRIMARY
+# ВЕРСИЯ: 2.1 (2025-12-23) - KIE NANO BANANA PRIMARY - FIXED TEXT PROMPT BUG
 # АВТОР: Project Owner
 # ========================================
 # ЛОГИКА:
@@ -9,9 +9,14 @@
 # 2. РЕЗЕРВНЫЙ: Replicate nano-banana (если KIE упала)
 # 3. Результат: URL или None
 #
+# [2025-12-23 23:02] FIXED: smart_generate_with_text теперь правильно передает user_prompt в KIE.AI
+# [2025-12-23 23:02] ДОБАВЛЕНО: Новая функция generate_interior_with_text для KIE, поддерживает текстовые промпты
+# [2025-12-23 23:02] УЛУЧШЕНО: Логирование для отслеживания какой API на самом деле запускается
+#
 # ИСПОЛЬЗОВАНИЕ:
-# from services.api_fallback import smart_generate_interior
+# from services.api_fallback import smart_generate_interior, smart_generate_with_text, smart_clear_space
 # url = await smart_generate_interior(photo_id, room, style, bot_token)
+# url = await smart_generate_with_text(photo_id, user_prompt, bot_token, scene_type)
 # ========================================
 
 import os
@@ -23,6 +28,7 @@ from config import config
 from services.kie_api import (
     generate_interior_with_nano_banana,
     clear_space_with_kie,
+    generate_interior_with_text_nano_banana,
 )
 from services.replicate_api import (
     generate_image_auto,
@@ -183,12 +189,14 @@ async def smart_generate_with_text(
 
     Args:
         photo_file_id: ID фото из Telegram
-        user_prompt: Текстовый промпт от пользователя
+        user_prompt: Текстовый промпт от пользователя (ВАЖНО!)
         bot_token: Токен бота Telegram
         scene_type: Тип сцены (house_exterior, plot_exterior, other_room, custom)
 
     Returns:
         URL сгенерированного изображения или None
+    
+    [2025-12-23 23:02] FIXED: Теперь правильно передает user_prompt в KIE.AI (был баг!)
     """
     logger.info("=" * 70)
     logger.info("✍️  SMART GENERATE WITH TEXT [FALLBACK SYSTEM]")
@@ -200,7 +208,7 @@ async def smart_generate_with_text(
     result_url = None
 
     # ========================================
-    # ПОПЫТКА 1: KIE.AI NANO BANANA (ОСНОВНОЙ)
+    # ПОПЫТКА 1: KIE.AI NANO BANANA (ОСНОВНОЙ) - ИСПРАВЛЕНО!
     # ========================================
     if USE_KIE_API and KIE_API_KEY:
         logger.info("")
@@ -208,12 +216,14 @@ async def smart_generate_with_text(
         logger.info("-" * 70)
 
         try:
-            logger.info("⏳ Запуск KIE.AI NANO BANANA...")
-            result_url = await generate_interior_with_nano_banana(
+            logger.info("⏳ Запуск KIE.AI NANO BANANA с текстовым промптом...")
+            # ✅ FIX 2025-12-23: Используем generate_interior_with_text_nano_banana для текстовых промптов
+            # Эта функция правильно передает user_prompt в KIE.AI
+            result_url = await generate_interior_with_text_nano_banana(
                 photo_file_id=photo_file_id,
-                room=f"custom_{scene_type}",
-                style="text_prompt",
+                user_prompt=user_prompt,  # ✅ ТЕПЕРЬ ПРАВИЛЬНО ПЕРЕДАЕТСЯ!
                 bot_token=bot_token,
+                scene_type=scene_type,
             )
 
             if result_url:
