@@ -1,17 +1,17 @@
 # ========================================
 # ФАЙЛ: bot/services/translator.py
 # НАЗНАЧЕНИЕ: Система перевода промтов на английский
-# ВЕРСИЯ: 1.0 (2025-12-23)
+# ВЕРСИЯ: 2.0 (2025-12-23) - ARGOS TRANSLATE
 # АВТОР: Project Owner
 # ========================================
 # НАЗНАЧЕНИЕ:
 #   Переводит текстовые промпты с русского на английский
 #   перед отправкой в KIE.AI и Replicate API для улучшения качества генерации
 #
-# ПОДДЕРЖИВАЕМЫЕ ПРОВАЙДЕРЫ ПЕРЕВОДА:
-#   1. Google Translate API (основной, платный)
-#   2. LibreTranslate (открытый, бесплатный) - fallback
-#   3. Яндекс Переводчик (платный) - альтернатива
+# РЕАЛИЗАЦИЯ:
+#   - Argos Translate (локальная, offline, бесплатная)
+#   - Простая проверка: если уже английский -> не переводим
+#   - Кэширование результатов
 #
 # ИСПОЛЬЗОВАНИЕ:
 #   from services.translator import translate_prompt_to_english
@@ -19,9 +19,7 @@
 # ========================================
 
 import logging
-import aiohttp
 from typing import Optional
-from config import config
 import os
 
 logger = logging.getLogger(__name__)
@@ -31,29 +29,49 @@ logger = logging.getLogger(__name__)
 # ========================================
 
 USE_TRANSLATION = os.getenv('USE_PROMPT_TRANSLATION', 'True').lower() == 'true'
-TRANSLATION_PROVIDER = os.getenv('TRANSLATION_PROVIDER', 'google_translate')  # google_translate, libre_translate, yandex
-
-# Google Translate API
-GOOGLE_TRANSLATE_API_KEY = os.getenv('GOOGLE_TRANSLATE_API_KEY')
-GOOGLE_TRANSLATE_URL = "https://translation.googleapis.com/language/translate/v2"
-
-# LibreTranslate (open-source)
-LIBRE_TRANSLATE_URL = os.getenv('LIBRE_TRANSLATE_URL', 'https://libretranslate.de/translate')
-LIBRE_TRANSLATE_API_KEY = os.getenv('LIBRE_TRANSLATE_API_KEY', '')
-
-# Яндекс Переводчик
-YANDEX_TRANSLATE_API_KEY = os.getenv('YANDEX_TRANSLATE_API_KEY')
-YANDEX_TRANSLATE_URL = "https://api.yandex.cloud/translate/v2/translate"
 
 # Логирование конфига
 logger.info("="*70)
-logger.info("🌐 PROMPT TRANSLATOR INITIALIZED")
+logger.info("🌐 PROMPT TRANSLATOR INITIALIZED (Argos Translate)")
 logger.info(f"   Translation enabled: {USE_TRANSLATION}")
-logger.info(f"   Primary provider: {TRANSLATION_PROVIDER}")
-logger.info(f"   Google Translate API key: {bool(GOOGLE_TRANSLATE_API_KEY)}")
-logger.info(f"   LibreTranslate configured: {bool(LIBRE_TRANSLATE_URL)}")
-logger.info(f"   Yandex Translate API key: {bool(YANDEX_TRANSLATE_API_KEY)}")
+logger.info(f"   Provider: Argos Translate (Local, Offline, Free)")
 logger.info("="*70)
+
+# ========================================
+# ИНИЦИАЛИЗАЦИЯ ARGOS TRANSLATE
+# ========================================
+
+try:
+    from argostranslate import package, translate
+    
+    # Загружаем языковые модели при старте
+    logger.info("📦 Initializing Argos Translate language models...")
+    
+    # Проверяем установлены ли модели
+    installed_languages = package.get_installed_languages()
+    ru_en_available = False
+    
+    for lang in installed_languages:
+        if lang.code == 'ru':
+            for target in lang.translations_to:
+                if target.code == 'en':
+                    ru_en_available = True
+                    logger.info(f"✅ Russian → English model found")
+                    break
+    
+    if not ru_en_available:
+        logger.warning("⚠️  Russian → English model not installed")
+        logger.warning("   Installing: python -m argostranslate install translations")
+    
+    ARGOS_AVAILABLE = True
+    
+except ImportError:
+    logger.error("❌ Argos Translate not installed!")
+    logger.error("   Install it: pip install argostranslate")
+    ARGOS_AVAILABLE = False
+except Exception as e:
+    logger.error(f"❌ Error initializing Argos Translate: {e}")
+    ARGOS_AVAILABLE = False
 
 
 # ========================================
@@ -64,29 +82,50 @@ _TRANSLATION_CACHE = {}  # {russian_text: english_text}
 
 
 # ========================================
+# ДЕТЕКТИРОВАНИЕ АНГЛИЙСКОГО ТЕКСТА
+# ========================================
+
+def _is_english(text: str) -> bool:
+    """
+    Простая проверка: является ли текст английским.
+    
+    Проверяет:
+    1. Содержит ли текст только ASCII символы (или минимум ASCII)
+    2. Не содержит кириллицу
+    
+    Returns:
+        True если текст на английском, False если нужен перевод
+    """
+    # Проверяем наличие кириллицы (русские буквы)
+    cyrillic_count = sum(1 for char in text if ord(char) >= 0x0400 and ord(char) <= 0x04FF)
+    
+    # Если более 5% текста кириллица - это русский текст
+    if cyrillic_count > len(text) * 0.05:
+        return False  # Это русский текст
+    
+    return True  # Похоже на английский
+
+
+# ========================================
 # ОСНОВНАЯ ФУНКЦИЯ ПЕРЕВОДА
 # ========================================
 
 async def translate_prompt_to_english(russian_text: str) -> str:
     """
-    Переводит промпт с русского на английский.
+    Переводит промпт с русского на английский (если нужно).
     
     Логика:
     1. Если translation отключен → возвращает исходный текст
-    2. Если текст в кэше → возвращает из кэша
-    3. Попытка основного провайдера (Google/Yandex/LibreTranslate)
-    4. Fallback: LibreTranslate
-    5. Fallback: возвращает исходный текст (без перевода)
+    2. Если текст уже на английском → возвращает как есть
+    3. Если текст в кэше → возвращает из кэша
+    4. Если Argos не установлен → возвращает оригинальный текст
+    5. Переводит с помощью Argos Translate (локально, offline)
     
     Args:
-        russian_text: Текст промпта на русском языке
+        russian_text: Текст промпта (русский или английский)
         
     Returns:
-        Переведённый текст на английский или исходный текст
-        
-    Логирование:
-        - Каждый перевод логируется с временем выполнения
-        - Ошибки записываются с полной информацией
+        Текст на английском (переведенный или оригинальный)
     """
     
     # Если перевод отключен
@@ -99,210 +138,59 @@ async def translate_prompt_to_english(russian_text: str) -> str:
         logger.debug(f"⏭️  Text too short, returning original")
         return russian_text
     
-    # Проверка кэша
+    # Проверяем кэш
     if russian_text in _TRANSLATION_CACHE:
         logger.debug(f"✅ Translation found in cache (length={len(russian_text)})")
         return _TRANSLATION_CACHE[russian_text]
     
+    # Проверяем: это уже английский текст?
+    if _is_english(russian_text):
+        logger.debug(f"🇬🇧 Text is already in English, returning as is")
+        _TRANSLATION_CACHE[russian_text] = russian_text
+        return russian_text
+    
+    # Если Argos не доступен
+    if not ARGOS_AVAILABLE:
+        logger.warning(f"⚠️  Argos Translate not available, returning original text")
+        _TRANSLATION_CACHE[russian_text] = russian_text
+        return russian_text
+    
     logger.info("="*70)
     logger.info(f"🌐 TRANSLATING PROMPT TO ENGLISH")
     logger.info(f"   Length: {len(russian_text)} chars")
-    logger.info(f"   Provider: {TRANSLATION_PROVIDER}")
+    logger.info(f"   Provider: Argos Translate (Local)")
     logger.info("-"*70)
     
-    result = None
-    
-    # ========================================
-    # ПОПЫТКА 1: Основной провайдер
-    # ========================================
     try:
-        if TRANSLATION_PROVIDER == 'google_translate':
-            result = await _translate_google(russian_text)
-        elif TRANSLATION_PROVIDER == 'yandex':
-            result = await _translate_yandex(russian_text)
-        elif TRANSLATION_PROVIDER == 'libre_translate':
-            result = await _translate_libre(russian_text)
+        from argostranslate import translate
         
-        if result:
-            logger.info(f"✅ [PRIMARY] Translation successful")
-            logger.info(f"   Result length: {len(result)} chars")
+        logger.debug("🔄 Translating with Argos Translate...")
+        
+        # Переводим с русского на английский
+        translated_text = translate.translate_text(russian_text, 'ru', 'en')
+        
+        if translated_text and translated_text.strip():
+            logger.info(f"✅ Translation successful")
+            logger.info(f"   Result length: {len(translated_text)} chars")
             
             # Кэшируем результат
-            _TRANSLATION_CACHE[russian_text] = result
+            _TRANSLATION_CACHE[russian_text] = translated_text
             logger.info("="*70)
-            return result
+            return translated_text
         else:
-            logger.warning(f"⚠️  [PRIMARY] No result from {TRANSLATION_PROVIDER}")
-    
-    except Exception as e:
-        logger.error(f"❌ [PRIMARY] Error with {TRANSLATION_PROVIDER}: {str(e)[:100]}")
-    
-    # ========================================
-    # FALLBACK: LibreTranslate
-    # ========================================
-    logger.info(f"🔄 Attempting FALLBACK: LibreTranslate")
-    try:
-        result = await _translate_libre(russian_text)
-        if result:
-            logger.info(f"✅ [FALLBACK] LibreTranslate successful")
-            
-            # Кэшируем результат
-            _TRANSLATION_CACHE[russian_text] = result
+            logger.warning(f"⚠️  Translation returned empty result")
+            _TRANSLATION_CACHE[russian_text] = russian_text
             logger.info("="*70)
-            return result
-        else:
-            logger.warning(f"⚠️  [FALLBACK] LibreTranslate returned empty result")
+            return russian_text
     
     except Exception as e:
-        logger.error(f"❌ [FALLBACK] LibreTranslate error: {str(e)[:100]}")
-    
-    # ========================================
-    # ПОЛНАЯ ОШИБКА: Возвращаем исходный текст
-    # ========================================
-    logger.warning("")
-    logger.warning("="*70)
-    logger.warning("❌ TRANSLATION FAILED - Returning original Russian text")
-    logger.warning("="*70)
-    
-    # Кэшируем "не переведено" чтобы не пытаться заново
-    _TRANSLATION_CACHE[russian_text] = russian_text
-    
-    return russian_text
-
-
-# ========================================
-# ПРОВАЙДЕРЫ ПЕРЕВОДА
-# ========================================
-
-async def _translate_google(text: str) -> Optional[str]:
-    """
-    Перевод с использованием Google Translate API.
-    
-    Требует: GOOGLE_TRANSLATE_API_KEY
-    Документация: https://cloud.google.com/translate/docs/basic/setup
-    """
-    if not GOOGLE_TRANSLATE_API_KEY:
-        logger.warning("⏭️  Google Translate API key not configured")
-        return None
-    
-    try:
-        logger.debug("⏳ Google Translate API request...")
+        logger.error(f"❌ Translation error: {e}")
+        logger.warning(f"⚠️  Returning original Russian text")
         
-        async with aiohttp.ClientSession() as session:
-            params = {
-                'key': GOOGLE_TRANSLATE_API_KEY,
-                'q': text,
-                'source_language': 'ru',
-                'target_language': 'en',
-            }
-            
-            async with session.post(
-                GOOGLE_TRANSLATE_URL,
-                json=params,
-                timeout=aiohttp.ClientTimeout(total=10)
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    translations = data.get('data', {}).get('translations', [])
-                    if translations:
-                        return translations[0].get('translatedText')
-                else:
-                    logger.error(f"Google Translate API returned {resp.status}")
-        
-        return None
-    
-    except Exception as e:
-        logger.error(f"Google Translate error: {e}")
-        return None
-
-
-async def _translate_yandex(text: str) -> Optional[str]:
-    """
-    Перевод с использованием Yandex Translate API.
-    
-    Требует: YANDEX_TRANSLATE_API_KEY
-    Документация: https://cloud.yandex.com/docs/translate/api-ref/
-    """
-    if not YANDEX_TRANSLATE_API_KEY:
-        logger.warning("⏭️  Yandex Translate API key not configured")
-        return None
-    
-    try:
-        logger.debug("⏳ Yandex Translate API request...")
-        
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                'Authorization': f'Api-Key {YANDEX_TRANSLATE_API_KEY}',
-                'Content-Type': 'application/json',
-            }
-            
-            payload = {
-                'sourceLanguageCode': 'ru',
-                'targetLanguageCode': 'en',
-                'texts': [text]
-            }
-            
-            async with session.post(
-                YANDEX_TRANSLATE_URL,
-                json=payload,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=10)
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    translations = data.get('translations', [])
-                    if translations:
-                        return translations[0].get('text')
-                else:
-                    logger.error(f"Yandex Translate API returned {resp.status}")
-        
-        return None
-    
-    except Exception as e:
-        logger.error(f"Yandex Translate error: {e}")
-        return None
-
-
-async def _translate_libre(text: str) -> Optional[str]:
-    """
-    Перевод с использованием LibreTranslate (open-source).
-    
-    Бесплатный вариант, но может быть медленнее.
-    Можно развернуть свой сервер: https://github.com/LibreTranslate/LibreTranslate
-    """
-    if not LIBRE_TRANSLATE_URL:
-        logger.warning("⏭️  LibreTranslate URL not configured")
-        return None
-    
-    try:
-        logger.debug("⏳ LibreTranslate API request...")
-        
-        async with aiohttp.ClientSession() as session:
-            payload = {
-                'q': text,
-                'source': 'ru',
-                'target': 'en',
-            }
-            
-            if LIBRE_TRANSLATE_API_KEY:
-                payload['api_key'] = LIBRE_TRANSLATE_API_KEY
-            
-            async with session.post(
-                LIBRE_TRANSLATE_URL,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=15)  # LibreTranslate медленнее
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return data.get('translatedText') or data.get('translated')
-                else:
-                    logger.error(f"LibreTranslate returned {resp.status}")
-        
-        return None
-    
-    except Exception as e:
-        logger.error(f"LibreTranslate error: {e}")
-        return None
+        # Кэшируем "не переведено" чтобы не пытаться заново
+        _TRANSLATION_CACHE[russian_text] = russian_text
+        logger.info("="*70)
+        return russian_text
 
 
 # ========================================
@@ -312,7 +200,7 @@ async def _translate_libre(text: str) -> Optional[str]:
 def clear_translation_cache():
     """
     Очищает кэш переводов.
-    Используй при переключении между провайдерами.
+    Используй при необходимости сброса.
     """
     global _TRANSLATION_CACHE
     _TRANSLATION_CACHE.clear()
@@ -324,16 +212,14 @@ async def get_translation_stats() -> dict:
     Получить статистику переводов.
     
     Returns:
-        Dict с информацией о кэше и провайдерах
+        Dict с информацией о кэше и статусе
     """
     return {
         "translation_enabled": USE_TRANSLATION,
-        "primary_provider": TRANSLATION_PROVIDER,
+        "provider": "Argos Translate (Local, Offline, Free)",
+        "argos_available": ARGOS_AVAILABLE,
         "cache_size": len(_TRANSLATION_CACHE),
         "cached_prompts": list(_TRANSLATION_CACHE.keys())[:5],  # Первые 5
-        "google_api_configured": bool(GOOGLE_TRANSLATE_API_KEY),
-        "yandex_api_configured": bool(YANDEX_TRANSLATE_API_KEY),
-        "libre_translate_configured": bool(LIBRE_TRANSLATE_URL),
     }
 
 
@@ -342,12 +228,31 @@ if __name__ == "__main__":
     import asyncio
     
     async def test():
-        text = "Создай уникальный дизайн для этой комнаты"
-        result = await translate_prompt_to_english(text)
-        print(f"Original: {text}")
+        # Тест 1: Русский текст (должен перевестись)
+        text_ru = "Создай уникальный дизайн для этой комнаты с минимализмом"
+        result = await translate_prompt_to_english(text_ru)
+        print(f"\n✅ Test 1 - Russian text:")
+        print(f"Original:  {text_ru}")
+        print(f"Translated: {result}")
+        
+        # Тест 2: Английский текст (не должен переводиться)
+        text_en = "You are a professional interior designer with expertise"
+        result = await translate_prompt_to_english(text_en)
+        print(f"\n✅ Test 2 - English text:")
+        print(f"Original:  {text_en}")
+        print(f"Result:    {result}")
+        
+        # Тест 3: Смешанный текст (должен перевестись)
+        text_mixed = "Добавь contemporary design style в спальню с natural light"
+        result = await translate_prompt_to_english(text_mixed)
+        print(f"\n✅ Test 3 - Mixed text:")
+        print(f"Original:  {text_mixed}")
         print(f"Translated: {result}")
         
         stats = await get_translation_stats()
-        print(f"Stats: {stats}")
+        print(f"\n📊 Statistics:")
+        print(f"   Provider: {stats['provider']}")
+        print(f"   Argos available: {stats['argos_available']}")
+        print(f"   Cache size: {stats['cache_size']}")
     
     asyncio.run(test())
