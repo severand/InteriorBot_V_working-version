@@ -1,19 +1,19 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 2.0 (2025-12-23) - ИСПРАВЛЕНЫ ENDPOINTS И ПАРАМЕТРЫ
+# ВЕРСИЯ: 2.1 (2025-12-23) - КОРРЕКТНЫЙ ENDPOINT
 # АВТОР: Project Owner
 # ========================================
-# ВАЖНО: Это АЛЬТЕРНАТИВА к Replicate
-# Kie.ai предоставляет:
-# - Flux Kontext API для изображений (редактирование)
-# - 4O Image API для генерации/редактирования
+# НОВО: Основной endpoint:
+# POST https://api.kie.ai/api/v1/jobs/createTask
+# (А не /generate)
 # ========================================
 
 import os
 import logging
 import httpx
 import json
+import time
 from typing import Optional, Dict, Any, List
 from config import config
 
@@ -27,14 +27,15 @@ logger = logging.getLogger(__name__)
 # ========================================
 
 KIE_API_BASE_URL = "https://api.kie.ai"  # Базовый URL API
+KIE_API_ENDPOINT = "api/v1/jobs/createTask"  # КОРРЕКТНЫЙ ENDPOINT
 KIE_API_TIMEOUT = 300  # Таймаут 5 минут для генерации
+KIE_API_POLLING_INTERVAL = 2  # Проверять статус каждые 2 секунды
+KIE_API_MAX_POLLS = 150  # Макс 150 попыток = 5 минут
 
 # Модели для разных типов генерации
 MODELS = {
     "image_generation": {
-        "flux_kontext": "flux-kontext",      # Для изменения интерьера (основной)
-        "4o_image": "4o-image",             # Для генерации и редактирования
-        "nano_banana": "google/nano-banana", # Текст в изображение
+        "nano_banana": "google/nano-banana",  # Текст в изображение
         "nano_banana_edit": "google/nano-banana-edit",  # Редактирование изображений
     },
 }
@@ -43,7 +44,7 @@ MODELS = {
 class KieApiClient:
     """
     Клиент для работы с Kie.ai API (Nano Banana).
-    Предоставляет методы для генерации изображений и видео.
+    Предоставляет методы для генерации изображений.
     """
 
     def __init__(self, api_key: Optional[str] = None):
@@ -55,6 +56,7 @@ class KieApiClient:
         """
         self.api_key = api_key or os.getenv('KIE_API_KEY') or getattr(config, 'KIE_API_KEY', None)
         self.base_url = KIE_API_BASE_URL
+        self.endpoint = KIE_API_ENDPOINT
         self.timeout = KIE_API_TIMEOUT
 
         if not self.api_key:
@@ -91,7 +93,7 @@ class KieApiClient:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                logger.debug(f"📤 {method} {url}")
+                logger.debug(f"📄 {method} {url}")
 
                 if method.upper() == "GET":
                     response = await client.get(url, headers=headers, params=params)
@@ -101,7 +103,7 @@ class KieApiClient:
                     logger.error(f"❌ Неподдерживаемый HTTP метод: {method}")
                     return None
 
-                logger.debug(f"📥 Status: {response.status_code}")
+                logger.debug(f"📃 Status: {response.status_code}")
 
                 if response.status_code not in [200, 201, 202]:
                     logger.error(f"❌ API ошибка: {response.status_code} - {response.text}")
@@ -116,176 +118,108 @@ class KieApiClient:
             logger.error(f"❌ Ошибка при запросе к API: {e}")
             return None
 
-    async def get_account_info(self) -> Optional[Dict[str, Any]]:
-        """
-        Получить информацию об аккаунте и балансе.
-
-        Returns:
-            Данные аккаунта или None
-        """
-        logger.info("📊 Получение информации об аккаунте...")
-        return await self._make_request("GET", "account/info")
-
-    async def get_model_info(self, model_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Получить информацию о модели.
-
-        Args:
-            model_id: ID модели
-
-        Returns:
-            Данные модели или None
-        """
-        logger.info(f"📋 Получение информации о модели: {model_id}")
-        return await self._make_request("GET", f"models/{model_id}")
-
-    async def check_credits(self) -> Optional[int]:
-        """
-        Проверить количество доступных кредитов.
-
-        Returns:
-            Количество кредитов или None
-        """
-        account_info = await self.get_account_info()
-        if account_info and "credits" in account_info:
-            credits = account_info["credits"]
-            logger.info(f"💰 Доступно кредитов: {credits}")
-            return credits
-        logger.warning("⚠️ Не удалось получить информацию о кредитах")
-        return None
-
-
-class FluxKontextClient(KieApiClient):
-    """
-    Специализированный клиент для Flux Kontext API.
-    Используется для context-aware редактирования изображений (интерьер).
-    """
-
-    async def generate_interior_design(
+    async def create_generation_task(
         self,
-        image_url: str,
-        prompt: str,
-        strength: float = 0.7,
-        steps: int = 25,
-        guidance_scale: float = 7.5,
+        model: str,
+        input_data: Dict[str, Any],
+        callback_url: Optional[str] = None,
     ) -> Optional[str]:
         """
-        Генерация дизайна интерьера с Flux Kontext.
+        Создать задачу генерации.
 
         Args:
-            image_url: URL исходного изображения
-            prompt: Текстовый промпт с описанием желаемого дизайна
-            strength: Сила воздействия (0.1-1.0, по умолчанию 0.7)
-            steps: Количество шагов генерации (20-50)
-            guidance_scale: Масштаб guidance (1.0-20.0)
+            model: Наименование модели
+            input_data: Инпут параметры
+            callback_url: Опциональный callback URL
 
         Returns:
-            URL сгенерированного изображения или None
+            Task ID или None
         """
-        logger.info("="*70)
-        logger.info("🎨 ГЕНЕРАЦИЯ С FLUX KONTEXT (Kie.ai)")
-        logger.info(f"   Промпт: {prompt[:100]}...")
-        logger.info(f"   Strength: {strength}")
-        logger.info("="*70)
-
-        if not self.api_key:
-            logger.error("❌ KIE_API_KEY не установлен")
-            return None
-
         data = {
-            "model": MODELS["image_generation"]["flux_kontext"],
-            "input": {
-                "image_url": image_url,
-                "prompt": prompt,
-                "strength": strength,
-                "steps": steps,
-                "guidance_scale": guidance_scale,
-                "output_format": "png",
-            }
+            "model": model,
+            "input": input_data,
         }
 
-        logger.info(f"⏳ Запуск Flux Kontext...")
-        response = await self._make_request("POST", "generate", data)
+        if callback_url:
+            data["callBackUrl"] = callback_url
 
-        if response and "output" in response:
-            result_url = response["output"]
-            logger.info(f"✅ Генерация успешна: {result_url}")
-            return result_url
+        logger.debug(f"📄 Отправка зандначи генерации...")
+        response = await self._make_request("POST", self.endpoint, data)
 
-        logger.error("❌ Ошибка генерации: неверный ответ API")
+        if response and response.get("code") == 200 and "data" in response:
+            task_id = response["data"].get("taskId")
+            logger.debug(f"✅ Task ID: {task_id}")
+            return task_id
+
+        logger.error(f"❌ Ошибка создания задачи: {response}")
         return None
 
-
-class GPT4OImageClient(KieApiClient):
-    """
-    Специализированный клиент для 4O Image API.
-    Используется для свободной генерации и редактирования изображений.
-    """
-
-    async def generate_image(
+    async def get_task_result(
         self,
-        prompt: str,
-        image_url: Optional[str] = None,
-        size: str = "1024x1024",
-        quality: str = "hd",
-        n: int = 1,
-    ) -> Optional[List[str]]:
+        task_id: str,
+    ) -> Optional[Dict[str, Any]]:
         """
-        Генерация изображения с GPT-4O.
+        Получить результат задачи.
 
         Args:
-            prompt: Текстовый промпт
-            image_url: URL исходного изображения (если нужна модификация)
-            size: Размер изображения ("1024x1024", "1024x1792", "1792x1024")
-            quality: Качество ("standard", "hd")
-            n: Количество изображений для генерации (1-10)
+            task_id: ID задачи
 
         Returns:
-            Список URL сгенерированных изображений или None
+            Ответ с результатами или None
         """
-        logger.info("="*70)
-        logger.info("🖼️  ГЕНЕРАЦИЯ С 4O IMAGE (Kie.ai)")
-        logger.info(f"   Промпт: {prompt[:100]}...")
-        logger.info(f"   Размер: {size}")
-        logger.info(f"   Качество: {quality}")
-        logger.info("="*70)
+        return await self._make_request(
+            "GET",
+            f"api/v1/jobs/getResult",
+            params={"taskId": task_id}
+        )
 
-        if not self.api_key:
-            logger.error("❌ KIE_API_KEY не установлен")
-            return None
+    async def poll_task_result(
+        self,
+        task_id: str,
+        max_polls: int = KIE_API_MAX_POLLS,
+        poll_interval: int = KIE_API_POLLING_INTERVAL,
+    ) -> Optional[str]:
+        """
+        Ожидать результат генерации (поллинг).
 
-        data = {
-            "model": MODELS["image_generation"]["4o_image"],
-            "input": {
-                "prompt": prompt,
-                "size": size,
-                "quality": quality,
-                "n": n,
-                "response_format": "url",
-            }
-        }
+        Args:
+            task_id: ID задачи
+            max_polls: Макс попыток
+            poll_interval: Очередность проверки (сек)
 
-        if image_url:
-            data["input"]["image_url"] = image_url
+        Returns:
+            URL результата или None
+        """
+        logger.debug(f"⏳ Ожидание результата (Task: {task_id})...")
 
-        logger.info(f"⏳ Запуск 4O Image...")
-        response = await self._make_request("POST", "generate", data)
+        for attempt in range(max_polls):
+            result = await self.get_task_result(task_id)
 
-        if response and "data" in response:
-            urls = [item["url"] for item in response["data"] if "url" in item]
-            logger.info(f"✅ Генерация успешна: {len(urls)} изображений")
-            return urls if urls else None
+            if result and result.get("code") == 200:
+                data = result.get("data", {})
+                if data.get("status") == "success" and "output" in data:
+                    output_url = data["output"]
+                    logger.debug(f"✅ Результат готов: {output_url}")
+                    return output_url
+                elif data.get("status") == "failed":
+                    logger.error(f"❌ Генерация не удалась: {data.get('message')}")
+                    return None
 
-        logger.error("❌ Ошибка генерации: неверный ответ API")
+            # Ожидание перед следующей проверкой
+            if attempt < max_polls - 1:
+                elapsed = (attempt + 1) * poll_interval
+                remaining = (max_polls - attempt - 1) * poll_interval
+                logger.debug(f"⏳ [{attempt+1}/{max_polls}] Elapsed: {elapsed}s, Remaining: {remaining}s...")
+                await asyncio.sleep(poll_interval)
+
+        logger.error(f"❌ Таймаут: генерация не завершена за {max_polls * poll_interval} сек")
         return None
 
 
 class NanoBananaClient(KieApiClient):
     """
     Специализированный клиент для Google Nano Banana API.
-    Используется для быстрой и дешевой генерации изображений.
-    
-    Модели:
+    Основное:
     - google/nano-banana: текст → изображение
     - google/nano-banana-edit: редактирование изображений
     """
@@ -294,15 +228,15 @@ class NanoBananaClient(KieApiClient):
         self,
         prompt: str,
         output_format: str = "png",
-        image_size: str = "1:1",  # 1:1, 9:16, 16:9, 3:4, 4:3, 3:2, 2:3, 5:4, 4:5, 21:9, auto
+        image_size: str = "16:9",
     ) -> Optional[str]:
         """
-        Генерация изображения из текста (Nano Banana).
+        Генерация изображения из текста.
 
         Args:
             prompt: Текстовый промпт
-            output_format: Формат выхода (png, jpeg)
-            image_size: Размер изображения (соотношение сторон)
+            output_format: Формат (png, jpeg)
+            image_size: Размер (1:1, 9:16, 16:9, 3:4, 4:3, 3:2, 2:3, 5:4, 4:5, 21:9, auto)
 
         Returns:
             URL сгенерированного изображения или None
@@ -317,20 +251,26 @@ class NanoBananaClient(KieApiClient):
             logger.error("❌ KIE_API_KEY не установлен")
             return None
 
-        data = {
-            "model": MODELS["image_generation"]["nano_banana"],
-            "input": {
-                "prompt": prompt,
-                "output_format": output_format,
-                "image_size": image_size,
-            }
+        input_data = {
+            "prompt": prompt,
+            "output_format": output_format,
+            "image_size": image_size,
         }
 
-        logger.info(f"⏳ Запуск Nano Banana (Text→Image)...")
-        response = await self._make_request("POST", "generate", data)
+        logger.info(f"⏳ Отправка задачи генерации...")
+        task_id = await self.create_generation_task(
+            model=MODELS["image_generation"]["nano_banana"],
+            input_data=input_data,
+        )
 
-        if response and "output" in response:
-            result_url = response["output"]
+        if not task_id:
+            logger.error("❌ Не удалось создать задачу")
+            return None
+
+        logger.info(f"⏳ Ожидание результата (Task: {task_id})...")
+        result_url = await self.poll_task_result(task_id)
+
+        if result_url:
             logger.info(f"✅ Генерация успешна: {result_url}")
             return result_url
 
@@ -345,19 +285,19 @@ class NanoBananaClient(KieApiClient):
         image_size: str = "auto",
     ) -> Optional[str]:
         """
-        Редактирование изображения (Nano Banana Edit).
+        Редактирование изображения.
 
         Args:
-            image_urls: Список URL изображений для редактирования (до 10)
-            prompt: Текстовый промпт с описанием изменений
-            output_format: Формат выхода (png, jpeg)
-            image_size: Размер изображения
+            image_urls: Список URL изображений (до 10)
+            prompt: Текстовый промпт
+            output_format: Формат (png, jpeg)
+            image_size: Размер
 
         Returns:
             URL отредактированного изображения или None
         """
         logger.info("="*70)
-        logger.info("✏️  РЕДАКТИРОВАНИЕ ИЗОБРАЖЕНИЯ (Google Nano Banana Edit)")
+        logger.info("✍️  РЕДАКТИРОВАНИЕ ИЗОБРАЖЕНИЕ (Google Nano Banana Edit)")
         logger.info(f"   Промпт: {prompt[:100]}...")
         logger.info(f"   Кол-во изображений: {len(image_urls)}")
         logger.info("="*70)
@@ -366,21 +306,27 @@ class NanoBananaClient(KieApiClient):
             logger.error("❌ KIE_API_KEY не установлен")
             return None
 
-        data = {
-            "model": MODELS["image_generation"]["nano_banana_edit"],
-            "input": {
-                "image_urls": image_urls,
-                "prompt": prompt,
-                "output_format": output_format,
-                "image_size": image_size,
-            }
+        input_data = {
+            "image_urls": image_urls,
+            "prompt": prompt,
+            "output_format": output_format,
+            "image_size": image_size,
         }
 
-        logger.info(f"⏳ Запуск Nano Banana Edit...")
-        response = await self._make_request("POST", "generate", data)
+        logger.info(f"⏳ Отправка задачи редактирования...")
+        task_id = await self.create_generation_task(
+            model=MODELS["image_generation"]["nano_banana_edit"],
+            input_data=input_data,
+        )
 
-        if response and "output" in response:
-            result_url = response["output"]
+        if not task_id:
+            logger.error("❌ Не удалось создать задачу")
+            return None
+
+        logger.info(f"⏳ Ожидание результата (Task: {task_id})...")
+        result_url = await self.poll_task_result(task_id)
+
+        if result_url:
             logger.info(f"✅ Редактирование успешно: {result_url}")
             return result_url
 
@@ -395,7 +341,6 @@ class NanoBananaClient(KieApiClient):
 async def get_telegram_file_url(photo_file_id: str, bot_token: str) -> Optional[str]:
     """
     Получить URL файла из Telegram Bot API.
-    (ПЕРЕИСПОЛЬЗУЕТСЯ из replicate_api.py)
     """
     try:
         async with httpx.AsyncClient() as client:
@@ -405,12 +350,12 @@ async def get_telegram_file_url(photo_file_id: str, bot_token: str) -> Optional[
             )
 
             if response.status_code != 200:
-                logger.error(f"❗ Не удалось получить файл: {response.text}")
+                logger.error(f"❌ Не удалось получить файл: {response.text}")
                 return None
 
             result = response.json()
             if not result.get('ok'):
-                logger.error(f"❗ API ошибка: {result}")
+                logger.error(f"❌ API ошибка: {result}")
                 return None
 
             file_path = result['result']['file_path']
@@ -420,114 +365,6 @@ async def get_telegram_file_url(photo_file_id: str, bot_token: str) -> Optional[
 
     except Exception as e:
         logger.error(f"❌ Ошибка при получении URL файла: {e}")
-        return None
-
-
-async def generate_interior_with_flux(
-    photo_file_id: str,
-    room: str,
-    style: str,
-    bot_token: str,
-    strength: float = 0.7,
-) -> Optional[str]:
-    """
-    Генерация дизайна интерьера с помощью Flux Kontext (Kie.ai).
-
-    Args:
-        photo_file_id: ID фото из Telegram
-        room: Тип комнаты
-        style: Стиль дизайна
-        bot_token: Токен бота
-        strength: Сила воздействия (0.1-1.0)
-
-    Returns:
-        URL сгенерированного изображения или None
-    """
-    logger.info("="*70)
-    logger.info("🎨 ГЕНЕРАЦИЯ ДИЗАЙНА [FLUX KONTEXT via Kie.ai]")
-    logger.info(f"   Комната: {room} → {get_room_name(room)}")
-    logger.info(f"   Стиль: {style}")
-    logger.info(f"   Strength: {strength}")
-    logger.info("="*70)
-
-    if not is_valid_room(room):
-        logger.warning(f"⚠️ Комната '{room}' не найдена в ROOM_NAMES")
-
-    if not is_valid_style(style):
-        logger.warning(f"⚠️ Стиль '{style}' не найден в STYLE_PROMPTS")
-
-    try:
-        logger.info("📸 Получение фото из Telegram...")
-        image_url = await get_telegram_file_url(photo_file_id, bot_token)
-
-        if not image_url:
-            logger.error("❌ Не удалось получить URL фото")
-            return None
-
-        prompt = build_design_prompt(style, room)
-        logger.info(f"📄 Промпт: {prompt[:200]}...")
-
-        client = FluxKontextClient()
-        result = await client.generate_interior_design(
-            image_url=image_url,
-            prompt=prompt,
-            strength=strength,
-            steps=25,
-            guidance_scale=7.5,
-        )
-
-        return result
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка при генерации: {e}")
-        return None
-
-
-async def generate_interior_with_gpt4o(
-    photo_file_id: str,
-    room: str,
-    style: str,
-    bot_token: str,
-) -> Optional[List[str]]:
-    """
-    Генерация дизайна интерьера с помощью 4O Image (Kie.ai).
-    Более универсальный вариант, может работать и без исходного изображения.
-
-    Args:
-        photo_file_id: ID фото из Telegram
-        room: Тип комнаты
-        style: Стиль дизайна
-        bot_token: Токен бота
-
-    Returns:
-        Список URL сгенерированных изображений или None
-    """
-    logger.info("="*70)
-    logger.info("🖼️  ГЕНЕРАЦИЯ ДИЗАЙНА [4O IMAGE via Kie.ai]")
-    logger.info(f"   Комната: {room} → {get_room_name(room)}")
-    logger.info(f"   Стиль: {style}")
-    logger.info("="*70)
-
-    try:
-        logger.info("📸 Получение фото из Telegram...")
-        image_url = await get_telegram_file_url(photo_file_id, bot_token)
-
-        prompt = build_design_prompt(style, room)
-        logger.info(f"📄 Промпт: {prompt[:200]}...")
-
-        client = GPT4OImageClient()
-        result = await client.generate_image(
-            prompt=prompt,
-            image_url=image_url,
-            size="1024x1024",
-            quality="hd",
-            n=1,
-        )
-
-        return result
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка при генерации: {e}")
         return None
 
 
@@ -556,7 +393,7 @@ async def generate_interior_with_nano_banana(
     logger.info("="*70)
 
     try:
-        logger.info("📸 Получение фото из Telegram...")
+        logger.info("📈 Получение фото из Telegram...")
         image_url = await get_telegram_file_url(photo_file_id, bot_token)
 
         if not image_url:
@@ -567,8 +404,6 @@ async def generate_interior_with_nano_banana(
         logger.info(f"📄 Промпт: {prompt[:200]}...")
 
         client = NanoBananaClient()
-        
-        # Редактирование существующего изображения
         result = await client.edit_image(
             image_urls=[image_url],
             prompt=prompt,
@@ -588,8 +423,7 @@ async def clear_space_with_kie(
     bot_token: str,
 ) -> Optional[str]:
     """
-    Очистка пространства от мебели используя Flux Kontext.
-    АНАЛОГ: clear_space_image() из replicate_api.py
+    Очистка пространства от мебели используя Nano Banana.
 
     Args:
         photo_file_id: ID фото из Telegram
@@ -603,7 +437,7 @@ async def clear_space_with_kie(
     logger.info("="*70)
 
     try:
-        logger.info("📸 Получение фото из Telegram...")
+        logger.info("📈 Получение фото из Telegram...")
         image_url = await get_telegram_file_url(photo_file_id, bot_token)
 
         if not image_url:
@@ -613,13 +447,12 @@ async def clear_space_with_kie(
         prompt = build_clear_space_prompt()
         logger.info(f"📄 Промпт очистки: {prompt}")
 
-        client = FluxKontextClient()
-        result = await client.generate_interior_design(
-            image_url=image_url,
+        client = NanoBananaClient()
+        result = await client.edit_image(
+            image_urls=[image_url],
             prompt=prompt,
-            strength=0.9,  # Более сильное воздействие для очистки
-            steps=30,
-            guidance_scale=8.5,
+            output_format="png",
+            image_size="auto",
         )
 
         return result
@@ -629,33 +462,12 @@ async def clear_space_with_kie(
         return None
 
 
-# ========================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-# ========================================
-
-async def check_kie_api_health() -> bool:
-    """
-    Проверить доступность Kie.ai API и баланс.
-
-    Returns:
-        True если API доступен и есть кредиты
-    """
-    try:
-        client = KieApiClient()
-        credits = await client.check_credits()
-        return credits is not None and credits > 0
-    except Exception as e:
-        logger.error(f"❌ Ошибка проверки API: {e}")
-        return False
-
-
 if __name__ == "__main__":
     # Для тестирования
     import asyncio
 
     async def test():
         client = KieApiClient()
-        info = await client.get_account_info()
-        logger.info(f"Account Info: {info}")
+        logger.info("KieApiClient initialized")
 
     asyncio.run(test())
