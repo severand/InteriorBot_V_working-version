@@ -1,12 +1,13 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.2 (2025-12-23) - ОБНОВЛеНО: От prompt translation integration
+# ВЕРСИЯ: 3.3 (2025-12-23) - ДОБАВЛЕНА ФУНКЦИЯ ДЛЯ ТЕКСТОВЫХ ПРОМПТОВ
 # АВТОР: Project Owner
 # https://docs.kie.ai/market/google/nano-banana
 # https://docs.kie.ai/market/google/nano-banana-edit
 # ========================================
-# [‵2025-12-23 15:30] ОБНОВЛЕНО: интеграция с translator.py
+# [2025-12-23 15:30] ОБНОВЛЕНО: интеграция с translator.py
+# [2025-12-23 23:02] ДОБАВЛЕНО: generate_interior_with_text_nano_banana() для поддержки текстовых промптов
 
 import os
 import logging
@@ -352,7 +353,8 @@ async def generate_interior_with_nano_banana(
 ) -> Optional[str]:
     """
     Генерация дизайна интерьера через Nano Banana (Kie.ai).
-    [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
+    [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
+    [2025-12-23 23:02] ПРИМЕЧАНИЕ: Это использует предустановленный style (room + style from design_styles)
     """
     logger.info("="*70)
     logger.info("⚡ ГЕНЕРАЦИЯ ДИЗАЙНА [NANO BANANA via Kie.ai]")
@@ -368,7 +370,7 @@ async def generate_interior_with_nano_banana(
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
+        # [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
         prompt = await build_design_prompt(style, room, translate=True)
         logger.info(f"📄 Промпт сгенерирован и переведен (длина: {len(prompt)} символов)")
 
@@ -387,13 +389,84 @@ async def generate_interior_with_nano_banana(
         return None
 
 
+async def generate_interior_with_text_nano_banana(
+    photo_file_id: str,
+    user_prompt: str,
+    bot_token: str,
+    scene_type: str = "custom",
+) -> Optional[str]:
+    """
+    Генерация дизайна с текстовым промптом от пользователя через Nano Banana.
+    
+    [2025-12-23 23:02] ДОБАВЛЕНО: Новая функция для поддержки текстовых промптов
+    
+    Используется для:
+    - "Другого помещения"
+    - Экстерьера (дом, участок)
+    - Любого кастомного текстового введения
+    
+    Args:
+        photo_file_id: ID фото из Telegram
+        user_prompt: Текстовый промпт от пользователя (ВАЖНО!)
+        bot_token: Токен бота Telegram
+        scene_type: Тип сцены (house_exterior, plot_exterior, other_room, custom)
+    
+    Returns:
+        URL сгенерированного изображения или None
+    """
+    logger.info("="*70)
+    logger.info("✍️  ГЕНЕРАЦИЯ С ТЕКСТОВЫМ ПРОМПТОМ [NANO BANANA via Kie.ai]")
+    logger.info(f"   Сцена: {scene_type}")
+    logger.info(f"   Пользовательский промпт: {user_prompt[:100]}...")
+    logger.info("="*70)
+
+    try:
+        logger.info("📃 Получение фото из Telegram...")
+        image_url = await get_telegram_file_url(photo_file_id, bot_token)
+
+        if not image_url:
+            logger.error("❌ Не удалось получить URL фото")
+            return None
+
+        # 🔥 КЛЮЧЕВОЙ МОМЕНТ: Используем пользовательский промпт напрямую (с переводом если нужно)
+        # Можно добавить автоматический перевод если нужно
+        from services.translator import translate_to_english
+        
+        try:
+            english_prompt = await translate_to_english(user_prompt)
+            logger.info(f"📄 Промпт переведен на английский")
+        except Exception as translate_error:
+            logger.warning(f"⚠️  Не удалось перевести, используем оригинальный: {translate_error}")
+            english_prompt = user_prompt
+
+        # Добавляем контекст генерации к промпту
+        full_prompt = f"Create a photorealistic {scene_type} design based on the user's request: {english_prompt}"
+        
+        logger.info(f"📄 Полный промпт для KIE.AI:")
+        logger.info(f"   {full_prompt}")
+
+        client = NanoBananaClient()
+        result = await client.edit_image(
+            image_urls=[image_url],
+            prompt=full_prompt,
+            output_format="png",
+            image_size="auto",
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка при генерации с текстовым промптом: {e}")
+        return None
+
+
 async def clear_space_with_kie(
     photo_file_id: str,
     bot_token: str,
 ) -> Optional[str]:
     """
     Очистка пространства через Nano Banana.
-    [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
+    [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
     """
     logger.info("="*70)
     logger.info("🧾 ОЧИСТКА ПОСТРАНСТВА [Kie.ai]")
@@ -407,7 +480,7 @@ async def clear_space_with_kie(
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # [‵2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
+        # [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
         prompt = await build_clear_space_prompt(translate=True)
         logger.info(f"📄 Промпт очистки (переведен): {prompt}")
 
