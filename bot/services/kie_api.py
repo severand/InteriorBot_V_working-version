@@ -1,7 +1,7 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.0 (2025-12-23) - CORRECT ENDPOINT
+# ВЕРСИЯ: 3.1 (2025-12-23) - DETAILED LOGGING
 # АВТОР: Project Owner
 # ========================================
 
@@ -115,6 +115,27 @@ class KieApiClient:
 
         if callback_url:
             data["callBackUrl"] = callback_url
+
+        # 🔥 ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ЗАПРОСА
+        logger.info("")
+        logger.info("=" * 70)
+        logger.info("📤 KIE.AI REQUEST DETAILS")
+        logger.info("=" * 70)
+        logger.info(f"Model: {model}")
+        logger.info(f"Image URLs: {input_data.get('image_urls', [])}")
+        logger.info(f"Output Format: {input_data.get('output_format')}")
+        logger.info(f"Image Size: {input_data.get('image_size')}")
+        logger.info("")
+        logger.info("📝 FULL PROMPT SENT TO KIE.AI:")
+        logger.info("-" * 70)
+        prompt = input_data.get('prompt', '')
+        # Логируем промпт построчно для читаемости
+        for line in prompt.split('\n'):
+            if line.strip():
+                logger.info(f"   {line}")
+        logger.info("-" * 70)
+        logger.info("=" * 70)
+        logger.info("")
 
         logger.debug(f"📤 Отправка задачи...")
         response = await self._make_request("POST", KIE_API_CREATE_ENDPOINT, data)
@@ -343,7 +364,7 @@ async def generate_interior_with_nano_banana(
             return None
 
         prompt = build_design_prompt(style, room)
-        logger.info(f"📄 Промпт: {prompt[:200]}...")
+        logger.info(f"📄 Промпт сгенерирован (длина: {len(prompt)} символов)")
 
         client = NanoBananaClient()
         result = await client.edit_image(
