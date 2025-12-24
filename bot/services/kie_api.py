@@ -1,14 +1,16 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.4 (2025-12-23 23:20) - ИСПРАВЛЕНЫ ИМПОРТЫ ДЛЯ ТЕКСТОВЫХ ПРОМПТОВ
+# ВЕРСИЯ: 3.5 (2025-12-24 08:18) - ДОБАВЛЕНА ПОДДЕРЖКА PRO РЕЖИМА
 # АВТОР: Project Owner
 # https://docs.kie.ai/market/google/nano-banana
 # https://docs.kie.ai/market/google/nano-banana-edit
+# https://docs.kie.ai/market/google/pro-image-to-image [НОВОЕ 2025-12-24]
 # ========================================
 # [2025-12-23 15:30] ОБНОВЛЕНО: интеграция с translator.py
 # [2025-12-23 23:02] ДОБАВЛЕНО: generate_interior_with_text_nano_banana() для поддержки текстовых промптов
 # [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт translate_to_english в начало файла
+# [2025-12-24 08:18] ДОБАВЛЕНО: Поддержка KIE.AI PRO режима (nano-banana-pro)
 
 import os
 import logging
@@ -18,6 +20,7 @@ import asyncio
 import time
 from typing import Optional, Dict, Any, List
 from config import config
+from config_kie import config_kie
 
 from services.design_styles import get_room_name, get_style_description, is_valid_room, is_valid_style
 from services.prompts import build_design_prompt, build_clear_space_prompt
@@ -32,16 +35,17 @@ logger = logging.getLogger(__name__)
 KIE_API_BASE_URL = "https://api.kie.ai"
 KIE_API_CREATE_ENDPOINT = "api/v1/jobs/createTask"
 KIE_API_STATUS_ENDPOINT = "api/v1/jobs/recordInfo"  # ✅ ПРАВИЛЬНЫЙ ENDPOINT!
-KIE_API_TIMEOUT = 300  # 5 минут
-
 KIE_API_POLLING_INTERVAL = 3  # Проверять каждые 3 секунды
 KIE_API_MAX_POLLS = 100  # Макс 100 попыток = 5 минут
 
 # Модели
+# [НОВОЕ 2025-12-24] ДОБАВЛЕНы PRO модели: nano-banana-pro
 MODELS = {
     "image_generation": {
         "nano_banana": "google/nano-banana",
         "nano_banana_edit": "google/nano-banana-edit",
+        "nano_banana_pro": "nano-banana-pro",  # [НОВОЕ 2025-12-24]
+        "nano_banana_pro_edit": "nano-banana-pro",  # [НОВОЕ 2025-12-24]
     },
 }
 
@@ -49,12 +53,14 @@ MODELS = {
 class KieApiClient:
     """
     Клиент для работы с Kie.ai API (Nano Banana).
+    [НОВОЕ 2025-12-24] Поддерживает новые PRO модели.
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, use_pro: bool = False):
         self.api_key = api_key or os.getenv('KIE_API_KEY') or getattr(config, 'KIE_API_KEY', None)
         self.base_url = KIE_API_BASE_URL
-        self.timeout = KIE_API_TIMEOUT
+        self.use_pro = use_pro or config_kie.USE_PRO_MODEL  # [НОВОЕ 2025-12-24]
+        self.timeout = config_kie.KIE_API_TIMEOUT  # динамический таймаут [НОВОЕ 2025-12-24]
 
         if not self.api_key:
             logger.warning("⚠️  KIE_API_KEY не установлен")
@@ -110,7 +116,7 @@ class KieApiClient:
         callback_url: Optional[str] = None,
     ) -> Optional[str]:
         """
-        Создать задачу генерации.
+        Креать задачу генерации.
 
         Returns:
             Task ID или None
@@ -129,9 +135,25 @@ class KieApiClient:
         logger.info("📄 KIE.AI REQUEST DETAILS")
         logger.info("="*70)
         logger.info(f"Model: {model}")
-        logger.info(f"Image URLs: {input_data.get('image_urls', [])}")
+        
+        # [НОВОЕ 2025-12-24] Логирование режима
+        mode_str = "🕹 PRO" if self.use_pro else "📋 BASE"
+        logger.info(f"Mode: {mode_str}")
+        
+        if input_data.get('image_urls'):
+            logger.info(f"Image URLs: {input_data.get('image_urls', [])}")
+        elif input_data.get('image_input'):
+            logger.info(f"Image Input: {input_data.get('image_input', [])}")
+        
         logger.info(f"Output Format: {input_data.get('output_format')}")
-        logger.info(f"Image Size: {input_data.get('image_size')}")
+        
+        if input_data.get('image_size'):
+            logger.info(f"Image Size (BASE): {input_data.get('image_size')}")
+        if input_data.get('aspect_ratio'):
+            logger.info(f"Aspect Ratio (PRO): {input_data.get('aspect_ratio')}")
+        if input_data.get('resolution'):
+            logger.info(f"Resolution (PRO): {input_data.get('resolution')}")
+        
         logger.info("")
         logger.info("📄 FULL PROMPT SENT TO KIE.AI:")
         logger.info("-"*70)
@@ -242,6 +264,7 @@ class KieApiClient:
 class NanoBananaClient(KieApiClient):
     """
     Клиент для Google Nano Banana через Kie.ai
+    [НОВОЕ 2025-12-24] Поддерживает PRO модели.
     """
 
     async def text_to_image(
@@ -249,26 +272,51 @@ class NanoBananaClient(KieApiClient):
         prompt: str,
         output_format: str = "png",
         image_size: str = "16:9",
+        use_pro: Optional[bool] = None,  # [НОВОЕ 2025-12-24]
+        aspect_ratio: Optional[str] = None,  # [НОВОЕ 2025-12-24]
+        resolution: Optional[str] = None,  # [НОВОЕ 2025-12-24]
     ) -> Optional[str]:
-        """Генерация изображения из текста."""
+        """
+        Генерация изображения из текста.
+        [НОВОЕ 2025-12-24] Поддерживает PRO режим.
+        """
         logger.info("="*70)
-        logger.info("🎈 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana)")
+        
+        # Установить режим
+        use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
+        
+        if use_pro_mode:
+            logger.info("🕹 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana PRO)")
+        else:
+            logger.info("📋 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana BASE)")
+        
         logger.info(f"   Промпт: {prompt[:100]}...")
-        logger.info(f"   Размер: {image_size}")
+        logger.info(f"   Размер: {aspect_ratio if use_pro_mode else image_size}")
         logger.info("="*70)
 
         if not self.api_key:
             logger.error("❌ KIE_API_KEY не установлен")
             return None
 
-        input_data = {
-            "prompt": prompt,
-            "output_format": output_format,
-            "image_size": image_size,
-        }
+        # [НОВОЕ 2025-12-24] Условная логика для PRO и BASE режимов
+        if use_pro_mode:
+            input_data = {
+                "prompt": prompt,
+                "output_format": output_format,
+                "aspect_ratio": aspect_ratio or config_kie.KIE_NANO_BANANA_PRO_ASPECT,
+                "resolution": resolution or config_kie.KIE_NANO_BANANA_PRO_RESOLUTION,
+            }
+            model = MODELS["image_generation"]["nano_banana_pro"]
+        else:
+            input_data = {
+                "prompt": prompt,
+                "output_format": output_format,
+                "image_size": image_size,
+            }
+            model = MODELS["image_generation"]["nano_banana"]
 
         task_id = await self.create_generation_task(
-            model=MODELS["image_generation"]["nano_banana"],
+            model=model,
             input_data=input_data,
         )
 
@@ -284,10 +332,24 @@ class NanoBananaClient(KieApiClient):
         prompt: str,
         output_format: str = "png",
         image_size: str = "auto",
+        use_pro: Optional[bool] = None,  # [НОВОЕ 2025-12-24]
+        aspect_ratio: Optional[str] = None,  # [НОВОЕ 2025-12-24]
+        resolution: Optional[str] = None,  # [НОВОЕ 2025-12-24]
     ) -> Optional[str]:
-        """Редактирование изображения."""
+        """
+        Редактирование изображения.
+        [НОВОЕ 2025-12-24] Поддерживает PRO режим.
+        """
         logger.info("="*70)
-        logger.info("✍️  ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana Edit)")
+        
+        # Установить режим
+        use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
+        
+        if use_pro_mode:
+            logger.info("🕹 ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana PRO)")
+        else:
+            logger.info("📋 ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana BASE)")
+        
         logger.info(f"   Промпт: {prompt[:100]}...")
         logger.info(f"   Кол-во изображений: {len(image_urls)}")
         logger.info("="*70)
@@ -296,15 +358,29 @@ class NanoBananaClient(KieApiClient):
             logger.error("❌ KIE_API_KEY не установлен")
             return None
 
-        input_data = {
-            "image_urls": image_urls,
-            "prompt": prompt,
-            "output_format": output_format,
-            "image_size": image_size,
-        }
+        # [НОВОЕ 2025-12-24] КРИТИЧНОЕ: Ключи параметров разные!
+        # BASE: image_urls, image_size
+        # PRO: image_input, aspect_ratio, resolution
+        if use_pro_mode:
+            input_data = {
+                "image_input": image_urls,  # ✅ ПРО: image_input (NOT image_urls!)
+                "prompt": prompt,
+                "output_format": output_format,
+                "aspect_ratio": aspect_ratio or config_kie.KIE_NANO_BANANA_PRO_ASPECT,
+                "resolution": resolution or config_kie.KIE_NANO_BANANA_PRO_RESOLUTION,
+            }
+            model = MODELS["image_generation"]["nano_banana_pro_edit"]
+        else:
+            input_data = {
+                "image_urls": image_urls,  # ✅ BASE: image_urls
+                "prompt": prompt,
+                "output_format": output_format,
+                "image_size": image_size,
+            }
+            model = MODELS["image_generation"]["nano_banana_edit"]
 
         task_id = await self.create_generation_task(
-            model=MODELS["image_generation"]["nano_banana_edit"],
+            model=model,
             input_data=input_data,
         )
 
@@ -352,11 +428,13 @@ async def generate_interior_with_nano_banana(
     room: str,
     style: str,
     bot_token: str,
+    use_pro: Optional[bool] = None,  # [НОВОЕ 2025-12-24]
 ) -> Optional[str]:
     """
     Генерация дизайна интерьера через Nano Banana (Kie.ai).
     [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
     [2025-12-23 23:02] ПРИМЕЧАНИЕ: Это использует предустановленный style (room + style from design_styles)
+    [НОВОЕ 2025-12-24] ДОБАВЛена поддержка PRO режима
     """
     logger.info("="*70)
     logger.info("⚡ ГЕНЕРАЦИЯ ДИЗАЙНА [NANO BANANA via Kie.ai]")
@@ -376,12 +454,18 @@ async def generate_interior_with_nano_banana(
         prompt = await build_design_prompt(style, room, translate=True)
         logger.info(f"📄 Промпт сгенерирован и переведен (длина: {len(prompt)} символов)")
 
-        client = NanoBananaClient()
+        # [НОВОЕ 2025-12-24] Передать режим PRO в клиент
+        use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
+        
+        client = NanoBananaClient(use_pro=use_pro_mode)
         result = await client.edit_image(
             image_urls=[image_url],
             prompt=prompt,
             output_format="png",
             image_size="auto",
+            use_pro=use_pro_mode,  # [НОВОЕ 2025-12-24]
+            aspect_ratio=config_kie.KIE_NANO_BANANA_PRO_ASPECT if use_pro_mode else None,
+            resolution=config_kie.KIE_NANO_BANANA_PRO_RESOLUTION if use_pro_mode else None,
         )
 
         return result
@@ -396,12 +480,14 @@ async def generate_interior_with_text_nano_banana(
     user_prompt: str,
     bot_token: str,
     scene_type: str = "custom",
+    use_pro: Optional[bool] = None,  # [НОВОЕ 2025-12-24]
 ) -> Optional[str]:
     """
     Генерация дизайна с текстовым промптом от пользователя через Nano Banana.
     
     [2025-12-23 23:02] ДОБАВЛЕНО: Новая функция для поддержки текстовых промптов
     [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт в начало файла
+    [НОВОЕ 2025-12-24] ДОБАВЛена поддержка PRO режима
     
     Используется для:
     - "Другого помещения"
@@ -413,6 +499,7 @@ async def generate_interior_with_text_nano_banana(
         user_prompt: Текстовый промпт от пользователя (ВАЖНО!)
         bot_token: Токен бота Telegram
         scene_type: Тип сцены (house_exterior, plot_exterior, other_room, custom)
+        use_pro: Использовать PRO режим [НОВОЕ 2025-12-24]
     
     Returns:
         URL сгенерированного изображения или None
@@ -432,7 +519,7 @@ async def generate_interior_with_text_nano_banana(
             return None
 
         # ✅ ИСПРАВЛЕНО: Импорт в начало файла, используем напрямую
-        logger.info("📝 Перевод промпта на английский...")
+        logger.info("📄 Перевод промпта на английский...")
         try:
             english_prompt = await translate_to_english(user_prompt)
             logger.info(f"✅ Промпт переведен на английский")
@@ -446,12 +533,18 @@ async def generate_interior_with_text_nano_banana(
         logger.info(f"📄 Полный промпт для KIE.AI:")
         logger.info(f"   {full_prompt}")
 
-        client = NanoBananaClient()
+        # [НОВОЕ 2025-12-24] Передать режим PRO в клиент
+        use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
+        
+        client = NanoBananaClient(use_pro=use_pro_mode)
         result = await client.edit_image(
             image_urls=[image_url],
             prompt=full_prompt,
             output_format="png",
             image_size="auto",
+            use_pro=use_pro_mode,  # [НОВОЕ 2025-12-24]
+            aspect_ratio=config_kie.KIE_NANO_BANANA_PRO_ASPECT if use_pro_mode else None,
+            resolution=config_kie.KIE_NANO_BANANA_PRO_RESOLUTION if use_pro_mode else None,
         )
 
         return result
@@ -464,13 +557,15 @@ async def generate_interior_with_text_nano_banana(
 async def clear_space_with_kie(
     photo_file_id: str,
     bot_token: str,
+    use_pro: Optional[bool] = None,  # [НОВОЕ 2025-12-24]
 ) -> Optional[str]:
     """
     Очистка пространства через Nano Banana.
     [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
+    [НОВОЕ 2025-12-24] ДОБАВЛена поддержка PRO режима
     """
     logger.info("="*70)
-    logger.info("🧾 ОЧИСТКА ПРОСТРАНСТВА [Kie.ai]")
+    logger.info("📋 ОЧИСТКА ПРОСТРАНСТВА [Kie.ai]")
     logger.info("="*70)
 
     try:
@@ -485,12 +580,18 @@ async def clear_space_with_kie(
         prompt = await build_clear_space_prompt(translate=True)
         logger.info(f"📄 Промпт очистки (переведен): {prompt}")
 
-        client = NanoBananaClient()
+        # [НОВОЕ 2025-12-24] Передать режим PRO в клиент
+        use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
+        
+        client = NanoBananaClient(use_pro=use_pro_mode)
         result = await client.edit_image(
             image_urls=[image_url],
             prompt=prompt,
             output_format="png",
             image_size="auto",
+            use_pro=use_pro_mode,  # [НОВОЕ 2025-12-24]
+            aspect_ratio=config_kie.KIE_NANO_BANANA_PRO_ASPECT if use_pro_mode else None,
+            resolution=config_kie.KIE_NANO_BANANA_PRO_RESOLUTION if use_pro_mode else None,
         )
 
         return result
