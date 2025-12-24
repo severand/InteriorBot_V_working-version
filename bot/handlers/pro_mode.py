@@ -9,19 +9,23 @@
 
 PHASE 3 TASK 4: УБРАЛИ ВСЕ TODO, ПОДКЛЮЧИЛИ БД
 Дата: 2025-12-24 13:35
+
+PHASE 3 TASK 5: ИСПРАВЛЕНЫ ИМПОРТЫ (2025-12-24 19:52)
+- Изменены абсолютные импорты на относительные
+- Исправлено ModuleNotFoundError: No module named 'bot'
 """
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 
-from bot.states.fsm import ProModeStates
-from bot.keyboards.inline import (
+from states.fsm import ProModeStates
+from keyboards.inline import (
     get_mode_selection_keyboard,
     get_pro_params_keyboard
 )
-from bot.utils.navigation import edit_menu
-from bot.database.db import db
+from utils.navigation import edit_menu
+from database.db import db
 from config import logger
 
 router = Router()
