@@ -20,6 +20,9 @@ PHASE 3 TASK 6: ОБНОВЛЕН СИНТАКСИС AIOGRAM 3.X (2025-12-24 20:0
 
 PHASE 3 TASK 7: ОКОНЧАТЕЛЬНО ОБНОВЛЕН StateFilter (2025-12-24 20:08)
 - Перенесен импорт: from aiogram.filters import StateFilter
+
+PHASE 3 TASK 8: ПЕРЕНАМЕНОВАН router → pro_mode_router (2025-12-24 20:11)
+- router → pro_mode_router (для корректного импорта в main.py)
 """
 
 from aiogram import Router, F
@@ -36,13 +39,13 @@ from utils.navigation import edit_menu
 from database.db import db
 from config import logger
 
-router = Router()
+pro_mode_router = Router()
 
 
 # ============================================
 # HANDLER 1: Show mode selection screen
 # ============================================
-@router.callback_query(F.data == "profile_settings")
+@pro_mode_router.callback_query(F.data == "profile_settings")
 async def show_mode_selection(callback: CallbackQuery, state: FSMContext):
     """
     Показать экран выбора режима (СТАНДАРТ vs PRO)
@@ -108,7 +111,7 @@ async def show_mode_selection(callback: CallbackQuery, state: FSMContext):
 # ============================================
 # HANDLER 2: Select STANDARD mode
 # ============================================
-@router.callback_query(F.data == "mode_std", StateFilter(ProModeStates.choosing_mode))
+@pro_mode_router.callback_query(F.data == "mode_std", StateFilter(ProModeStates.choosing_mode))
 async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
     """
     Пользователь выбрал СТАНДАРТ
@@ -167,7 +170,7 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
 # ============================================
 # HANDLER 3: Select PRO mode
 # ============================================
-@router.callback_query(F.data == "mode_pro", StateFilter(ProModeStates.choosing_mode))
+@pro_mode_router.callback_query(F.data == "mode_pro", StateFilter(ProModeStates.choosing_mode))
 async def select_pro_mode(callback: CallbackQuery, state: FSMContext):
     """
     Пользователь выбрал PRO - показываем параметры PRO
@@ -240,7 +243,7 @@ async def select_pro_mode(callback: CallbackQuery, state: FSMContext):
 # ============================================
 # HANDLER 4: Select aspect ratio
 # ============================================
-@router.callback_query(F.data.startswith("aspect_"), StateFilter(ProModeStates.choosing_pro_params))
+@pro_mode_router.callback_query(F.data.startswith("aspect_"), StateFilter(ProModeStates.choosing_pro_params))
 async def select_aspect_ratio(callback: CallbackQuery, state: FSMContext):
     """
     Пользователь выбрал соотношение сторон
@@ -308,7 +311,7 @@ async def select_aspect_ratio(callback: CallbackQuery, state: FSMContext):
 # ============================================
 # HANDLER 5: Select resolution
 # ============================================
-@router.callback_query(F.data.startswith("res_"), StateFilter(ProModeStates.choosing_pro_params))
+@pro_mode_router.callback_query(F.data.startswith("res_"), StateFilter(ProModeStates.choosing_pro_params))
 async def select_resolution(callback: CallbackQuery, state: FSMContext):
     """
     Пользователь выбрал разрешение
@@ -380,7 +383,7 @@ async def select_resolution(callback: CallbackQuery, state: FSMContext):
 # ============================================
 # HANDLER 6: Back to mode selection
 # ============================================
-@router.callback_query(F.data == "profile_settings", StateFilter(ProModeStates.choosing_pro_params))
+@pro_mode_router.callback_query(F.data == "profile_settings", StateFilter(ProModeStates.choosing_pro_params))
 async def back_to_mode_selection(callback: CallbackQuery, state: FSMContext):
     """
     Вернуться из параметров PRO обратно в выбор режима
