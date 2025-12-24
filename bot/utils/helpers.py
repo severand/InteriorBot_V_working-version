@@ -1,6 +1,7 @@
 # --- Обновлен: bot/utils/helpers.py ---
 # [2025-12-03 19:32] Добавлена функция add_balance_to_text для автоматического отображения баланса
 # [2025-12-24 12:44] Добавлена функция add_balance_and_mode_to_text для header с режимом
+# [2025-12-24 21:38] ИСПРАВЛЕНА: header должен быть ВНИЗУ, emoji без квадратиков
 
 import asyncio
 import logging
@@ -67,33 +68,33 @@ async def add_balance_to_text(text: str, user_id: int) -> str:
         user_id: ID пользователя
 
     Returns:
-        Текст с добавленным балансом
+        Текст с добавленным балансом в конце
     """
     try:
         balance = await db.get_balance(user_id)
-        balance_text = f"\n\n{'─' * 20}\n💎 **Баланс генераций:** {balance}"
-        return text + balance_text
+        balance_footer = f"\n\n{'─' * 36}\nБаланс генераций: {balance}"
+        return text + balance_footer
     except Exception as e:
         logger.error(f"Ошибка получения баланса для {user_id}: {e}")
         return text
 
 
-# ===== НОВАЯ ФУНКЦИЯ ДЛЯ HEADER С РЕЖИМОМ =====
+# ===== НОВАЯ ИСПРАВЛЕННАЯ ФУНКЦИЯ ДЛЯ FOOTER С РЕЖИМОМ И БАЛАНСОМ =====
 
 async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
     """
-    Добавляет header с информацией о балансе и текущем режиме в начало текста.
+    Добавляет footer с информацией о балансе и текущем режиме В КОНЕЦ текста.
     
-    Header формат:
-    ⚡ Баланс: 15 | Режим: 📋 СТАНДАРТ
+    Footer формат (в конце текста):
     ────────────────────────────────────
+    Баланс: 15 | Режим: PRO
 
     Args:
         text: Исходный текст сообщения
         user_id: ID пользователя
 
     Returns:
-        Текст с добавленным header'ом
+        Текст с добавленным footer'ом в конце
         
     Raises:
         Exception: Логируется и возвращается исходный текст
@@ -104,30 +105,30 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
         ...     user_id=123
         ... )
         >>> print(result)
-        ⚡ Баланс: 15 | Режим: 🔧 PRO
-        ────────────────────────────────────
-        
         Выбери стиль дизайна:
+        
+        ────────────────────────────────────
+        Баланс: 15 | Режим: PRO
     """
     try:
         # Получаем баланс и настройки режима
         balance = await db.get_balance(user_id)
         pro_settings = await db.get_user_pro_settings(user_id)
         
-        # Определяем иконку и название режима
+        # Определяем иконку и название режима (без квадратиков!)
         is_pro = pro_settings.get('pro_mode', False)
         mode_icon = "🔧" if is_pro else "📋"
         mode_name = "PRO" if is_pro else "СТАНДАРТ"
         
-        # Формируем header
+        # Формируем footer В КОНЦЕ текста
         separator = "─" * 36
-        header = f"⚡ Баланс: {balance} | Режим: {mode_icon} {mode_name}\n{separator}\n\n"
+        footer = f"\n\n{separator}\nБаланс: {balance} | Режим: {mode_icon} {mode_name}"
         
-        logger.debug(f"Header сформирован для user {user_id}: {mode_name} mode, balance {balance}")
+        logger.debug(f"Footer сформирован для user {user_id}: {mode_name} mode, balance {balance}")
         
-        return header + text
+        return text + footer
         
     except Exception as e:
-        logger.error(f"Ошибка формирования header для user {user_id}: {e}")
-        # Возвращаем исходный текст без header'а если ошибка
+        logger.error(f"Ошибка формирования footer для user {user_id}: {e}")
+        # Возвращаем исходный текст без footer'а если ошибка
         return text
