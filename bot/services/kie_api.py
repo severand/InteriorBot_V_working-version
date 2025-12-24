@@ -1,7 +1,7 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.5 (2025-12-24) - PRO MODE ПЕРЕдаЮТСЯ В API (TASK 7)
+# ВЕРСИЯ: 3.4 (2025-12-23 23:20) - ИСПРАВЛЕНЫ ИМПОРТЫ ДЛЯ ТЕКСТОВЫХ ПРОМПТОВ
 # АВТОР: Project Owner
 # https://docs.kie.ai/market/google/nano-banana
 # https://docs.kie.ai/market/google/nano-banana-edit
@@ -9,10 +9,6 @@
 # [2025-12-23 15:30] ОБНОВЛЕНО: интеграция с translator.py
 # [2025-12-23 23:02] ДОБАВЛЕНО: generate_interior_with_text_nano_banana() для поддержки текстовых промптов
 # [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт translate_to_english в начало файла
-# [2025-12-24 14:31] ДОБАВЛЕНО: pro_mode параметр во все функции генерации (TASK 7)
-# [2025-12-24 14:31] ОБНОВЛЕНО: generate_interior_with_nano_banana теперь передает pro_mode в input_data
-# [2025-12-24 14:31] ОБНОВЛЕНО: generate_interior_with_text_nano_banana теперь передает pro_mode в input_data
-# [2025-12-24 14:31] ОБНОВЛЕНО: clear_space_with_kie теперь передает pro_mode в input_data
 
 import os
 import logging
@@ -136,7 +132,6 @@ class KieApiClient:
         logger.info(f"Image URLs: {input_data.get('image_urls', [])}")
         logger.info(f"Output Format: {input_data.get('output_format')}")
         logger.info(f"Image Size: {input_data.get('image_size')}")
-        logger.info(f"PRO Mode: {'✅ YES' if input_data.get('pro_mode', False) else '❌ NO'}")  # НОВОЕ: TASK 7
         logger.info("")
         logger.info("📄 FULL PROMPT SENT TO KIE.AI:")
         logger.info("-"*70)
@@ -289,18 +284,12 @@ class NanoBananaClient(KieApiClient):
         prompt: str,
         output_format: str = "png",
         image_size: str = "auto",
-        pro_mode: bool = False,  # НОВОЕ: 2025-12-24 TASK 7 - параметр PRO
     ) -> Optional[str]:
-        """
-        Редактирование изображения.
-        
-        [2025-12-24 TASK 7] Теперь передает pro_mode в input_data
-        """
+        """Редактирование изображения."""
         logger.info("="*70)
         logger.info("✍️  ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana Edit)")
         logger.info(f"   Промпт: {prompt[:100]}...")
         logger.info(f"   Кол-во изображений: {len(image_urls)}")
-        logger.info(f"   PRO Mode: {'✅ YES' if pro_mode else '❌ NO'}")  # НОВОЕ: TASK 7
         logger.info("="*70)
 
         if not self.api_key:
@@ -312,7 +301,6 @@ class NanoBananaClient(KieApiClient):
             "prompt": prompt,
             "output_format": output_format,
             "image_size": image_size,
-            "pro_mode": pro_mode,  # ✅ НОВОЕ 2025-12-24: ПРО режим передается в KIE API!
         }
 
         task_id = await self.create_generation_task(
@@ -364,19 +352,16 @@ async def generate_interior_with_nano_banana(
     room: str,
     style: str,
     bot_token: str,
-    pro_mode: bool = False,  # НОВОЕ: 2025-12-24 TASK 7 - параметр PRO
 ) -> Optional[str]:
     """
     Генерация дизайна интерьера через Nano Banana (Kie.ai).
     [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод на английский
-    [2025-12-23 23:02] ПРИМЕЧАНИЕ: То использует предустановленный style (room + style from design_styles)
-    [2025-12-24 14:31] ОБНОвЛЕНО: Передача pro_mode в edit_image
+    [2025-12-23 23:02] ПРИМЕЧАНИЕ: Это использует предустановленный style (room + style from design_styles)
     """
     logger.info("="*70)
     logger.info("⚡ ГЕНЕРАЦИЯ ДИЗАЙНА [NANO BANANA via Kie.ai]")
     logger.info(f"   Комната: {room}")
     logger.info(f"   Стиль: {style}")
-    logger.info(f"   PRO Mode: {'✅ YES' if pro_mode else '❌ NO'}")  # НОВОЕ: TASK 7
     logger.info("="*70)
 
     try:
@@ -389,7 +374,7 @@ async def generate_interior_with_nano_banana(
 
         # [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод на английский
         prompt = await build_design_prompt(style, room, translate=True)
-        logger.info(f"📄 Промпт сгенерирован (длина: {len(prompt)} символов)")
+        logger.info(f"📄 Промпт сгенерирован и переведен (длина: {len(prompt)} символов)")
 
         client = NanoBananaClient()
         result = await client.edit_image(
@@ -397,7 +382,6 @@ async def generate_interior_with_nano_banana(
             prompt=prompt,
             output_format="png",
             image_size="auto",
-            pro_mode=pro_mode,  # ✅ НОВОЕ 2025-12-24: PRO режим передается
         )
 
         return result
@@ -412,14 +396,12 @@ async def generate_interior_with_text_nano_banana(
     user_prompt: str,
     bot_token: str,
     scene_type: str = "custom",
-    pro_mode: bool = False,  # НОВОЕ: 2025-12-24 TASK 7 - параметр PRO
 ) -> Optional[str]:
     """
     Генерация дизайна с текстовым промптом от пользователя через Nano Banana.
     
     [2025-12-23 23:02] ДОБАВЛЕНО: Новая функция для поддержки текстовых промптов
     [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт в начало файла
-    [2025-12-24 14:31] ОБНОвЛЕНО: Передача pro_mode в edit_image
     
     Используется для:
     - "Другого помещения"
@@ -431,7 +413,6 @@ async def generate_interior_with_text_nano_banana(
         user_prompt: Текстовый промпт от пользователя (ВАЖНО!)
         bot_token: Токен бота Telegram
         scene_type: Тип сцены (house_exterior, plot_exterior, other_room, custom)
-        pro_mode: PRO режим генерации
     
     Returns:
         URL сгенерированного изображения или None
@@ -440,7 +421,6 @@ async def generate_interior_with_text_nano_banana(
     logger.info("✍️  ГЕНЕРАЦИЯ С ТЕКСТОВЫМ ПРОМПТОМ [NANO BANANA via Kie.ai]")
     logger.info(f"   Сцена: {scene_type}")
     logger.info(f"   Пользовательский промпт: {user_prompt[:100]}...")
-    logger.info(f"   PRO Mode: {'✅ YES' if pro_mode else '❌ NO'}")  # НОВОЕ: TASK 7
     logger.info("="*70)
 
     try:
@@ -452,7 +432,7 @@ async def generate_interior_with_text_nano_banana(
             return None
 
         # ✅ ИСПРАВЛЕНО: Импорт в начало файла, используем напрямую
-        logger.info("📄 Перевод промпта на английский...")
+        logger.info("📝 Перевод промпта на английский...")
         try:
             english_prompt = await translate_to_english(user_prompt)
             logger.info(f"✅ Промпт переведен на английский")
@@ -472,7 +452,6 @@ async def generate_interior_with_text_nano_banana(
             prompt=full_prompt,
             output_format="png",
             image_size="auto",
-            pro_mode=pro_mode,  # ✅ НОВОЕ 2025-12-24: PRO режим передается
         )
 
         return result
@@ -485,16 +464,13 @@ async def generate_interior_with_text_nano_banana(
 async def clear_space_with_kie(
     photo_file_id: str,
     bot_token: str,
-    pro_mode: bool = False,  # НОВОЕ: 2025-12-24 TASK 7 - параметр PRO
 ) -> Optional[str]:
     """
     Очистка пространства через Nano Banana.
     [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод
-    [2025-12-24 14:31] ОБНОвЛЕНО: Передача pro_mode в edit_image
     """
     logger.info("="*70)
-    logger.info("🧽 ОЧИСТКА ПРОСТРАНСТВА [Kie.ai]")
-    logger.info(f"   PRO Mode: {'✅ YES' if pro_mode else '❌ NO'}")  # НОВОЕ: TASK 7
+    logger.info("🧾 ОЧИСТКА ПРОСТРАНСТВА [Kie.ai]")
     logger.info("="*70)
 
     try:
@@ -515,7 +491,6 @@ async def clear_space_with_kie(
             prompt=prompt,
             output_format="png",
             image_size="auto",
-            pro_mode=pro_mode,  # ✅ НОВОЕ 2025-12-24: PRO режим передается
         )
 
         return result

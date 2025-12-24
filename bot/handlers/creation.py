@@ -9,10 +9,6 @@
 # [2025-12-23 11:33] Заменены вызовы генерации на smart_* функции из api_fallback.py
 # [2025-12-23 11:33] Сохранена 100% совместимость с именами обработчиков кнопок
 # [2025-12-23 11:33] Добавлена логика fallback: KIE.AI -> Replicate
-# --- ОБНОВЛЕНО: 2025-12-24 - Интеграция PRO режима (TASK 5) ---
-# [2025-12-24 14:30] ДОБАВЛЕНО: Получение pro_mode статуса пользователя из БД
-# [2025-12-24 14:30] ДОБАВЛЕНО: Передача pro_mode в api_fallback функции
-# [2025-12-24 14:30] ОБНОВЛЕНО: smart_* функции теперь получают pro_mode параметр
 
 import asyncio
 import logging
@@ -36,7 +32,6 @@ from keyboards.inline import (
 )
 
 # ОБНОВЛЕНО: 2025-12-23 - Использование Smart Fallback системы
-# ОБНОВЛЕНО: 2025-12-24 - Добавлены pro_mode параметры
 from services.api_fallback import (
     smart_generate_interior,
     smart_generate_with_text,
@@ -289,14 +284,12 @@ async def interior_room_chosen(callback: CallbackQuery, state: FSMContext, admin
 
 # ===== НОВЫЙ БЛОК: ТЕКСТОВЫЙ ВВОД ДЛЯ ЭКСТЕРЬЕРА =====
 # Дата добавления: 2025-12-08
-# ОБНОВЛЕНО: 2025-12-24 - добавлено получение pro_mode и передача в API
 @router.message(CreationStates.waiting_for_exterior_prompt, F.text)
 async def exterior_prompt_received(message: Message, state: FSMContext, admins: list[int], bot_token: str):
     """
     НОВЫЙ ОБРАБОТЧИК: Получен текстовый промпт для экстерьера → запуск генерации
 
     Дата создания: 2025-12-08
-    ОБНОВЛЕНО: 2025-12-24 - Получение pro_mode из БД и передача в smart_generate_with_text
     Использует новую функцию smart_generate_with_text() из api_fallback.py
     """
     user_prompt = message.text.strip()
@@ -358,10 +351,6 @@ async def exterior_prompt_received(message: Message, state: FSMContext, admins: 
     if not is_admin:
         await db.decrease_balance(user_id)
 
-    # ===== НОВОЕ (2025-12-24): Получение pro_mode из БД =====
-    pro_mode = await db.is_pro_user(user_id)
-    logger.info(f"📱 PRO Mode для {user_id}: {pro_mode}")
-
     # Показываем прогресс
     data = await state.get_data()
     menu_id = data.get('menu_message_id')
@@ -377,14 +366,12 @@ async def exterior_prompt_received(message: Message, state: FSMContext, admins: 
             pass
 
     # ЗАПУСК ГЕНЕРАЦИИ С ТЕКСТОВЫМ ПРОМПТОМ (с использованием Smart Fallback)
-    # ОБНОВЛЕНО: 2025-12-24 - передача pro_mode в smart_generate_with_text
     try:
         result_image_url = await smart_generate_with_text(
             photo_file_id=photo_id,
             user_prompt=user_prompt,
             bot_token=bot_token,
-            scene_type=scene_type,
-            pro_mode=pro_mode  # ✅ ДОБАВЛЕНО: PRO режим
+            scene_type=scene_type
         )
         success = result_image_url is not None
     except Exception as e:
@@ -514,7 +501,6 @@ async def exterior_prompt_received(message: Message, state: FSMContext, admins: 
 
 
 # ===== НОВЫЙ БЛОК: ТЕКСТОВЫЙ ВВОД ДЛЯ "ДРУГОГО ПОМЕЩЕНИЯ" =====
-# ОБНОВЛЕНО: 2025-12-24 - добавлено получение pro_mode и передача в API
 
 @router.message(CreationStates.waiting_for_room_description, F.text)
 async def room_description_received(message: Message, state: FSMContext, admins: list[int], bot_token: str):
@@ -522,7 +508,6 @@ async def room_description_received(message: Message, state: FSMContext, admins:
     ОБНОВЛЕНО: 2025-12-08 16:01
     [2025-12-08 16:01] Добавлено сохранение file_id после отправки фото
     [2025-12-23 11:33] Обновлено для использования smart_generate_with_text из api_fallback.py
-    [2025-12-24 14:30] Обновлено: получение pro_mode из БД и передача в API
 
     НОВЫЙ ОБРАБОТЧИК: Получено описание "Другого помещения"
 
@@ -587,10 +572,6 @@ async def room_description_received(message: Message, state: FSMContext, admins:
     if not is_admin:
         await db.decrease_balance(user_id)
 
-    # ===== НОВОЕ (2025-12-24): Получение pro_mode из БД =====
-    pro_mode = await db.is_pro_user(user_id)
-    logger.info(f"📱 PRO Mode для {user_id}: {pro_mode}")
-
     # Показываем прогресс
     data = await state.get_data()
     menu_id = data.get('menu_message_id')
@@ -606,14 +587,12 @@ async def room_description_received(message: Message, state: FSMContext, admins:
             pass
 
     # ЗАПУСК ГЕНЕРАЦИИ С ТЕКСТОВЫМ ПРОМПТОМ (с использованием Smart Fallback)
-    # ОБНОВЛЕНО: 2025-12-24 - передача pro_mode в smart_generate_with_text
     try:
         result_image_url = await smart_generate_with_text(
             photo_file_id=photo_id,
             user_prompt=room_description,
             bot_token=bot_token,
-            scene_type="other_room",
-            pro_mode=pro_mode  # ✅ ДОБАВЛЕНО: PRO режим
+            scene_type="other_room"
         )
         success = result_image_url is not None
     except Exception as e:
@@ -807,7 +786,7 @@ async def continue_editing_handler(callback: CallbackQuery, state: FSMContext):
 
     else:
         # Некорректное состояние - возврат в главное меню
-        logger.warning(f"⚠️  Некорректные данные для continue_editing: scene_type={scene_type}, room={room}")
+        logger.warning(f"⚠️ Некорректные данные для continue_editing: scene_type={scene_type}, room={room}")
         await callback.answer("⚠️ Ошибка. Возврат в главное меню.", show_alert=True)
         await state.clear()
         from utils.navigation import show_main_menu
@@ -890,8 +869,6 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     # Меню появляется ПОД картинкой (единое меню)
     # --- ОБНОВЛЕНО: 2025-12-23 ---
     # Использует smart_clear_space из api_fallback.py для Smart Fallback
-    # --- ОБНОВЛЕНО: 2025-12-24 ---
-    # Передача pro_mode в smart_clear_space
 
     Выполнение очистки пространства
     """
@@ -923,10 +900,6 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     if user_id not in admins:
         await db.decrease_balance(user_id)
 
-    # ===== НОВОЕ (2025-12-24): Получение pro_mode из БД =====
-    pro_mode = await db.is_pro_user(user_id)
-    logger.info(f"📱 PRO Mode для {user_id}: {pro_mode}")
-
     # Показываем прогресс
     await edit_menu(
         callback=callback,
@@ -939,13 +912,8 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     await callback.answer()
 
     # ЗАПУСК ГЕНЕРАЦИИ С ИСПОЛЬЗОВАНИЕМ SMART FALLBACK
-    # ОБНОВЛЕНО: 2025-12-24 - передача pro_mode в smart_clear_space
     try:
-        result_image_url = await smart_clear_space(
-            photo_id,
-            bot_token,
-            pro_mode=pro_mode  # ✅ ДОБАВЛЕНО: PRO режим
-        )
+        result_image_url = await smart_clear_space(photo_id, bot_token)
         success = result_image_url is not None
     except Exception as e:
         logger.error(f"Критическая ошибка очистки пространства: {e}")
@@ -1070,8 +1038,6 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     # Соблюдена технология единого меню
     # --- ОБНОВЛЕНО: 2025-12-23 ---
     # Использует smart_generate_interior из api_fallback.py для Smart Fallback
-    # --- ОБНОВЛЕНО: 2025-12-24 ---
-    # Передача pro_mode в smart_generate_interior
 
     Обработка выбора стиля и генерация дизайна
     """
@@ -1116,10 +1082,6 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     if not is_admin:
         await db.decrease_balance(user_id)
 
-    # ===== НОВОЕ (2025-12-24): Получение pro_mode из БД =====
-    pro_mode = await db.is_pro_user(user_id)
-    logger.info(f"📱 PRO Mode для {user_id}: {pro_mode}")
-
     # Показываем прогресс
     await edit_menu(
         callback=callback,
@@ -1132,15 +1094,8 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     await callback.answer()
 
     # ЗАПУСК ГЕНЕРАЦИИ С ИСПОЛЬЗОВАНИЕМ SMART FALLBACK
-    # ОБНОВЛЕНО: 2025-12-24 - передача pro_mode в smart_generate_interior
     try:
-        result_image_url = await smart_generate_interior(
-            photo_id,
-            room,
-            style,
-            bot_token,
-            pro_mode=pro_mode  # ✅ ДОБАВЛЕНО: PRO режим
-        )
+        result_image_url = await smart_generate_interior(photo_id, room, style, bot_token)
         success = result_image_url is not None
     except Exception as e:
         logger.error(f"Критическая ошибка генерации: {e}")
