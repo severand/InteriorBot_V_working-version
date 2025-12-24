@@ -2,7 +2,7 @@
 
 **Назначение:** Подробное описание FSM (Finite State Machine) для всех сценариев бота.  
 **Уровень:** Technical / Flow Design  
-**Последнее обновление:** December 12, 2025  
+**Последнее обновление:** December 24, 2025  
 
 ---
 
@@ -15,6 +15,7 @@
 5. [Паттерны использования](#паттерны-использования)
 6. [Антипаттерны и ошибки](#антипаттерны-и-ошибки)
 7. [Как добавлять новые состояния](#как-добавлять-новые-состояния)
+8. [ProModeStates (PHASE 3)](#promodesstates-phase-3)
 
 ---
 
@@ -535,15 +536,284 @@ async def confirm_result(callback: CallbackQuery, state: FSMContext):
 
 ---
 
+## 🎯 ProModeStates (PHASE 3)
+
+**Статус:** ✅ PRODUCTION READY  
+**Добавлено:** December 24, 2025  
+**Где используется:** `bot/handlers/pro_mode.py`  
+
+### Описание
+
+ProModeStates управляет FSM для системы выбора режима работы (PRO/СТАНДАРТ) и его параметров (соотношение сторон, разрешение). Эта система позволяет пользователю выбрать режим генерации дизайна через меню профиля.
+
+### Состояния
+
+```python
+class ProModeStates(StatesGroup):
+    """FSM states for PRO mode settings"""
+    
+    waiting_mode_choice = State()      # Выбор режима (PRO/СТАНДАРТ)
+    waiting_pro_params = State()       # Выбор параметров PRO (соотношение)
+    waiting_resolution = State()       # Выбор разрешения
+```
+
+### Диаграмма переходов
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                   PROFILE (Existing State)                    │
+│              User views profile information                   │
+│         Button "⚙️ SETTINGS" visible in menu                  │
+└───────────────────────┬──────────────────────────────────────┘
+                        │
+                        │ User clicks "⚙️ SETTINGS"
+                        ↓
+         ┌──────────────────────────────────┐
+         │   waiting_mode_choice            │
+         │  Show mode selection keyboard:   │
+         │  - PRO 🔧                        │
+         │  - СТАНДАРТ 📋                   │
+         │  - ❌ Cancel                     │
+         └───────────┬─────────────┬────────┘
+                     │             │
+         ┌───────────┘             └──────────────┐
+         │                                        │
+         │ User selects              User cancels
+         │ "PRO 🔧"                  or "СТАНДАРТ"
+         ↓                                        ↓
+    ┌────────────────────┐           ┌──────────────────┐
+    │ waiting_pro_params │           │ PROFILE (Back)   │
+    │ Show keyboard:     │           │                  │
+    │ - 16:9             │           │ Mode saved in DB │
+    │ - 4:3              │           │ (pro_mode=False) │
+    │ - 1:1              │           └──────────────────┘
+    │ - 9:16             │
+    │ - ❌ Cancel        │
+    └────────┬───────────┘
+             │
+    ┌────────┴────────────┐
+    │                     │
+    │ User selects    User cancels
+    │ aspect ratio    or "❌ Cancel"
+    │                     │
+    ↓                     ↓
+┌──────────────────┐  ┌──────────────┐
+│ waiting_resolution│  │ PROFILE      │
+│                  │  │ (Back)       │
+│ Show keyboard:   │  │              │
+│ - 1K             │  │ Mode saved   │
+│ - 2K             │  │ in DB        │
+│ - 4K             │  │              │
+│ - ❌ Cancel      │  └──────────────┘
+└────────┬─────────┘
+         │
+    ┌────┴────────┐
+    │             │
+    │ User     User
+    │ selects  cancels
+    │ resolution
+    │             │
+    ↓             ↓
+┌─────────────┐  ┌──────────┐
+│ PROFILE     │  │ PROFILE  │
+│ (Back)      │  │ (Back)   │
+│             │  │          │
+│ PRO Mode    │  │ Previous │
+│ settings    │  │ settings │
+│ saved to DB │  │ restored │
+└─────────────┘  └──────────┘
+```
+
+### State Transitions
+
+| From State | Trigger | To State | Action |
+|-----------|---------|----------|--------|
+| profile | ⚙️ SETTINGS button | waiting_mode_choice | Show mode selection keyboard |
+| waiting_mode_choice | "PRO 🔧" | waiting_pro_params | Save pro_mode=True, show aspect ratios |
+| waiting_mode_choice | "СТАНДАРТ 📋" | profile | Save pro_mode=False, back to profile |
+| waiting_mode_choice | ❌ Cancel | profile | Discard changes, back to profile |
+| waiting_pro_params | Select ratio (16:9/4:3/1:1/9:16) | waiting_resolution | Save ratio, show resolutions |
+| waiting_pro_params | ❌ Cancel | profile | Discard changes, back to profile |
+| waiting_resolution | Select resolution (1K/2K/4K) | profile | Save resolution, back to profile |
+| waiting_resolution | ❌ Cancel | profile | Discard changes, back to profile |
+
+### Handler Mapping
+
+```python
+# В bot/handlers/pro_mode.py
+
+pro_mode_router = Router()
+
+# ENTRY POINT: settings_button (profile.py calls this)
+@profile_router.callback_query(F.data == "settings")
+async def settings_button(callback: CallbackQuery, state: FSMContext):
+    """Show mode selection keyboard"""
+    await state.set_state(ProModeStates.waiting_mode_choice)
+    await edit_menu(
+        callback=callback,
+        state=state,
+        text="Выберите режим:",
+        keyboard=kb_pro_modes()
+    )
+
+# MODE SELECTION
+@pro_mode_router.callback_query(
+    ProModeStates.waiting_mode_choice,
+    F.data == "mode_pro"
+)
+async def select_pro_mode(callback: CallbackQuery, state: FSMContext):
+    """User selected PRO mode"""
+    await state.set_state(ProModeStates.waiting_pro_params)
+    await edit_menu(
+        callback=callback,
+        state=state,
+        text="Выберите соотношение сторон:",
+        keyboard=kb_aspect_ratios()
+    )
+
+@pro_mode_router.callback_query(
+    ProModeStates.waiting_mode_choice,
+    F.data == "mode_standard"
+)
+async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
+    """User selected STANDARD mode"""
+    user_id = callback.from_user.id
+    await db.set_user_pro_mode(user_id, False)
+    await state.set_state(None)
+    # Back to profile
+    await show_profile(callback, state)
+
+# ASPECT RATIO SELECTION
+@pro_mode_router.callback_query(
+    ProModeStates.waiting_pro_params,
+    F.data.in_(["ratio_16_9", "ratio_4_3", "ratio_1_1", "ratio_9_16"])
+)
+async def select_aspect_ratio(callback: CallbackQuery, state: FSMContext):
+    """User selected aspect ratio"""
+    user_id = callback.from_user.id
+    ratio = callback.data.replace("ratio_", "").replace("_", ":")
+    
+    await db.set_pro_aspect_ratio(user_id, ratio)
+    await state.set_state(ProModeStates.waiting_resolution)
+    await edit_menu(
+        callback=callback,
+        state=state,
+        text="Выберите разрешение:",
+        keyboard=kb_resolutions()
+    )
+
+# RESOLUTION SELECTION
+@pro_mode_router.callback_query(
+    ProModeStates.waiting_resolution,
+    F.data.in_(["res_1k", "res_2k", "res_4k"])
+)
+async def select_resolution(callback: CallbackQuery, state: FSMContext):
+    """User selected resolution"""
+    user_id = callback.from_user.id
+    resolution = callback.data.replace("res_", "").upper()
+    
+    await db.set_pro_resolution(user_id, resolution)
+    await db.set_user_pro_mode(user_id, True)
+    await state.set_state(None)
+    
+    await edit_menu(
+        callback=callback,
+        state=state,
+        text="✅ PRO режим активирован!",
+        keyboard=kb_main_menu()
+    )
+
+# CANCEL BUTTONS
+@pro_mode_router.callback_query(
+    F.data == "cancel",
+    (ProModeStates.waiting_pro_params | ProModeStates.waiting_resolution)
+)
+async def cancel_pro_params(callback: CallbackQuery, state: FSMContext):
+    """Cancel PRO params selection"""
+    await state.set_state(None)
+    await show_profile(callback, state)
+```
+
+### Database Interaction
+
+```python
+# Functions used from bot/database/db.py:
+
+await db.get_user_pro_settings(user_id)
+    # Returns: {'pro_mode': bool, 'pro_aspect_ratio': str, 
+    #           'pro_resolution': str, 'pro_mode_changed_at': str}
+
+await db.set_user_pro_mode(user_id, True/False)
+    # Sets pro_mode and updates pro_mode_changed_at timestamp
+
+await db.set_pro_aspect_ratio(user_id, '16:9')
+    # Sets pro_aspect_ratio field
+
+await db.set_pro_resolution(user_id, '2K')
+    # Sets pro_resolution field
+```
+
+### Data Flow
+
+```
+User Input (callback)
+    ↓
+Keyboard Callback (F.data)
+    ↓
+State Handler (ProModeStates.*)
+    ↓
+DB Function (db.set_*)
+    ↓
+Database Update (users table)
+    ↓
+State Transition (→ next State or None)
+    ↓
+Show next Keyboard or Back to Profile
+```
+
+### Validation
+
+```python
+# Valid aspect ratios:
+VALID_RATIOS = ['16:9', '4:3', '1:1', '9:16']
+
+# Valid resolutions:
+VALID_RESOLUTIONS = ['1K', '2K', '4K']
+
+# All values come from keyboard buttons, so validation is safe
+# But DB functions include validation checks as defensive measure
+```
+
+### Error Handling
+
+```python
+# DB functions return bool:
+# True = success, False = error
+
+# If DB function fails:
+if not await db.set_pro_mode(user_id, True):
+    # Log error
+    logger.error(f"Failed to set pro_mode for {user_id}")
+    # Show error to user
+    await callback.answer(
+        "❌ Ошибка при сохранении. Попробуйте позже.",
+        show_alert=True
+    )
+    # Don't change FSM state
+```
+
+---
+
 ## 📚 Связанные документы
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — общая архитектура и потоки данных
 - [API_REFERENCE.md](API_REFERENCE.md) — список всех хендлеров и callback_data
 - [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) — как локально поднимать и дебажить FSM
 - [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) — правила использования `state.set_state()` и `state.clear()`
+- [PHASE_3_TASKS.md](docs/PRO_MODE/PHASE_3_TASKS.md) — требования PHASE 3
 
 ---
 
 **Document Status:** ✅ Complete  
-**Last Updated:** December 12, 2025  
-**Version:** 2.0 Professional
+**Last Updated:** December 24, 2025  
+**Version:** 3.0 Professional (with ProModeStates)
