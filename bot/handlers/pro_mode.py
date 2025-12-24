@@ -25,8 +25,14 @@ PHASE 3 TASK 8: ПЕРЕНАМЕНОВАН router → pro_mode_router (2025-12-2
 - router → pro_mode_router (для корректного импорта в main.py)
 
 PHASE 3 TASK 9: ИСПРАВЛЕНО ПЕРЕКЛЮЧЕНИЕ PRO MODE (2025-12-24 20:33)
-- Добавлен await db.set_user_pro_mode(user_id, mode=True) в select_pro_mode
-- Убран режим из select_standard_mode для более чистой логики
+- Добавлена установка mode=True в select_pro_mode
+
+PHASE 3 TASK 10: ИСПРАВЛЕНЫ FSM STATES (2025-12-24 20:41)
+- ✅ НЕ сбрасываем state при select_standard_mode
+- ✅ НЕ сбрасываем state при select_pro_mode
+- ✅ Остаемся в ProModeStates.choosing_mode при переключении режимов
+- ✅ state.set_state(None) вызываем ТОЛЬКО при выходе в профиль
+- ✅ Это позволяет повторно нажимать кнопки СТАНДАРТ и PRO
 """
 
 from aiogram import Router, F
@@ -122,7 +128,10 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
     
     Действие:
     - Сохраняем mode=False в БД
-    - Возвращаемся в профиль
+    - ОСТАЕМСЯ в ProModeStates.choosing_mode (НЕ трогаем состояние!)
+    - Обновляем меню с визуальным отражением текущего режима
+    
+    ✅ ИСПРАВЛЕНО 2025-12-24: Не сбрасываем состояние, остаемся в choosing_mode
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -131,8 +140,12 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
         # ✅ СОХРАНЯЕМ В БД
         await db.set_user_pro_mode(user_id, mode=False)
         
-        # ✅ Согласно DEVELOPMENT_RULES: state.set_state(None) при навигации
-        await state.set_state(None)
+        # ✅ ИСПРАВЛЕНО: НЕ трогаем state! Остаемся в ProModeStates.choosing_mode
+        # Это позволяет пользователю еще раз нажать на PRO
+        # Ранее было: await state.set_state(None) - это ЛОМАЛО обработчик
+        
+        # Обновляем FSM со знанием что мы в режиме СТАНДАРТ
+        await state.update_data(current_mode_is_pro=False)
         
         # Текст подтверждения
         text = """✅ РЕЖИМ ИЗМЕНЁН НА СТАНДАРТ
@@ -154,7 +167,7 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
         )
         
         await callback.answer("✅ Режим: СТАНДАРТ")
-        logger.info(f"✅ [PRO_MODE] Пользователь {user_id} выбрал СТАНДАРТ режим")
+        logger.info(f"✅ [PRO_MODE] Пользователь {user_id} выбрал СТАНДАРТ режим (остался в choosing_mode)")
         
     except Exception as e:
         logger.error(f"❌ [PRO_MODE] Ошибка в select_standard_mode: {e}")
@@ -172,15 +185,13 @@ async def select_pro_mode(callback: CallbackQuery, state: FSMContext):
     Переход:
     - ProModeStates.choosing_mode → ProModeStates.choosing_pro_params
     
-    ✅ ИСПРАВЛЕНО 2025-12-24: Добавлена установка mode=True
-    
     Экран: ПАРАМЕТРЫ PRO (3 ряда: 4+3+2)
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     
     try:
-        # ✅ ИСПРАВЛЕНО: Устанавливаем режим на PRO сразу
+        # ✅ Устанавливаем режим на PRO сразу
         await db.set_user_pro_mode(user_id, mode=True)
         logger.debug(f"✅ [PRO_MODE] set_user_pro_mode(True) для {user_id}")
         
@@ -197,7 +208,8 @@ async def select_pro_mode(callback: CallbackQuery, state: FSMContext):
             menu_message_id=callback.message.message_id,
             user_id=user_id,
             current_ratio=current_ratio,
-            current_resolution=current_resolution
+            current_resolution=current_resolution,
+            current_mode_is_pro=True  # Помним что мы в PRO
         )
         
         # 4. Текст меню
