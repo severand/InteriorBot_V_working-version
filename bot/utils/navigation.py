@@ -4,6 +4,7 @@
 # [2025-12-07 10:43] Добавлен параметр screen_code для отслеживания текущего экрана
 # [2025-12-07 10:43] Обновлён show_main_menu() с сохранением menu_message_id
 # [2025-12-07 10:43] Добавлены подробные логи для отладки
+# [2025-12-24 21:45] ИСПРАВЛЕНО: Заменена add_balance_to_text на add_balance_and_mode_to_text - теперь режим показывается НА ВСЕХ экранах
 """
 Утилиты для навигации с единым меню.
 Все переходы между экранами происходят через редактирование одного сообщения.
@@ -15,7 +16,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
 
-from utils.helpers import add_balance_to_text
+from utils.helpers import add_balance_to_text, add_balance_and_mode_to_text
 from database.db import db
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ async def edit_menu(
         text: Новый текст сообщения
         keyboard: Новая клавиатура
         parse_mode: Режим парсинга (по умолчанию Markdown)
-        show_balance: Показывать ли баланс (по умолчанию True)
+        show_balance: Показывать ли баланс и режим (по умолчанию True)
         screen_code: Код текущего экрана для сохранения в БД
 
     Returns:
@@ -56,9 +57,9 @@ async def edit_menu(
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
 
-    # Добавляем баланс к тексту если нужно
+    # [2025-12-24 21:45] ОБНОВЛЕНО: Добавляем баланс И РЕЖИМ к тексту если нужно
     if show_balance:
-        text = await add_balance_to_text(text, user_id)
+        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ НОВАЯ ФУНКЦИЯ!
 
     # ===== ШАГ 1: ПРИОРИТЕТ 1 - FSM (БЫСТРО) =====
     data = await state.get_data()
@@ -66,7 +67,7 @@ async def edit_menu(
 
     logger.debug(f"🔍 [EDIT_MENU] Step 1: FSM lookup - menu_id={menu_message_id}")
 
-    # ===== ШАГ 2: ПРИОРИТЕТ 2 - БД (НАДЁЖНО) =====
+    # ===== ШАГ 2: ПРИОРИТЕТ 2 - БД (НАДЁНАГО) =====
     if not menu_message_id:
         logger.info(f"📥 [EDIT_MENU] Step 2: FSM empty, checking DB...")
         menu_info = await db.get_chat_menu(chat_id)
@@ -113,7 +114,7 @@ async def edit_menu(
             logger.error(f"❌ [EDIT_MENU] Unexpected error editing msg_id={menu_message_id}: {e}")
 
     # ===== ШАГ 6: FALLBACK - СОЗДАЁМ НОВОЕ СООБЩЕНИЕ =====
-    logger.info(f"🆕 [EDIT_MENU] Step 6: Creating new menu message...")
+    logger.info(f"🇦 [EDIT_MENU] Step 6: Creating new menu message...")
 
     # Безопасно удаляем старое меню если есть
     if menu_message_id:
@@ -151,7 +152,7 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: lis
 
     user_id = callback.from_user.id
 
-    # ✅ КРИТИЧЕСКОЕ: Сохраняем menu_message_id ПЕРЕД любыми действиями
+    # ✅ КРИТИЧНОЕ: Сохраняем menu_message_id ПЕРЕД любыми действиями
     data = await state.get_data()
     menu_message_id = data.get('menu_message_id')
 
@@ -160,21 +161,19 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: lis
     # Сбрасываем ТОЛЬКО состояние FSM (НЕ state.clear()!)
     await state.set_state(None)
 
-    # ✅ ВОССТАНАВЛИВАЕМ menu_message_id СРАЗУ после сброса состояния
+    # ✅ ВОСстаНАВЛИВАЕМ menu_message_id СРАЗУ ПОСЛЕ сброса состояния
     if menu_message_id:
         await state.update_data(menu_message_id=menu_message_id)
         logger.debug(f"✅ [MAIN MENU] Restored menu_id={menu_message_id}")
 
-    # Текст с балансом
-    text = await add_balance_to_text(START_TEXT, user_id)
-
+    # [2025-12-24 21:45] ОБНОВЛЕНО: edit_menu теперь автоматически добавляет режим в footer
     # Пытаемся отредактировать текущее меню
     await edit_menu(
         callback=callback,
         state=state,
-        text=text,
+        text=START_TEXT,
         keyboard=get_main_menu_keyboard(is_admin=user_id in admins),
-        show_balance=False,  # баланс уже в тексте
+        show_balance=True,  # [2025-12-24 21:45] ✅ НУЖНО! тогда режим покажется
         screen_code='main_menu'
     )
 
@@ -189,8 +188,8 @@ async def update_menu_after_photo(
     parse_mode: str = "Markdown"
 ) -> bool:
     """
-    Обновление меню после загрузки фото пользователем.
-    Используется в message handlers, а не callback handlers.
+    Обновление меню после загружения фото пользователем.
+    ОтБСОВАНЫ в message handlers, а не callback handlers.
 
     Args:
         message: Message объект (сообщение с фото)
