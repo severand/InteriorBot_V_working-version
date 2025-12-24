@@ -6,6 +6,9 @@
 - ✅ Сохранять menu_message_id в FSM и БД
 - ✅ Все callbacks редактируют ОДНО меню
 - ✅ После каждого редактирования: db.save_chat_menu()
+
+PHASE 3 TASK 4: УБРАЛИ ВСЕ TODO, ПОДКЛЮЧИЛИ БД
+Дата: 2025-12-24 13:35
 """
 
 from aiogram import Router, F
@@ -17,7 +20,8 @@ from bot.keyboards.inline import (
     get_mode_selection_keyboard,
     get_pro_params_keyboard
 )
-from utils.navigation import edit_menu
+from bot.utils.navigation import edit_menu
+from bot.database.db import db
 from config import logger
 
 router = Router()
@@ -44,9 +48,9 @@ async def show_mode_selection(callback: CallbackQuery, state: FSMContext):
     chat_id = callback.message.chat.id
     
     try:
-        # 1. Получаем текущий режим из БД
-        user_data = await callback.bot.get_session().get(f"user:{user_id}")
-        current_mode = user_data.get('mode', 'standard') if user_data else 'standard'
+        # 1. Получаем текущие параметры из БД
+        pro_settings = await db.get_user_pro_settings(user_id)
+        current_mode_is_pro = pro_settings.get('pro_mode', False)
         
         # 2. Обновляем FSM-состояние
         await state.set_state(ProModeStates.choosing_mode)
@@ -54,7 +58,7 @@ async def show_mode_selection(callback: CallbackQuery, state: FSMContext):
         # 3. Сохраняем важные данные в FSM
         await state.update_data(
             menu_message_id=callback.message.message_id,
-            current_mode=current_mode,
+            current_mode_is_pro=current_mode_is_pro,
             user_id=user_id
         )
         
@@ -76,9 +80,10 @@ async def show_mode_selection(callback: CallbackQuery, state: FSMContext):
             state=state,
             text=text,
             keyboard=get_mode_selection_keyboard(
-                current_mode_is_pro=(current_mode == 'pro')
+                current_mode_is_pro=current_mode_is_pro
             ),
-            show_balance=True
+            show_balance=True,
+            screen_code='profile_settings'
         )
         
         logger.info(f"✅ [PRO_MODE] Показан экран выбора режима для {user_id}")
@@ -97,7 +102,7 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
     Пользователь выбрал СТАНДАРТ
     
     Действие:
-    - Сохраняем mode='standard' в БД
+    - Сохраняем mode=False в БД
     - Возвращаемся в профиль
     """
     user_id = callback.from_user.id
@@ -114,7 +119,8 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
         # Восстанавливаем menu_message_id после set_state
         await state.update_data(menu_message_id=menu_message_id)
         
-        # TODO: Сохранить в БД: await db.update_user(user_id, mode='standard')
+        # ✅ СОХРАНИТЬ В БД
+        await db.set_user_pro_mode(user_id, mode=False)
         
         # Текст подтверждения
         text = """✅ РЕЖИМ ИЗМЕНЁН НА СТАНДАРТ
@@ -131,10 +137,12 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
             state=state,
             text=text,
             keyboard=get_mode_selection_keyboard(current_mode_is_pro=False),
-            show_balance=True
+            show_balance=True,
+            screen_code='profile_settings'
         )
         
-        # TODO: await db.save_chat_menu(chat_id, user_id, menu_message_id, 'mode_standard')
+        # ✅ СОХРАНИТЬ В БД
+        await db.save_chat_menu(chat_id, user_id, menu_message_id, 'profile_settings')
         
         await callback.answer("✅ Режим: СТАНДАРТ")
         logger.info(f"✅ [PRO_MODE] Пользователь {user_id} выбрал СТАНДАРТ режим")
@@ -162,10 +170,9 @@ async def select_pro_mode(callback: CallbackQuery, state: FSMContext):
     
     try:
         # 1. Получаем текущие параметры PRO из БД
-        # TODO: current_ratio = await db.get_pro_setting(user_id, 'aspect_ratio') or '16:9'
-        current_ratio = '16:9'
-        # TODO: current_resolution = await db.get_pro_setting(user_id, 'resolution') or '1K'
-        current_resolution = '1K'
+        pro_settings = await db.get_user_pro_settings(user_id)
+        current_ratio = pro_settings.get('pro_aspect_ratio', '16:9')
+        current_resolution = pro_settings.get('pro_resolution', '1K')
         
         # 2. Переходим в состояние выбора параметров
         await state.set_state(ProModeStates.choosing_pro_params)
@@ -203,10 +210,12 @@ async def select_pro_mode(callback: CallbackQuery, state: FSMContext):
                 current_ratio=current_ratio,
                 current_resolution=current_resolution
             ),
-            show_balance=True
+            show_balance=True,
+            screen_code='pro_params'
         )
         
-        # TODO: await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'pro_params')
+        # ✅ СОХРАНИТЬ В БД
+        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'pro_params')
         
         await callback.answer()
         logger.info(f"✅ [PRO_MODE] Показаны параметры PRO для {user_id}")
@@ -243,8 +252,8 @@ async def select_aspect_ratio(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Ошибка: неверное соотношение", show_alert=True)
             return
         
-        # 2. Сохраняем в БД
-        # TODO: await db.update_pro_settings(user_id, aspect_ratio=aspect_ratio)
+        # 2. ✅ СОХРАНЯЕМ В БД
+        await db.set_pro_aspect_ratio(user_id, aspect_ratio)
         
         # 3. Обновляем state.data
         data = await state.get_data()
@@ -312,12 +321,11 @@ async def select_resolution(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Ошибка: неверное разрешение", show_alert=True)
             return
         
-        # 2. Сохраняем в БД
-        # TODO: await db.update_pro_settings(
-        #     user_id=user_id,
-        #     resolution=resolution,
-        #     mode='pro'  # Явно переводим режим в PRO
-        # )
+        # 2. ✅ СОХРАНЯЕМ В БД
+        # Сначала устанавливаем разрешение
+        await db.set_pro_resolution(user_id, resolution)
+        # Затем устанавливаем режим на PRO
+        await db.set_user_pro_mode(user_id, mode=True)
         
         # 3. Обновляем state.data
         data = await state.get_data()
@@ -349,8 +357,8 @@ async def select_resolution(callback: CallbackQuery, state: FSMContext):
             parse_mode="Markdown"
         )
         
-        await callback.answer(f"✅ Разрешение: {resolution}")
-        logger.info(f"✅ [PRO_MODE] Пользователь {user_id} выбрал разрешение {resolution}")
+        await callback.answer(f"✅ Разрешение: {resolution} | Режим: PRO 🔧")
+        logger.info(f"✅ [PRO_MODE] Пользователь {user_id} выбрал разрешение {resolution} и PRO режим")
         
     except Exception as e:
         logger.error(f"❌ [PRO_MODE] Ошибка в select_resolution: {e}")
@@ -375,7 +383,10 @@ async def back_to_mode_selection(callback: CallbackQuery, state: FSMContext):
         # 1. Получаем данные ДО смены состояния
         data = await state.get_data()
         menu_message_id = data.get('menu_message_id')
-        current_mode = data.get('current_mode', 'standard')
+        
+        # Получаем актуальный режим из БД
+        pro_settings = await db.get_user_pro_settings(user_id)
+        current_mode_is_pro = pro_settings.get('pro_mode', False)
         
         # 2. Меняем состояние
         await state.set_state(ProModeStates.choosing_mode)
@@ -383,7 +394,7 @@ async def back_to_mode_selection(callback: CallbackQuery, state: FSMContext):
         # 3. Восстанавливаем важные данные
         await state.update_data(
             menu_message_id=menu_message_id,
-            current_mode=current_mode
+            current_mode_is_pro=current_mode_is_pro
         )
         
         # 4. Текст
@@ -404,9 +415,10 @@ async def back_to_mode_selection(callback: CallbackQuery, state: FSMContext):
             state=state,
             text=text,
             keyboard=get_mode_selection_keyboard(
-                current_mode_is_pro=(current_mode == 'pro')
+                current_mode_is_pro=current_mode_is_pro
             ),
-            show_balance=True
+            show_balance=True,
+            screen_code='profile_settings'
         )
         
         await callback.answer()
