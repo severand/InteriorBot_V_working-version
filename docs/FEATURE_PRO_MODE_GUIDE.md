@@ -1,52 +1,53 @@
-# 🔧 KIE.AI PRO MODE ГНДОВА
+# 🔧 KIE.AI PRO MODE INTEGRATION GUIDE
 
-**Ветка:** `feature/kie-pro-mode-integration`  
-**Дата:** 2025-12-24  
-**Статус:** ✅ ГОТОВО К ТЕСТИРОВАНИЮ  
+**Branch:** `feature/kie-pro-mode-integration`  
+**Date:** 2025-12-24  
+**Status:** ✅ READY FOR TESTING  
 
 ---
 
-## 🜟 ОБЗОР
+## 🌟 ОБЗОР
 
 Это руководство рассказывает о включении поддержки **KIE.AI PRO режима** в проект InteriorBot.
 
-### Сравнение режимов:
+### О средствах?
 
 | Аспект | BASE | PRO |
 |----------|------|-----|
-| **Модель** | `google/nano-banana` | `nano-banana-pro` |
+| **Model** | `google/nano-banana` | `nano-banana-pro` |
 | **Скорость** | быстро | медленнее |
-| **Качество** | хорошее | отличное |
+| **Качество** | хорошее | твърдые |
 | **Цена** | дешевле | дороже |
 | **Параметры** | `image_size` | `aspect_ratio`, `resolution` |
 | **Таймаут** | 300s | 600s |
 
 ---
 
-## 💅 ЧТО БЫЛО ИЗМЕНЕНО
+## 🎅 ЧтО БЫЛО ИЗМЕНЕНО
 
 ### Коммиты:
 
-#### 1️⃣ **Коммит 1:** Конфигурация (.env)
+#### 1️⃣ **Commit 1:** Конфигурация (.env)
 - Добавлен `USE_PRO_MODEL` для переключения режимов
 - Добавлены PRO параметры (`aspect_ratio`, `resolution`)
 - Добавлены разные таймауты
 
 **Файл:** `bot/.env.example`
 
-#### 2️⃣ **Коммит 2:** Конфигурация Класса
-- Новые модели в `KieConfig`
+#### 2️⃣ **Commit 2:** Конфигурация Класса
+- Новые модали в `KieConfig`
 - Проперти для PRO режима
-- Динамическое выбрание таймаута
+- Динамическое выбор таймаута
 
 **Файл:** `bot/config_kie.py`
 
-#### 3️⃣ **Коммит 3:** ГЛАВНАЯ реализация 🔥
+#### 3️⃣ **Commit 3:** Главная реализация
+**Это горячее иссо**
 
 - Поддержка PRO моделей в `MODELS`
 - Хранение параметра `use_pro` в `KieApiClient`
 - Обновление `text_to_image()` для PRO
-- **КЛЮЧЕВОЕ:** Обновление `edit_image()` с условной логикой
+- **КПИТИКА:** Обновление `edit_image()` с условной логикой
   - **BASE:** `image_urls`, `image_size`
   - **PRO:** `image_input`, `aspect_ratio`, `resolution`
 - Обновление 3 интеграционных функций:
@@ -55,7 +56,7 @@
   - `clear_space_with_kie()`
 - Обратная совместимость (старый код работает)
 
-**Файл:** `bot/services/kie_api.py` (2400+ строк)
+**Файл:** `bot/services/kie_api.py` (25KB → все в одном месте)
 
 ---
 
@@ -78,27 +79,28 @@ USE_PRO_MODEL=False  # используются BASE режим
 ```bash
 USE_PRO_MODEL=True
 KIE_NANO_BANANA_PRO_ASPECT=16:9      # аспект-рейтио
-# ОПЦИОНО: 1:1, 16:9, 9:16, 4:3, 3:4, и т.d.
+# ОПЦИО: 1:1, 16:9, 9:16, 4:3, 3:4, etc.
 KIE_NANO_BANANA_PRO_RESOLUTION=1K   # 1K (1024), 2K (2048), 4K (4096)
 ```
 
-Это будет использовать PRO режим для **всех** генераций.
+Эта строка будет использовать PRO режим для **всех** генераций.
 
-### Опция 3: ПЕРЕКЛЮЧАТЬ НА УРОВНЕ КОДА
+### Опция 3: ПЕРЕКЛЮЧАТЬ ДО Уровня Кода
 
 ```python
 from services.kie_api import generate_interior_with_nano_banana
 
-# BASE режим
+# Настоящий BASE режим
 result_base = await generate_interior_with_nano_banana(
     photo_file_id=file_id,
     room="bedroom",
     style="modern",
     bot_token=token,
     use_pro=False  # ✅ явно
+use_pro=False,  # [НОВОЕ]
 )
 
-# PRO режим
+# Настоящий PRO режим
 result_pro = await generate_interior_with_nano_banana(
     photo_file_id=file_id,
     room="bedroom",
@@ -110,7 +112,7 @@ result_pro = await generate_interior_with_nano_banana(
 
 ---
 
-## 📤 ОТОБРАЖЕНИЕ ЛОГОВ
+## 📄 Отображение Логов
 
 ### BASE режим:
 
@@ -120,9 +122,13 @@ result_pro = await generate_interior_with_nano_banana(
    Промпт: Make this bedroom look modern...
    Кол-во изображений: 1
 ======================================================================
+======================================================================
+📄 KIE.AI REQUEST DETAILS
+======================================================================
 Model: google/nano-banana-edit
 Mode: 📋 BASE
 Image URLs: ['https://...']
+Output Format: png
 Image Size (BASE): auto
 ```
 
@@ -134,28 +140,32 @@ Image Size (BASE): auto
    Промпт: Make this bedroom look modern...
    Кол-во изображений: 1
 ======================================================================
+======================================================================
+📄 KIE.AI REQUEST DETAILS
+======================================================================
 Model: nano-banana-pro
 Mode: 🔧 PRO
 Image Input: ['https://...']
+Output Format: png
 Aspect Ratio (PRO): 16:9
 Resolution (PRO): 1K
 ```
 
 ---
 
-## ⚠️ КОНЦО: ГЛАВНОЕ ОТЛИЧИЕ
+## ⚠️ КПИТИЧНОЕ: НЕ УНЫВАЙТЕ!
 
 ### Основное отличие:
 
 ```python
-# ⚠️ BASE ИСПОЛЬЗУЕТ image_urls
+# ⚠️ BASE USES image_urls
 input_data = {
     "image_urls": [...],    # ✅ НЕ image_input!
     "image_size": "auto",
     "prompt": "...",
 }
 
-# ⚠️ PRO ИСПОЛЬЗУЕТ image_input
+# ⚠️ PRO USES image_input
 input_data = {
     "image_input": [...],   # ✅ НЕ image_urls!
     "aspect_ratio": "16:9",
@@ -164,7 +174,7 @@ input_data = {
 }
 ```
 
-**это автоматически обрабатывается** (см. отрывки `if use_pro_mode`).
+**это автоматически от нас обрабатывается** (см отрывки `if use_pro_mode`).
 
 ---
 
@@ -174,7 +184,7 @@ input_data = {
 
 ```bash
 # Проверить конфиг
-python bot/config_kie.py
+ python bot/config_kie.py
 
 # Ожидаемые выходы (USE_PRO_MODEL=False):
 # ✅ KIE.AI NANO BANANA API КОНФИГ:
@@ -197,15 +207,17 @@ python bot/config_kie.py
    - Модель: `google/nano-banana-edit`
    - Параметры: `image_urls`, `image_size`
    - Таймаут: 300s
+   - Получить результат в логах
 
 2. **SET:** `USE_PRO_MODEL=True` → тестируют PRO режим
    - Модель: `nano-banana-pro`
    - Параметры: `image_input`, `aspect_ratio`, `resolution`
    - Таймаут: 600s
+   - Получить результат в логах
 
 ---
 
-## ✅ КОММИТЫ НА GITHUB
+## ✅ КОммиты НА GITHUB
 
 ```
 feature/kie-pro-mode-integration
@@ -216,16 +228,16 @@ feature/kie-pro-mode-integration
 
 ---
 
-## 🚅 НЕОБХОДИМЮЕ ВДОКОвНОВО
+## 🚒 НЕОБХОДИМЫЕ Объекты
 
-### ДЛЯ MERGE В MAIN:
+### ДЛЯ MERGE в MAIN:
 
 - ✅ Все обновления API готовы
 - ✅ Не уничтожена вся старая функциональность
 - ✅ Обратная совместимость (все параметры Optional)
 - ✅ Недеструктивные изменения
 
-### ОПЦИОНАЛЬНО: Которые ещё стоит сделать
+### ОПЦИОНАЛНО: Которые всё ещё стоит сделать
 
 - [ ] Обновить `api_fallback.py` (Replicate fallback)
 - [ ] Написать unit тесты
@@ -238,16 +250,27 @@ feature/kie-pro-mode-integration
 
 ### Если что-то не работает:
 
-1. Проверьте логи на **Mode** (🔧 PRO vs 📋 BASE)
+1. Проверьте логи на **Mode** (`🔧 PRO` vs `📋 BASE`)
 2. Открыть Issue с отрывками Логов
 3. Проверьте, что `.env` имеет все новые переменные
 
 ### Ограничения:
 
 - PRO режим требует дополнительно 300 секунд (до 10 мин общ)
-- Обусловить API rate limits
+- Обюсловить API rate limits
 - PRO не супортирует `image_urls` (только `image_input`)
 
 ---
 
-**Готово к тестированию!** 🚉
+## 🌘 Тепии ОФОрмления COMMITS
+
+| Тип | Объяснение | Оригинал |
+|--------|-----------|-----|
+| **feat** | Новая способность | Feature |
+| **fix** | От бг | Bugfix |
+| **chore** | Не аффектирует произв. | Maintenance |
+| **docs** | ЦИСтематика | Documentation |
+
+---
+
+**Готово к нести тесты!** 🎉
