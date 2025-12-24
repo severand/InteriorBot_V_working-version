@@ -1,4 +1,5 @@
 # bot/database/db.py
+# --- ОБНОВЛЕН: 2025-12-24 12:35 - Добавлены методы для PRO MODE функционала ---
 # --- ОБНОВЛЕН: 2025-12-04 11:36 - Добавлены методы для уведомлений и источников трафика ---
 # Добавлены методы get_user_recent_payments и get_referrer_info для расширенного поиска
 
@@ -40,7 +41,9 @@ from database.models import (
     # Настройки
     GET_SETTING, SET_SETTING, GET_ALL_SETTINGS,
     # Единое меню (НОВОЕ)
-    SAVE_CHAT_MENU, GET_CHAT_MENU, DELETE_CHAT_MENU  # ← НОВАЯ СТРОКА
+    SAVE_CHAT_MENU, GET_CHAT_MENU, DELETE_CHAT_MENU,  # ← НОВАЯ СТРОКА
+    # PRO MODE (НОВОЕ)
+    GET_USER_PRO_SETTINGS, SET_USER_PRO_MODE, SET_PRO_ASPECT_RATIO, SET_PRO_RESOLUTION  # ← НОВАЯ СТРОКА
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +76,120 @@ class Database:
             await db.commit()
             logger.info("База данных инициализирована")
 
+    # ===== PRO MODE FUNCTIONS (НОВОЕ) =====
+
+    async def get_user_pro_settings(self, user_id: int) -> Dict[str, Any]:
+        """
+        Получить все параметры PRO режима пользователя.
+
+        Возвращает:
+        - {'pro_mode': bool, 'pro_aspect_ratio': str, 'pro_resolution': str, 'pro_mode_changed_at': str}
+        - Если пользователя нет, возвращает дефолтные значения
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                db.row_factory = aiosqlite.Row
+                async with db.execute(GET_USER_PRO_SETTINGS, (user_id,)) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return {
+                            'pro_mode': bool(row['pro_mode']),
+                            'pro_aspect_ratio': row['pro_aspect_ratio'],
+                            'pro_resolution': row['pro_resolution'],
+                            'pro_mode_changed_at': row['pro_mode_changed_at']
+                        }
+                    # Дефолтные значения если пользователя нет
+                    return {
+                        'pro_mode': False,
+                        'pro_aspect_ratio': '16:9',
+                        'pro_resolution': '1K',
+                        'pro_mode_changed_at': None
+                    }
+            except Exception as e:
+                logger.error(f"❌ Ошибка get_user_pro_settings для user_id={user_id}: {e}")
+                return {
+                    'pro_mode': False,
+                    'pro_aspect_ratio': '16:9',
+                    'pro_resolution': '1K',
+                    'pro_mode_changed_at': None
+                }
+
+    async def set_user_pro_mode(self, user_id: int, mode: bool) -> bool:
+        """
+        Установить режим (True = PRO, False = СТАНДАРТ).
+
+        Параметры:
+        - user_id: ID пользователя
+        - mode: True для PRO, False для СТАНДАРТ
+
+        Возвращает:
+        - True если успешно обновлено, False при ошибке
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                await db.execute(SET_USER_PRO_MODE, (1 if mode else 0, user_id))
+                await db.commit()
+                mode_name = "PRO 🔧" if mode else "СТАНДАРТ 📋"
+                logger.info(f"✅ Режим изменён на {mode_name} для user_id={user_id}")
+                return True
+            except Exception as e:
+                logger.error(f"❌ Ошибка set_user_pro_mode для user_id={user_id}: {e}")
+                return False
+
+    async def set_pro_aspect_ratio(self, user_id: int, ratio: str) -> bool:
+        """
+        Установить соотношение сторон для PRO режима.
+
+        Параметры:
+        - user_id: ID пользователя
+        - ratio: '16:9', '4:3', '1:1', '9:16'
+
+        Возвращает:
+        - True если успешно обновлено, False при ошибке
+        """
+        # Валидируем значение
+        valid_ratios = ['16:9', '4:3', '1:1', '9:16']
+        if ratio not in valid_ratios:
+            logger.warning(f"❌ Неверное соотношение: {ratio}. Допустимые: {valid_ratios}")
+            return False
+
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                await db.execute(SET_PRO_ASPECT_RATIO, (ratio, user_id))
+                await db.commit()
+                logger.info(f"✅ Соотношение сторон установлено {ratio} для user_id={user_id}")
+                return True
+            except Exception as e:
+                logger.error(f"❌ Ошибка set_pro_aspect_ratio для user_id={user_id}: {e}")
+                return False
+
+    async def set_pro_resolution(self, user_id: int, resolution: str) -> bool:
+        """
+        Установить разрешение для PRO режима.
+
+        Параметры:
+        - user_id: ID пользователя
+        - resolution: '1K', '2K', '4K'
+
+        Возвращает:
+        - True если успешно обновлено, False при ошибке
+        """
+        # Валидируем значение
+        valid_resolutions = ['1K', '2K', '4K']
+        if resolution not in valid_resolutions:
+            logger.warning(f"❌ Неверное разрешение: {resolution}. Допустимые: {valid_resolutions}")
+            return False
+
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                await db.execute(SET_PRO_RESOLUTION, (resolution, user_id))
+                await db.commit()
+                logger.info(f"✅ Разрешение установлено {resolution} для user_id={user_id}")
+                return True
+            except Exception as e:
+                logger.error(f"❌ Ошибка set_pro_resolution для user_id={user_id}: {e}")
+                return False
+
     # ===== CHAT MENUS =====
 
     async def save_chat_menu(self, chat_id: int, user_id: int, menu_message_id: int,
@@ -81,7 +198,7 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             try:
                 await db.execute(SAVE_CHAT_MENU,
-                                 (chat_id, user_id, menu_message_id, screen_code, menu_message_id, screen_code))
+                                 (chat_id, user_id, menu_message_id, screen_code))
                 await db.commit()
                 logger.debug(f"💾 Saved menu: chat={chat_id}, msgid={menu_message_id}, screen={screen_code}")
                 return True
@@ -420,261 +537,6 @@ class Database:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
 
-    # ===== УВЕДОМЛЕНИЯ АДМИНОВ (НОВОЕ) =====
-
-    async def get_admin_notifications(self, admin_id: int) -> Dict[str, Any]:
-        """
-        Получить настройки уведомлений для админа.
-        Возвращает словарь с флагами уведомлений.
-        """
-        query = """
-            SELECT admin_id, notify_new_users, notify_new_payments, notify_critical_errors
-            FROM admin_notifications
-            WHERE admin_id = ?
-        """
-        async with aiosqlite.connect(self.db_path) as conn:
-            async with conn.execute(query, (admin_id,)) as cursor:
-                row = await cursor.fetchone()
-                if not row:
-                    # Если запись не создана – по умолчанию все включено
-                    return {
-                        "admin_id": admin_id,
-                        "notify_new_users": 1,
-                        "notify_new_payments": 1,
-                        "notify_critical_errors": 1,
-                    }
-                return {
-                    "admin_id": row[0],
-                    "notify_new_users": row[1],
-                    "notify_new_payments": row[2],
-                    "notify_critical_errors": row[3],
-                }
-
-    async def set_admin_notifications(self, admin_id: int, notify_new_users: int,
-                                      notify_new_payments: int, notify_critical_errors: int) -> None:
-        """
-        Установить настройки уведомлений для админа.
-        """
-        query = """
-            INSERT INTO admin_notifications (admin_id, notify_new_users, notify_new_payments, notify_critical_errors)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(admin_id) DO UPDATE SET
-                notify_new_users = excluded.notify_new_users,
-                notify_new_payments = excluded.notify_new_payments,
-                notify_critical_errors = excluded.notify_critical_errors
-        """
-        async with aiosqlite.connect(self.db_path) as conn:
-            await conn.execute(query, (admin_id, notify_new_users, notify_new_payments, notify_critical_errors))
-            await conn.commit()
-
-    async def get_admins_for_notification(self, notify_field: str) -> List[int]:
-        """
-        Получить список админов, у которых включен определённый тип уведомлений.
-        notify_field: 'notify_new_users' | 'notify_new_payments' | 'notify_critical_errors'
-        Возвращает список admin_id.
-        """
-        if notify_field not in ("notify_new_users", "notify_new_payments", "notify_critical_errors"):
-            raise ValueError("Invalid notify_field")
-
-        query = f"""
-            SELECT admin_id FROM admin_notifications
-            WHERE {notify_field} = 1
-        """
-        async with aiosqlite.connect(self.db_path) as conn:
-            async with conn.execute(query) as cursor:
-                rows = await cursor.fetchall()
-                return [r[0] for r in rows]
-
-    # ===== ИСТОЧНИКИ ТРАФИКА (НОВОЕ) =====
-
-    async def set_user_source(self, user_id: int, source: str) -> None:
-        """
-        Сохранить источник для пользователя, если еще не сохранен.
-        """
-        query_check = "SELECT 1 FROM user_sources WHERE user_id = ?"
-        query_insert = "INSERT INTO user_sources (user_id, source) VALUES (?, ?)"
-        async with aiosqlite.connect(self.db_path) as conn:
-            async with conn.execute(query_check, (user_id,)) as cursor:
-                row = await cursor.fetchone()
-                if row:
-                    return
-            await conn.execute(query_insert, (user_id, source))
-            await conn.commit()
-
-    async def get_sources_stats(self) -> List[Dict[str, Any]]:
-        """
-        Получить статистику по источникам трафика.
-        Возвращает список источников и количество пользователей с каждого из них.
-        """
-        query = """
-            SELECT source, COUNT(*) as count
-            FROM user_sources
-            GROUP BY source
-            ORDER BY count DESC
-        """
-        async with aiosqlite.connect(self.db_path) as conn:
-            async with conn.execute(query) as cursor:
-                rows = await cursor.fetchall()
-                return [{"source": r[0], "count": r[1]} for r in rows]
-
-    # ===== РЕФЕРАЛЬНЫЙ БАЛАНС =====
-
-    async def get_referral_balance(self, user_id: int) -> int:
-        """Получить реферальный баланс (рубли)"""
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(GET_REFERRAL_BALANCE, (user_id,)) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
-
-    async def add_referral_balance(self, user_id: int, amount: int) -> bool:
-        """Добавить к реферальному балансу"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(ADD_REFERRAL_BALANCE, (amount, amount, user_id))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка добавления реф. баланса: {e}")
-                return False
-
-    async def decrease_referral_balance(self, user_id: int, amount: int) -> bool:
-        """Уменьшить реферальный баланс"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(DECREASE_REFERRAL_BALANCE, (amount, user_id))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка уменьшения реф. баланса: {e}")
-                return False
-
-    # ===== РЕФЕРАЛЬНЫЕ НАЧИСЛЕНИЯ =====
-
-    async def log_referral_earning(self, referrer_id: int, referred_id: int, payment_id: str,
-                                   amount: int, commission_percent: int, earnings: int, tokens: int) -> bool:
-        """Залогировать заработок реферера"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(CREATE_REFERRAL_EARNING,
-                                 (referrer_id, referred_id, payment_id, amount, commission_percent, earnings, tokens))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка логирования заработка: {e}")
-                return False
-
-    async def get_user_referral_earnings(self, user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
-        """Получить историю заработков"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(GET_USER_REFERRAL_EARNINGS, (user_id, limit)) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
-
-    # ===== ОБМЕНЫ =====
-
-    async def log_referral_exchange(self, user_id: int, amount: int, tokens: int, exchange_rate: int) -> bool:
-        """Залогировать обмен"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(CREATE_REFERRAL_EXCHANGE, (user_id, amount, tokens, exchange_rate))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка логирования обмена: {e}")
-                return False
-
-    async def get_user_exchanges(self, user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
-        """Получить историю обменов"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(GET_USER_EXCHANGES, (user_id, limit)) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
-
-    # ===== ВЫПЛАТЫ =====
-
-    async def create_payout_request(self, user_id: int, amount: int, payment_method: str, payment_details: str) -> int:
-        """Создать заявку на выплату"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                cursor = await db.execute(CREATE_PAYOUT_REQUEST, (user_id, amount, payment_method, payment_details))
-                await db.commit()
-                return cursor.lastrowid
-            except Exception as e:
-                logger.error(f"Ошибка создания заявки на выплату: {e}")
-                return 0
-
-    async def get_user_payouts(self, user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
-        """Получить историю выплат"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(GET_USER_PAYOUTS, (user_id, limit)) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
-
-    async def get_pending_payouts(self) -> List[Dict[str, Any]]:
-        """Получить все ожидающие выплаты"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(GET_PENDING_PAYOUTS) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
-
-    async def update_payout_status(self, payout_id: int, status: str, admin_id: int, note: str = None) -> bool:
-        """Обновить статус выплаты"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(UPDATE_PAYOUT_STATUS, (status, admin_id, note, payout_id))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка обновления статуса выплаты: {e}")
-                return False
-
-    # ===== РЕКВИЗИТЫ =====
-
-    async def set_payment_details(self, user_id: int, method: str, details: str, sbp_bank: str = None) -> bool:
-        """Установить реквизиты"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(SET_PAYMENT_DETAILS, (method, details, sbp_bank, user_id))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка установки реквизитов: {e}")
-                return False
-
-    async def get_payment_details(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Получить реквизиты"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(GET_PAYMENT_DETAILS, (user_id,)) as cursor:
-                row = await cursor.fetchone()
-                if row:
-                    return dict(row)
-                return None
-
-    # ===== НАСТРОЙКИ =====
-
-    async def get_setting(self, key: str) -> Optional[str]:
-        """Получить настройку"""
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(GET_SETTING, (key,)) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else None
-
-    async def set_setting(self, key: str, value: str) -> bool:
-        """Установить настройку"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(SET_SETTING, (key, value))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка установки настройки: {e}")
-                return False
-
     # ===== СТАТИСТИКА =====
 
     async def get_total_users_count(self) -> int:
@@ -820,334 +682,6 @@ class Database:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
 
-    async def get_user_payments_stats(self, user_id: int) -> Dict[str, int]:
-        """
-        Получить статистику платежей пользователя.
-        Возвращает: {
-            'count': количество платежей,
-            'total_amount': общая сумма
-        }
-        """
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                    """
-                    SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total
-                    FROM payments
-                    WHERE user_id = ? AND status = 'succeeded'
-                    """,
-                    (user_id,)
-            ) as cursor:
-                row = await cursor.fetchone()
-                return {
-                    'count': row[0] if row else 0,
-                    'total_amount': row[1] if row else 0
-                }
-
-    async def get_user_recent_payments(self, user_id: int, limit: int = 5) -> List[Dict[str, Any]]:
-        """Получить последние платежи пользователя"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                    """
-                    SELECT amount, tokens, created_at as payment_date, status
-                    FROM payments
-                    WHERE user_id = ? AND status = 'succeeded'
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                    """,
-                    (user_id, limit)
-            ) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
-
-    async def get_referrer_info(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Получить информацию о рефере (кто пригласил)"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-
-            async with db.execute("SELECT referred_by FROM users WHERE user_id = ?", (user_id,)) as cursor:
-                row = await cursor.fetchone()
-                if not row or not row['referred_by']:
-                    return None
-
-                referrer_id = row['referred_by']
-
-            async with db.execute(GET_USER, (referrer_id,)) as cursor:
-                referrer_row = await cursor.fetchone()
-                if referrer_row:
-                    return {
-                        'referrer_id': referrer_row['user_id'],
-                        'referrer_username': referrer_row['username']
-                    }
-
-            return None
-
-    # ===== CRM / USER_SESSIONS (МИНИ-CRM И МЕНЮ-СООБЩЕНИЯ) =====
-
-    async def log_session(
-        self,
-        user_id: int,
-        session_type: str,
-        action: str,
-        message_id: Optional[int] = None,
-        room_type: Optional[str] = None,
-        style_type: Optional[str] = None,
-        source: Optional[str] = None,
-        campaign: Optional[str] = None,
-        promo_code: Optional[str] = None,
-        balance_before: Optional[int] = None,
-        balance_after: Optional[int] = None,
-        cost: int = 0,
-        status: str = "completed",
-        error_message: Optional[str] = None,
-    ) -> bool:
-        """
-        Записать действие пользователя в таблицу user_sessions (мини-CRM).
-
-        Использование:
-        - Для меню:   session_type='menu', action='show_menu', message_id=<id сообщения>
-        - Для фото:   session_type='photo', action='upload_photo', message_id=<id фото>
-        - Для генераций: session_type='generation', action='generate_design',
-                         room_type, style_type, cost, balance_before/after.
-        - Для платежей: session_type='payment', action='buy_tokens', cost=<сумма и т.п.>
-
-        Параметры:
-        - user_id: ID пользователя
-        - session_type: логический тип записи ('menu', 'photo', 'generation', 'payment', 'profile' и т.п.)
-        - action: конкретное действие ('show_menu', 'upload_photo', 'generate_design', 'clear_space', ...)
-        - message_id: ID связанного Telegram-сообщения (меню/картинка/результат)
-        - room_type: тип комнаты (если релевантно)
-        - style_type: стиль интерьера (если релевантно)
-        - source / campaign / promo_code: маркетинговые метки
-        - balance_before / balance_after: баланс до и после действия
-        - cost: стоимость действия (рубли/токены, по твоей бизнес-логике)
-        - status: 'completed' | 'failed' | 'pending' | 'cancelled'
-        - error_message: текст ошибки, если действие было неуспешным
-
-        Возвращает:
-        - True при успехе, False при ошибке (ошибка логируется).
-        """
-        query = """
-            INSERT INTO user_sessions (
-                user_id, session_type, message_id, action,
-                room_type, style_type,
-                source, campaign, promo_code,
-                balance_before, balance_after, cost,
-                status, error_message
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        params = (
-            user_id,
-            session_type,
-            message_id,
-            action,
-            room_type,
-            style_type,
-            source,
-            campaign,
-            promo_code,
-            balance_before,
-            balance_after,
-            cost,
-            status,
-            error_message,
-        )
-
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(query, params)
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка log_session для user_id={user_id}: {e}")
-                return False
-
-    async def get_last_menu_message(self, user_id: int) -> Optional[int]:
-        """
-        Получить ID последнего меню-сообщения пользователя.
-
-        Логика:
-        - Ищем последнюю запись в user_sessions, где:
-          - user_id = ?
-          - session_type = 'menu'
-          - message_id НЕ NULL
-        - Сортируем по created_at DESC (или id DESC) и берём первую.
-
-        Возвращает:
-        - message_id (int), если найдено
-        - None, если меню ещё не логировалось.
-        """
-        query = """
-            SELECT message_id
-            FROM user_sessions
-            WHERE user_id = ? AND session_type = 'menu' AND message_id IS NOT NULL
-            ORDER BY id DESC
-            LIMIT 1
-        """
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(query, (user_id,)) as cursor:
-                row = await cursor.fetchone()
-                if row and row[0]:
-                    return row[0]
-                return None
-
-    async def get_last_session_by_type(self, user_id: int, session_type: str) -> Optional[Dict[str, Any]]:
-        """
-        Получить последнюю запись из user_sessions по user_id и session_type.
-
-        Примеры:
-        - Последняя генерация:
-          await db.get_last_session_by_type(user_id, 'generation')
-        - Последняя загрузка фото:
-          await db.get_last_session_by_type(user_id, 'photo')
-
-        Возвращает:
-        - dict с полями строки (id, user_id, session_type, message_id, action, ...),
-        - или None, если записей нет.
-        """
-        query = """
-            SELECT *
-            FROM user_sessions
-            WHERE user_id = ? AND session_type = ?
-            ORDER BY id DESC
-            LIMIT 1
-        """
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(query, (user_id, session_type)) as cursor:
-                row = await cursor.fetchone()
-                if row:
-                    return dict(row)
-                return None
-
-    async def get_user_sessions(self, user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
-        """
-        Получить последние N записей активности пользователя из user_sessions (мини-CRM).
-
-        Параметры:
-        - user_id: ID пользователя
-        - limit: максимальное количество записей (по умолчанию 50)
-
-        Возвращает:
-        - список dict'ов с полями user_sessions, отсортированных по created_at DESC.
-        """
-        query = """
-            SELECT *
-            FROM user_sessions
-            WHERE user_id = ?
-            ORDER BY created_at DESC, id DESC
-            LIMIT ?
-        """
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(query, (user_id, limit)) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(r) for r in rows]
-
-        # ===== ЕДИНОЕ МЕНЮ (НОВОЕ - 2025-12-07) =====
-
-
-
-    async def save_chat_menu(self, chat_id: int, user_id: int, menu_message_id: int,
-                                 screen_code: str = 'main_menu') -> bool:
-            """
-            Сохранить информацию о меню в БД (UPSERT).
-
-            Args:
-                chat_id: ID чата
-                user_id: ID пользователя
-                menu_message_id: ID сообщения с меню
-                screen_code: Код текущего экрана (main_menu, profile, admin_panel и т.д.)
-
-            Returns:
-                bool: True при успехе, False при ошибке
-            """
-            async with aiosqlite.connect(self.db_path) as db:
-                 try:
-                    await db.execute(SAVE_CHAT_MENU, (chat_id, user_id, menu_message_id, screen_code))
-                    await db.commit()
-                    logger.debug(f"💾 Saved menu: chat={chat_id}, msg_id={menu_message_id}, screen={screen_code}")
-                    return True
-                 except Exception as e:
-                    logger.error(f"❌ Ошибка сохранения chat_menu: {e}")
-                    return False
-
-    async def get_chat_menu(self, chat_id: int) -> Optional[Dict[str, Any]]:
-            """
-            Получить информацию о меню из БД.
-
-            Args:
-                chat_id: ID чата
-
-            Returns:
-                Dict с полями: chat_id, user_id, menu_message_id, screen_code, updated_at
-                или None если запись не найдена
-            """
-            async with aiosqlite.connect(self.db_path) as db:
-                db.row_factory = aiosqlite.Row
-                async with db.execute(GET_CHAT_MENU, (chat_id,)) as cursor:
-                    row = await cursor.fetchone()
-                    if row:
-                        return dict(row)
-                    return None
-
-    async def delete_chat_menu(self, chat_id: int) -> bool:
-            """
-            Удалить запись о меню из БД.
-
-            Args:
-                chat_id: ID чата
-
-            Returns:
-                bool: True при успехе
-            """
-            async with aiosqlite.connect(self.db_path) as db:
-                try:
-                    await db.execute(DELETE_CHAT_MENU, (chat_id,))
-                    await db.commit()
-                    logger.debug(f"🗑️ Deleted menu record for chat {chat_id}")
-                    return True
-                except Exception as e:
-                    logger.error(f"❌ Ошибка удаления chat_menu: {e}")
-                return False
-
-    async def delete_old_menu_if_exists(self, chat_id: int, bot) -> bool:
-            """
-            Безопасно удалить старое сообщение с меню из чата.
-            НЕ падает при ошибках удаления.
-
-            Args:
-                chat_id: ID чата
-                bot: Aiogram Bot instance
-
-            Returns:
-                bool: True если удалено успешно или запись не найдена
-            """
-            try:
-                # Получаем информацию о старом меню
-                menu_info = await self.get_chat_menu(chat_id)
-                if not menu_info:
-                    logger.debug(f"📭 No old menu found for chat {chat_id}")
-                    return True
-
-                old_message_id = menu_info['menu_message_id']
-
-                # Пытаемся удалить старое сообщение из чата
-                try:
-                    await bot.delete_message(chat_id=chat_id, message_id=old_message_id)
-                    logger.info(f"🗑️ Deleted old menu message {old_message_id} from chat {chat_id}")
-                except Exception as e:
-                    # Сообщение может быть уже удалено пользователем - это нормально
-                    logger.warning(f"⚠️ Could not delete old menu message {old_message_id}: {e}")
-
-                # Удаляем запись из БД в любом случае
-                await self.delete_chat_menu(chat_id)
-                return True
-
-            except Exception as e:
-                logger.error(f"❌ Ошибка в delete_old_menu_if_exists: {e}")
-                return False
 
 # Создаем глобальный экземпляр
 db = Database()
