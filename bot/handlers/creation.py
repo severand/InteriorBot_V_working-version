@@ -12,6 +12,9 @@
 # --- ОБНОВЛЕНО: 2025-12-24 20:30 - ИСПРАВЛЕНА ПЕРЕДАЧА PRO MODE ---
 # [2025-12-24 20:30] ДОБАВЛЕНО: Получение use_pro из базы данных и передача в функции генерации
 # [2025-12-24 20:30] ИСПРАВЛЕНО: Параметр PRO MODE теперь правильно передается от БД через api_fallback в kie_api
+# --- ОБНОВЛЕНО: 2025-12-24 21:00 - ПОКАЗ РЕЖИМА В HEADER СООБЩЕНИЙ ---
+# [2025-12-24 21:00] ЗАМЕНЕНЫ: Все вызовы add_balance_to_text на add_balance_and_mode_to_text
+# [2025-12-24 21:00] РЕЗУЛЬТАТ: Header теперь показывает "⚡ Баланс: N | Режим: 🔧 PRO" или "📋 СТАНДАРТ"
 
 import asyncio
 import logging
@@ -54,6 +57,9 @@ from utils.texts import (
     EXTERIOR_PLOT_PROMPT_TEXT,  # ДОБАВИТЬ
     ROOM_DESCRIPTION_PROMPT_TEXT  # ДОБАВИТЬ
 )
+
+# ОБНОВЛЕНО: 2025-12-24 21:00 - Импорт обновленной функции для header с режимом
+from utils.helpers import add_balance_and_mode_to_text
 
 from utils.navigation import edit_menu, show_main_menu
 
@@ -172,9 +178,8 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
         except Exception as e:
             logger.debug(f"Не удалось удалить старое меню: {e}")
 
-    # Добавляем баланс к тексту
-    from utils.helpers import add_balance_to_text
-    text_with_balance = await add_balance_to_text(WHAT_IS_IN_PHOTO_TEXT, user_id)  # ИЗМЕНЕНО
+    # [2025-12-24 21:00] ОБНОВЛЕНО: Использование add_balance_and_mode_to_text
+    text_with_balance = await add_balance_and_mode_to_text(WHAT_IS_IN_PHOTO_TEXT, user_id)
 
     # Отправляем НОВОЕ сообщение с экраном "Что на фото"
     sent_msg = await message.answer(
@@ -295,6 +300,7 @@ async def exterior_prompt_received(message: Message, state: FSMContext, admins: 
     Дата создания: 2025-12-08
     Использует новую функцию smart_generate_with_text() из api_fallback.py
     [2025-12-24 20:30] ОБНОВЛЕНО: Теперь передает use_pro параметр
+    [2025-12-24 21:00] ОБНОВЛЕНО: Использование add_balance_and_mode_to_text для header
     """
     user_prompt = message.text.strip()
     user_id = message.from_user.id
@@ -482,8 +488,8 @@ async def exterior_prompt_received(message: Message, state: FSMContext, admins: 
             except:
                 pass
 
-        from utils.helpers import add_balance_to_text
-        text_with_balance = await add_balance_to_text("✅ Выбери что дальше 👇", user_id)
+        # [2025-12-24 21:00] ОБНОВЛЕНО: Использование add_balance_and_mode_to_text
+        text_with_balance = await add_balance_and_mode_to_text("✅ Выбери что дальше 👇", user_id)
 
         new_menu = await message.answer(
             text=text_with_balance,
@@ -519,6 +525,7 @@ async def room_description_received(message: Message, state: FSMContext, admins:
     [2025-12-08 16:01] Добавлено сохранение file_id после отправки фото
     [2025-12-23 11:33] Обновлено для использования smart_generate_with_text из api_fallback.py
     [2025-12-24 20:30] ОБНОВЛЕНО: Теперь передает use_pro параметр
+    [2025-12-24 21:00] ОБНОВЛЕНО: Использование add_balance_and_mode_to_text для header
 
     НОВЫЙ ОБРАБОТЧИК: Получено описание "Другого помещения"
 
@@ -705,8 +712,8 @@ async def room_description_received(message: Message, state: FSMContext, admins:
             except:
                 pass
 
-        from utils.helpers import add_balance_to_text
-        text_with_balance = await add_balance_to_text("✅ Выбери что дальше 👇", user_id)
+        # [2025-12-24 21:00] ОБНОВЛЕНО: Использование add_balance_and_mode_to_text
+        text_with_balance = await add_balance_and_mode_to_text("✅ Выбери что дальше 👇", user_id)
 
         new_menu = await message.answer(
             text=text_with_balance,
@@ -888,6 +895,8 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     # Использует smart_clear_space из api_fallback.py для Smart Fallback
     # --- ОБНОВЛЕНО: 2025-12-24 20:30 ---
     # Теперь передает use_pro параметр
+    # --- ОБНОВЛЕНО: 2025-12-24 21:00 ---
+    # Использование add_balance_and_mode_to_text для header
 
     Выполнение очистки пространства
     """
@@ -997,8 +1006,8 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
                 logger.debug(f"Не удалось удалить старое меню: {e}")
 
         # Создаём НОВОЕ меню ПОД картинкой
-        from utils.helpers import add_balance_to_text
-        text_with_balance = await add_balance_to_text(PHOTO_SAVED_TEXT, user_id)
+        # [2025-12-24 21:00] ОБНОВЛЕНО: Использование add_balance_and_mode_to_text
+        text_with_balance = await add_balance_and_mode_to_text(PHOTO_SAVED_TEXT, user_id)
 
         new_menu = await callback.message.answer(
             text=text_with_balance,
@@ -1064,6 +1073,8 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     # Использует smart_generate_interior из api_fallback.py для Smart Fallback
     # --- ОБНОВЛЕНО: 2025-12-24 20:30 ---
     # Теперь передает use_pro параметр
+    # --- ОБНОВЛЕНО: 2025-12-24 21:00 ---
+    # Использование add_balance_and_mode_to_text для header
 
     Обработка выбора стиля и генерация дизайна
     """
@@ -1229,8 +1240,8 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
                 logger.debug(f"Не удалось удалить старое меню: {e}")
 
         # Отправляем НОВОЕ меню
-        from utils.helpers import add_balance_to_text
-        text_with_balance = await add_balance_to_text(
+        # [2025-12-24 21:00] ОБНОВЛЕНО: Использование add_balance_and_mode_to_text
+        text_with_balance = await add_balance_and_mode_to_text(
             "✅ Выбери что дальше 👇",
             user_id
         )
