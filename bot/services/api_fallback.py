@@ -1,7 +1,7 @@
 # ========================================
 # ФАЙЛ: bot/services/api_fallback.py
 # НАЗНАЧЕНИЕ: Smart Fallback система для генерации дизайна
-# ВЕРСИЯ: 2.1 (2025-12-23) - KIE NANO BANANA PRIMARY - FIXED TEXT PROMPT BUG
+# ВЕРСИЯ: 2.2 (2025-12-24) - КIE NANO BANANA PRIMARY + PRO MODE - TASK 6
 # АВТОР: Project Owner
 # ========================================
 # ЛОГИКА:
@@ -12,11 +12,16 @@
 # [2025-12-23 23:02] FIXED: smart_generate_with_text теперь правильно передает user_prompt в KIE.AI
 # [2025-12-23 23:02] ДОБАВЛЕНО: Новая функция generate_interior_with_text для KIE, поддерживает текстовые промпты
 # [2025-12-23 23:02] УЛУЧШЕНО: Логирование для отслеживания какой API на самом деле запускается
+# [2025-12-24 14:31] ДОБАВЛЕНО: PRO режим - передача pro_mode параметра в все функции генерации (TASK 6)
+# [2025-12-24 14:31] ОБНОВЛЕНО: smart_generate_interior получает pro_mode параметр
+# [2025-12-24 14:31] ОБНОВЛЕНО: smart_generate_with_text получает pro_mode параметр
+# [2025-12-24 14:31] ОБНОВЛЕНО: smart_clear_space получает pro_mode параметр
 #
 # ИСПОЛЬЗОВАНИЕ:
 # from services.api_fallback import smart_generate_interior, smart_generate_with_text, smart_clear_space
-# url = await smart_generate_interior(photo_id, room, style, bot_token)
-# url = await smart_generate_with_text(photo_id, user_prompt, bot_token, scene_type)
+# url = await smart_generate_interior(photo_id, room, style, bot_token, pro_mode=True)
+# url = await smart_generate_with_text(photo_id, user_prompt, bot_token, scene_type, pro_mode=True)
+# url = await smart_clear_space(photo_id, bot_token, pro_mode=True)
 # ========================================
 
 import os
@@ -53,6 +58,7 @@ logger.info(f"   PRIMARY: KIE.AI NANO BANANA (Gemini 2.5 Flash)")
 logger.info(f"   FALLBACK: Replicate nano-banana")
 logger.info(f"   USE_KIE_API: {USE_KIE_API}")
 logger.info(f"   KIE_API_KEY configured: {bool(KIE_API_KEY)}")
+logger.info("   PRO MODE: ENABLED (2025-12-24 TASK 6)")
 logger.info("=" * 70)
 
 
@@ -65,6 +71,7 @@ async def smart_generate_interior(
     room: str,
     style: str,
     bot_token: str,
+    pro_mode: bool = False,  # НОВОЕ: 2025-12-24 TASK 6 - параметр PRO режима
 ) -> Optional[str]:
     """
     Smart Fallback для генерации дизайна интерьера.
@@ -77,6 +84,7 @@ async def smart_generate_interior(
         room: Тип комнаты
         style: Стиль дизайна
         bot_token: Токен бота Telegram
+        pro_mode: PRO режим генерации (2025-12-24 TASK 6)
 
     Returns:
         URL сгенерированного изображения или None
@@ -85,12 +93,14 @@ async def smart_generate_interior(
         - Каждая попытка логируется
         - Время выполнения трассируется
         - Ошибки записываются с полной информацией
+        - PRO режим указывается в логах
     """
     logger.info("=" * 70)
     logger.info("🎨 SMART GENERATE INTERIOR [FALLBACK SYSTEM]")
     logger.info(f"   Room: {room}")
     logger.info(f"   Style: {style}")
     logger.info(f"   Photo: {photo_file_id[:20]}...")
+    logger.info(f"   PRO Mode: {'✅ YES' if pro_mode else '❌ NO'}")
     logger.info("=" * 70)
 
     result_url = None
@@ -105,11 +115,13 @@ async def smart_generate_interior(
 
         try:
             logger.info("⏳ Запуск KIE.AI NANO BANANA...")
+            # ОБНОВЛЕНО 2025-12-24: Передача pro_mode в KIE.AI функцию
             result_url = await generate_interior_with_nano_banana(
                 photo_file_id=photo_file_id,
                 room=room,
                 style=style,
                 bot_token=bot_token,
+                pro_mode=pro_mode,  # ✅ НОВОЕ: PRO режим передается в KIE
             )
 
             if result_url:
@@ -161,7 +173,7 @@ async def smart_generate_interior(
     logger.error("")
     logger.error("=" * 70)
     logger.error("❌ SMART GENERATE FAILED - ALL ATTEMPTS EXHAUSTED")
-    logger.error(f"   Room: {room}, Style: {style}")
+    logger.error(f"   Room: {room}, Style: {style}, PRO: {pro_mode}")
     logger.error("=" * 70)
 
     return None
@@ -176,6 +188,7 @@ async def smart_generate_with_text(
     user_prompt: str,
     bot_token: str,
     scene_type: str = "custom",
+    pro_mode: bool = False,  # НОВОЕ: 2025-12-24 TASK 6 - параметр PRO режима
 ) -> Optional[str]:
     """
     Smart Fallback для генерации с пользовательским текстовым промптом.
@@ -192,16 +205,19 @@ async def smart_generate_with_text(
         user_prompt: Текстовый промпт от пользователя (ВАЖНО!)
         bot_token: Токен бота Telegram
         scene_type: Тип сцены (house_exterior, plot_exterior, other_room, custom)
+        pro_mode: PRO режим генерации (2025-12-24 TASK 6)
 
     Returns:
         URL сгенерированного изображения или None
     
     [2025-12-23 23:02] FIXED: Теперь правильно передает user_prompt в KIE.AI (был баг!)
+    [2025-12-24 14:31] ОБНОВЛЕНО: Добавлена поддержка pro_mode параметра
     """
     logger.info("=" * 70)
     logger.info("✍️  SMART GENERATE WITH TEXT [FALLBACK SYSTEM]")
     logger.info(f"   Scene: {scene_type}")
     logger.info(f"   Prompt: {user_prompt[:50]}...")
+    logger.info(f"   PRO Mode: {'✅ YES' if pro_mode else '❌ NO'}")
     logger.info(f"   Photo: {photo_file_id[:20]}...")
     logger.info("=" * 70)
 
@@ -218,12 +234,13 @@ async def smart_generate_with_text(
         try:
             logger.info("⏳ Запуск KIE.AI NANO BANANA с текстовым промптом...")
             # ✅ FIX 2025-12-23: Используем generate_interior_with_text_nano_banana для текстовых промптов
-            # Эта функция правильно передает user_prompt в KIE.AI
+            # ✅ ОБНОВЛЕНО 2025-12-24: Передача pro_mode
             result_url = await generate_interior_with_text_nano_banana(
                 photo_file_id=photo_file_id,
                 user_prompt=user_prompt,  # ✅ ТЕПЕРЬ ПРАВИЛЬНО ПЕРЕДАЕТСЯ!
                 bot_token=bot_token,
                 scene_type=scene_type,
+                pro_mode=pro_mode,  # ✅ НОВОЕ: PRO режим передается в KIE
             )
 
             if result_url:
@@ -275,7 +292,7 @@ async def smart_generate_with_text(
     logger.error("")
     logger.error("=" * 70)
     logger.error("❌ SMART GENERATE WITH TEXT FAILED - ALL ATTEMPTS EXHAUSTED")
-    logger.error(f"   Scene: {scene_type}, Prompt: {user_prompt[:50]}...")
+    logger.error(f"   Scene: {scene_type}, Prompt: {user_prompt[:50]}..., PRO: {pro_mode}")
     logger.error("=" * 70)
 
     return None
@@ -288,6 +305,7 @@ async def smart_generate_with_text(
 async def smart_clear_space(
     photo_file_id: str,
     bot_token: str,
+    pro_mode: bool = False,  # НОВОЕ: 2025-12-24 TASK 6 - параметр PRO режима
 ) -> Optional[str]:
     """
     Smart Fallback для очистки пространства от мебели.
@@ -298,13 +316,17 @@ async def smart_clear_space(
     Args:
         photo_file_id: ID фото из Telegram
         bot_token: Токен бота Telegram
+        pro_mode: PRO режим генерации (2025-12-24 TASK 6)
 
     Returns:
         URL очищенного изображения или None
+        
+    [2025-12-24 14:31] ОБНОВЛЕНО: Добавлена поддержка pro_mode параметра
     """
     logger.info("=" * 70)
     logger.info("🧽 SMART CLEAR SPACE [FALLBACK SYSTEM]")
     logger.info(f"   Photo: {photo_file_id[:20]}...")
+    logger.info(f"   PRO Mode: {'✅ YES' if pro_mode else '❌ NO'}")
     logger.info("=" * 70)
 
     result_url = None
@@ -319,9 +341,11 @@ async def smart_clear_space(
 
         try:
             logger.info("⏳ Запуск KIE.AI NANO BANANA для очистки...")
+            # ОБНОВЛЕНО 2025-12-24: Передача pro_mode
             result_url = await clear_space_with_kie(
                 photo_file_id=photo_file_id,
                 bot_token=bot_token,
+                pro_mode=pro_mode,  # ✅ НОВОЕ: PRO режим передается в KIE
             )
 
             if result_url:
@@ -371,6 +395,7 @@ async def smart_clear_space(
     logger.error("")
     logger.error("=" * 70)
     logger.error("❌ SMART CLEAR SPACE FAILED - ALL ATTEMPTS EXHAUSTED")
+    logger.error(f"   PRO Mode: {pro_mode}")
     logger.error("=" * 70)
 
     return None
@@ -385,7 +410,7 @@ async def get_fallback_status() -> dict:
     Получить статус fallback системы.
 
     Returns:
-        Dict с информацией о доступных провайдерах
+        Dict с информацией о доступных провайдерах и поддержке PRO режима
     """
     return {
         "primary_provider": "KIE.AI NANO BANANA (Gemini 2.5 Flash)",
@@ -394,6 +419,7 @@ async def get_fallback_status() -> dict:
         "kie_api_key_configured": bool(KIE_API_KEY),
         "replicate_available": bool(os.getenv('REPLICATE_API_TOKEN')),
         "fallback_chain": "KIE.AI NANO BANANA → Replicate nano-banana",
+        "pro_mode_support": "ENABLED (2025-12-24 TASK 6)",
         "status": "READY" if (USE_KIE_API and KIE_API_KEY) else "REPLICATE ONLY"
     }
 
