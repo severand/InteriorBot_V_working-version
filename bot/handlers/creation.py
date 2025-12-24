@@ -9,6 +9,9 @@
 # [2025-12-23 11:33] Заменены вызовы генерации на smart_* функции из api_fallback.py
 # [2025-12-23 11:33] Сохранена 100% совместимость с именами обработчиков кнопок
 # [2025-12-23 11:33] Добавлена логика fallback: KIE.AI -> Replicate
+# --- ОБНОВЛЕНО: 2025-12-24 20:30 - ИСПРАВЛЕНА ПЕРЕДАЧА PRO MODE ---
+# [2025-12-24 20:30] ДОБАВЛЕНО: Получение use_pro из базы данных и передача в функции генерации
+# [2025-12-24 20:30] ИСПРАВЛЕНО: Параметр PRO MODE теперь правильно передается от БД через api_fallback в kie_api
 
 import asyncio
 import logging
@@ -291,6 +294,7 @@ async def exterior_prompt_received(message: Message, state: FSMContext, admins: 
 
     Дата создания: 2025-12-08
     Использует новую функцию smart_generate_with_text() из api_fallback.py
+    [2025-12-24 20:30] ОБНОВЛЕНО: Теперь передает use_pro параметр
     """
     user_prompt = message.text.strip()
     user_id = message.from_user.id
@@ -365,13 +369,19 @@ async def exterior_prompt_received(message: Message, state: FSMContext, admins: 
         except:
             pass
 
+    # [2025-12-24 20:30] ДОБАВЛЕНО: Получить use_pro из БД и передать в функцию
+    pro_settings = await db.get_user_pro_settings(user_id)
+    use_pro = pro_settings.get('pro_mode', False)
+    logger.info(f"🔧 PRO MODE для user_id={user_id}: {use_pro}")
+
     # ЗАПУСК ГЕНЕРАЦИИ С ТЕКСТОВЫМ ПРОМПТОМ (с использованием Smart Fallback)
     try:
         result_image_url = await smart_generate_with_text(
             photo_file_id=photo_id,
             user_prompt=user_prompt,
             bot_token=bot_token,
-            scene_type=scene_type
+            scene_type=scene_type,
+            use_pro=use_pro,  # [2025-12-24 20:30] ✅ ПЕРЕДАЕМ USE_PRO
         )
         success = result_image_url is not None
     except Exception as e:
@@ -508,6 +518,7 @@ async def room_description_received(message: Message, state: FSMContext, admins:
     ОБНОВЛЕНО: 2025-12-08 16:01
     [2025-12-08 16:01] Добавлено сохранение file_id после отправки фото
     [2025-12-23 11:33] Обновлено для использования smart_generate_with_text из api_fallback.py
+    [2025-12-24 20:30] ОБНОВЛЕНО: Теперь передает use_pro параметр
 
     НОВЫЙ ОБРАБОТЧИК: Получено описание "Другого помещения"
 
@@ -586,13 +597,19 @@ async def room_description_received(message: Message, state: FSMContext, admins:
         except:
             pass
 
+    # [2025-12-24 20:30] ДОБАВЛЕНО: Получить use_pro из БД и передать в функцию
+    pro_settings = await db.get_user_pro_settings(user_id)
+    use_pro = pro_settings.get('pro_mode', False)
+    logger.info(f"🔧 PRO MODE для user_id={user_id}: {use_pro}")
+
     # ЗАПУСК ГЕНЕРАЦИИ С ТЕКСТОВЫМ ПРОМПТОМ (с использованием Smart Fallback)
     try:
         result_image_url = await smart_generate_with_text(
             photo_file_id=photo_id,
             user_prompt=room_description,
             bot_token=bot_token,
-            scene_type="other_room"
+            scene_type="other_room",
+            use_pro=use_pro,  # [2025-12-24 20:30] ✅ ПЕРЕДАЕМ USE_PRO
         )
         success = result_image_url is not None
     except Exception as e:
@@ -869,6 +886,8 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     # Меню появляется ПОД картинкой (единое меню)
     # --- ОБНОВЛЕНО: 2025-12-23 ---
     # Использует smart_clear_space из api_fallback.py для Smart Fallback
+    # --- ОБНОВЛЕНО: 2025-12-24 20:30 ---
+    # Теперь передает use_pro параметр
 
     Выполнение очистки пространства
     """
@@ -911,9 +930,14 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     )
     await callback.answer()
 
+    # [2025-12-24 20:30] ДОБАВЛЕНО: Получить use_pro из БД и передать в функцию
+    pro_settings = await db.get_user_pro_settings(user_id)
+    use_pro = pro_settings.get('pro_mode', False)
+    logger.info(f"🔧 PRO MODE для user_id={user_id}: {use_pro}")
+
     # ЗАПУСК ГЕНЕРАЦИИ С ИСПОЛЬЗОВАНИЕМ SMART FALLBACK
     try:
-        result_image_url = await smart_clear_space(photo_id, bot_token)
+        result_image_url = await smart_clear_space(photo_id, bot_token, use_pro=use_pro)  # [2025-12-24 20:30] ✅ ПЕРЕДАЕМ USE_PRO
         success = result_image_url is not None
     except Exception as e:
         logger.error(f"Критическая ошибка очистки пространства: {e}")
@@ -1038,6 +1062,8 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     # Соблюдена технология единого меню
     # --- ОБНОВЛЕНО: 2025-12-23 ---
     # Использует smart_generate_interior из api_fallback.py для Smart Fallback
+    # --- ОБНОВЛЕНО: 2025-12-24 20:30 ---
+    # Теперь передает use_pro параметр
 
     Обработка выбора стиля и генерация дизайна
     """
@@ -1093,9 +1119,14 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     )
     await callback.answer()
 
+    # [2025-12-24 20:30] ДОБАВЛЕНО: Получить use_pro из БД и передать в функцию
+    pro_settings = await db.get_user_pro_settings(user_id)
+    use_pro = pro_settings.get('pro_mode', False)
+    logger.info(f"🔧 PRO MODE для user_id={user_id}: {use_pro}")
+
     # ЗАПУСК ГЕНЕРАЦИИ С ИСПОЛЬЗОВАНИЕМ SMART FALLBACK
     try:
-        result_image_url = await smart_generate_interior(photo_id, room, style, bot_token)
+        result_image_url = await smart_generate_interior(photo_id, room, style, bot_token, use_pro=use_pro)  # [2025-12-24 20:30] ✅ ПЕРЕДАЕМ USE_PRO
         success = result_image_url is not None
     except Exception as e:
         logger.error(f"Критическая ошибка генерации: {e}")
@@ -1223,7 +1254,6 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
             keyboard=get_main_menu_keyboard(is_admin=user_id in admins),
             screen_code='generation_error'
         )
-
 
 
 
