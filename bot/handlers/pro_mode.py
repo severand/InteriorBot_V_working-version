@@ -23,6 +23,10 @@ PHASE 3 TASK 7: ОКОНЧАТЕЛЬНО ОБНОВЛЕН StateFilter (2025-12-2
 
 PHASE 3 TASK 8: ПЕРЕНАМЕНОВАН router → pro_mode_router (2025-12-24 20:11)
 - router → pro_mode_router (для корректного импорта в main.py)
+
+PHASE 3 TASK 9: ИСПРАВЛЕНО ПЕРЕКЛЮЧЕНИЕ PRO MODE (2025-12-24 20:33)
+- Добавлен await db.set_user_pro_mode(user_id, mode=True) в select_pro_mode
+- Убран режим из select_standard_mode для более чистой логики
 """
 
 from aiogram import Router, F
@@ -124,18 +128,11 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
     chat_id = callback.message.chat.id
     
     try:
+        # ✅ СОХРАНЯЕМ В БД
+        await db.set_user_pro_mode(user_id, mode=False)
+        
         # ✅ Согласно DEVELOPMENT_RULES: state.set_state(None) при навигации
         await state.set_state(None)
-        
-        # Получаем menu_message_id ДО очистки
-        data = await state.get_data()
-        menu_message_id = data.get('menu_message_id', callback.message.message_id)
-        
-        # Восстанавливаем menu_message_id после set_state
-        await state.update_data(menu_message_id=menu_message_id)
-        
-        # ✅ СОХРАНИТЬ В БД
-        await db.set_user_pro_mode(user_id, mode=False)
         
         # Текст подтверждения
         text = """✅ РЕЖИМ ИЗМЕНЁН НА СТАНДАРТ
@@ -156,9 +153,6 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
             screen_code='profile_settings'
         )
         
-        # ✅ СОХРАНИТЬ В БД
-        await db.save_chat_menu(chat_id, user_id, menu_message_id, 'profile_settings')
-        
         await callback.answer("✅ Режим: СТАНДАРТ")
         logger.info(f"✅ [PRO_MODE] Пользователь {user_id} выбрал СТАНДАРТ режим")
         
@@ -178,12 +172,18 @@ async def select_pro_mode(callback: CallbackQuery, state: FSMContext):
     Переход:
     - ProModeStates.choosing_mode → ProModeStates.choosing_pro_params
     
+    ✅ ИСПРАВЛЕНО 2025-12-24: Добавлена установка mode=True
+    
     Экран: ПАРАМЕТРЫ PRO (3 ряда: 4+3+2)
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     
     try:
+        # ✅ ИСПРАВЛЕНО: Устанавливаем режим на PRO сразу
+        await db.set_user_pro_mode(user_id, mode=True)
+        logger.debug(f"✅ [PRO_MODE] set_user_pro_mode(True) для {user_id}")
+        
         # 1. Получаем текущие параметры PRO из БД
         pro_settings = await db.get_user_pro_settings(user_id)
         current_ratio = pro_settings.get('pro_aspect_ratio', '16:9')
@@ -320,7 +320,6 @@ async def select_resolution(callback: CallbackQuery, state: FSMContext):
     
     Действие:
     - Сохраняем resolution в БД
-    - Сохраняем mode='pro' в БД
     - Обновляем FSM
     - Переоткрываем меню с новой отметкой
     """
@@ -337,10 +336,7 @@ async def select_resolution(callback: CallbackQuery, state: FSMContext):
             return
         
         # 2. ✅ СОХРАНЯЕМ В БД
-        # Сначала устанавливаем разрешение
         await db.set_pro_resolution(user_id, resolution)
-        # Затем устанавливаем режим на PRO
-        await db.set_user_pro_mode(user_id, mode=True)
         
         # 3. Обновляем state.data
         data = await state.get_data()
@@ -373,7 +369,7 @@ async def select_resolution(callback: CallbackQuery, state: FSMContext):
         )
         
         await callback.answer(f"✅ Разрешение: {resolution} | Режим: PRO 🔧")
-        logger.info(f"✅ [PRO_MODE] Пользователь {user_id} выбрал разрешение {resolution} и PRO режим")
+        logger.info(f"✅ [PRO_MODE] Пользователь {user_id} выбрал разрешение {resolution}")
         
     except Exception as e:
         logger.error(f"❌ [PRO_MODE] Ошибка в select_resolution: {e}")
