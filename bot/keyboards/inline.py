@@ -1,10 +1,10 @@
 # keyboards/inline.py
 # Дата объединения: 05.12.2025
-# --- ОБНОВЛЕН: 2025-12-08 13:50 ---
+# --- ОБНОВЛЕН: 2025-12-24 13:05 ---
 # [2025-12-08 13:50] Добавлена новая клавиатура get_what_is_in_photo_keyboard() - 10 кнопок (интерьер+экстерьер)
 # [2025-12-08 13:50] УДАЛЕНА кнопка "Очистить пространство" из get_room_keyboard() согласно ТЗ
 # [2025-12-08 13:50] Функция get_clear_space_confirm_keyboard() СОХРАНЕНА для будущего использования
-# [2025-12-24 12:47] Добавлены клавиатуры для PRO MODE: get_mode_selection_keyboard, get_pro_params_keyboard
+# [2025-12-24 13:05] ФИНАЛЬНАЯ РЕАЛИЗАЦИЯ: MODE_SELECTION (2 ряда по 50%), PRO_PARAMS (3 ряда БЕЗ пустых)
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -223,16 +223,24 @@ def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
 
 # Экран Личного кабинета
 def get_profile_keyboard() -> InlineKeyboardMarkup:
-    """Профиль с новой структурой кнопок (5 кнопок) + ⚙️ НАСТРОЙКИ РЕЖИМА"""
+    """
+    ФИНАЛЬНО ОБНОВЛЕНА: 2025-12-24 13:05
+    
+    Структура:
+    - Ряд 1: Купить генерации | (пусто)
+    - Ряд 2: Настройки режима | Поддержка  
+    - Ряд 3: Главное меню
+    
+    Распределение: adjust(2, 2, 1)
+    """
     builder = InlineKeyboardBuilder()
 
-    # Ряд 1: Купить генерации | Поддержка
+    # Ряд 1: Купить генерации
     builder.row(
-        InlineKeyboardButton(text="💳 Стоимость генераций", callback_data="buy_generations"),
-        # InlineKeyboardButton(text="📊 Статистика", callback_data="show_statistics")
+        InlineKeyboardButton(text="💳 Стоимость генераций", callback_data="buy_generations")
     )
 
-    # Ряд 2: НОВОЕ - Настройки режима | Поддержка
+    # Ряд 2: Настройки режима | Поддержка
     builder.row(
         InlineKeyboardButton(text="⚙️ НАСТРОЙКИ РЕЖИМА", callback_data="profile_settings"),
         InlineKeyboardButton(text="💬 Поддержка", callback_data="show_support")
@@ -241,7 +249,7 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
     # Ряд 3: Главное меню (широкая кнопка)
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
 
-    builder.adjust(2, 2, 1)
+    builder.adjust(1, 2, 1)
     return builder.as_markup()
 
 
@@ -267,25 +275,27 @@ def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
 
 
 # ========================================
-# ДОБАВЛЕНО: 2025-12-24 12:47
-# PRO MODE - Клавиатуры для выбора режима и параметров
+# PRO MODE - ФИНАЛЬНЫЕ КЛАВИАТУРЫ
+# ОБНОВЛЕНО: 2025-12-24 13:05
 # ========================================
 
 def get_mode_selection_keyboard(current_mode_is_pro: bool) -> InlineKeyboardMarkup:
     """
     Клавиатура экрана выбора режима СТАНДАРТ vs PRO.
     
-    Одна из кнопок отмечена как активная (✅).
+    ФИНАЛЬНАЯ ВЕРСИЯ: 2025-12-24 13:05
+    
+    Структура:
+    - Ряд 1: [СТАНДАРТ 50%] [✅ PRO 50%]  (по 50% каждая в одном ряду)
+    - Ряд 2: [⬅️ Назад 50%] [🏠 Главное 50%]  (по 50% каждая в одном ряду)
+    
+    Распределение: adjust(2, 2)
     
     Args:
         current_mode_is_pro: True если текущий режим PRO, False если СТАНДАРТ
     
     Returns:
-        InlineKeyboardMarkup с двумя кнопками режима и кнопкой "Назад"
-    
-    Example:
-        >>> kb = get_mode_selection_keyboard(current_mode_is_pro=True)
-        # Вернёт клавиатуру с отмеченным PRO режимом
+        InlineKeyboardMarkup с 4 кнопками (2 ряда по 2)
     """
     builder = InlineKeyboardBuilder()
     
@@ -293,28 +303,25 @@ def get_mode_selection_keyboard(current_mode_is_pro: bool) -> InlineKeyboardMark
     std_mark = "" if current_mode_is_pro else "✅"
     pro_mark = "✅" if current_mode_is_pro else ""
     
-    # Ряд 1: СТАНДАРТ
+    # РЯД 1: РЕЖИМЫ (по 50% ширины каждая в одном ряду)
     builder.row(
         InlineKeyboardButton(
-            text=f"{std_mark} 📋 СТАНДАРТ - быстро и просто",
+            text=f"{std_mark} 📋 СТАНДАРТ".strip(),
             callback_data="mode_std"
-        )
-    )
-    
-    # Ряд 2: PRO
-    builder.row(
+        ),
         InlineKeyboardButton(
-            text=f"{pro_mark} 🔧 PRO - профессиональное качество",
+            text=f"{pro_mark} 🔧 PRO".strip(),
             callback_data="mode_pro"
         )
     )
     
-    # Ряд 3: Назад в профиль
+    # РЯД 2: НАВИГАЦИЯ (по 50% ширины каждая в одном ряду)
     builder.row(
-        InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data="show_profile")
+        InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data="show_profile"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
     )
     
-    builder.adjust(1, 1, 1)
+    builder.adjust(2, 2)
     return builder.as_markup()
 
 
@@ -325,11 +332,21 @@ def get_pro_params_keyboard(
     """
     Клавиатура для выбора параметров PRO режима.
     
-    Позволяет выбрать:
-    - Соотношение сторон: 16:9, 4:3, 1:1, 9:16
-    - Разрешение: 1K, 2K, 4K
+    ФИНАЛЬНАЯ ВЕРСИЯ: 2025-12-24 13:05
+    БЕЗ ПУСТЫХ РЯДОВ!
     
-    Активные параметры отмечены (✅).
+    Структура:
+    - РЫД 1: 4 кнопки соотношения (каждая 100%, но в разных рядах)
+      * 16:9 (каждая в отдельном ряду)
+      * 4:3
+      * 1:1
+      * 9:16
+    - РЫД 2: 3 кнопки разрешения (33% ширины каждая в одном ряду)
+      * 1K | 2K | 4K (все в одном ряду)
+    - РЫД 3: 2 кнопки навигации (по 50% ширины каждая в одном ряду)
+      * ⬅️ Назад | 🏠 Главное
+    
+    Распределение: 4 отдельных ряда + 1 ряд из 3 + 1 ряд из 2
     
     Args:
         current_ratio: текущее соотношение (по умолчанию "16:9")
@@ -337,19 +354,11 @@ def get_pro_params_keyboard(
     
     Returns:
         InlineKeyboardMarkup с кнопками для выбора параметров
-    
-    Example:
-        >>> kb = get_pro_params_keyboard(current_ratio="1:1", current_resolution="4K")
     """
     builder = InlineKeyboardBuilder()
     
-    # ===== РАЗДЕЛ: СООТНОШЕНИЕ СТОРОН =====
-    builder.row(
-        InlineKeyboardButton(text="📍 СООТНОШЕНИЕ СТОРОН:", callback_data="_info")
-    )
-    
-    # Ряд с соотношениями (2 в ряд)
-    for i, ratio in enumerate(ASPECT_RATIOS):
+    # ===== РЫД 1: СООТНОШЕНИЕ СТОРОН (4 кнопки, каждая в отдельном ряду) =====
+    for ratio in ASPECT_RATIOS:
         mark = "✅" if ratio == current_ratio else ""
         button_text = f"{mark} {ratio}".strip()
         builder.row(
@@ -359,17 +368,7 @@ def get_pro_params_keyboard(
             )
         )
     
-    # Пустая строка для разделения
-    builder.row(
-        InlineKeyboardButton(text="─────────────────────", callback_data="_separator")
-    )
-    
-    # ===== РАЗДЕЛ: РАЗРЕШЕНИЕ =====
-    builder.row(
-        InlineKeyboardButton(text="📍 РАЗРЕШЕНИЕ:", callback_data="_info")
-    )
-    
-    # Ряд с разрешениями (3 в ряд)
+    # ===== РЫД 2: РАЗРЕШЕНИЕ (3 кнопки в одном ряду) =====
     resolution_buttons = []
     for resolution in RESOLUTIONS:
         mark = "✅" if resolution == current_resolution else ""
@@ -380,20 +379,11 @@ def get_pro_params_keyboard(
                 callback_data=f"res_{resolution}"
             )
         )
+    builder.row(*resolution_buttons)  # 3 в одном ряду
     
-    # Добавляем по 3 кнопки в ряд
-    builder.row(*resolution_buttons)
-    
-    # Пустая строка для разделения
+    # ===== РЫД 3: НАВИГАЦИЯ (2 кнопки по 50% ширины в одном ряду) =====
     builder.row(
-        InlineKeyboardButton(text="─────────────────────", callback_data="_separator")
-    )
-    
-    # ===== КНОПКИ НАВИГАЦИИ =====
-    builder.row(
-        InlineKeyboardButton(text="⬅️ Назад к выбору режима", callback_data="profile_settings")
-    )
-    builder.row(
+        InlineKeyboardButton(text="⬅️ Назад к режимам", callback_data="profile_settings"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
     )
     
