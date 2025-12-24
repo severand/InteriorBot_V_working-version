@@ -54,7 +54,7 @@ class Database:
         self.db_path = db_path
 
     async def init_db(self):
-        """Инициализация таблиц БД"""
+        """Инициализация таблиц БД с миграциями"""
         async with aiosqlite.connect(self.db_path) as db:
             # Создаем все таблицы
             await db.execute(CREATE_USERS_TABLE)
@@ -73,8 +73,39 @@ class Database:
             for key, value in DEFAULT_SETTINGS.items():
                 await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
 
+            # ✅ МИГРАЦИЯ: Добавляем столбцы PRO MODE если их нет
+            await self._migrate_pro_mode_columns(db)
+
             await db.commit()
-            logger.info("База данных инициализирована")
+            logger.info("✅ База данных инициализирована")
+
+    async def _migrate_pro_mode_columns(self, db: aiosqlite.Connection) -> None:
+        """Добавляет столбцы PRO MODE если их еще нет в таблице users"""
+        try:
+            # Получаем информацию о столбцах таблицы users
+            async with db.execute("PRAGMA table_info(users)") as cursor:
+                columns = await cursor.fetchall()
+                column_names = [col[1] for col in columns]
+
+            # Проверяем и добавляем недостающие столбцы
+            migrations = [
+                ("pro_mode", "ALTER TABLE users ADD COLUMN pro_mode BOOLEAN DEFAULT 0"),
+                ("pro_aspect_ratio", "ALTER TABLE users ADD COLUMN pro_aspect_ratio TEXT DEFAULT '16:9'"),
+                ("pro_resolution", "ALTER TABLE users ADD COLUMN pro_resolution TEXT DEFAULT '1K'"),
+                ("pro_mode_changed_at", "ALTER TABLE users ADD COLUMN pro_mode_changed_at DATETIME"),
+            ]
+
+            for col_name, alter_query in migrations:
+                if col_name not in column_names:
+                    await db.execute(alter_query)
+                    logger.info(f"✅ Добавлен столбец: {col_name}")
+                else:
+                    logger.debug(f"✓ Столбец {col_name} уже существует")
+
+            await db.commit()
+            logger.info("✅ Миграция PRO MODE завершена")
+        except Exception as e:
+            logger.error(f"❌ Ошибка миграции PRO MODE: {e}")
 
     # ===== PRO MODE FUNCTIONS (НОВОЕ) =====
 
