@@ -2,6 +2,7 @@
 # --- ОБНОВЛЕН: 2025-12-09 16:24 - Удалены дублирующиеся состояния AdminStates ---
 # [2025-12-09 16:24] Состояния AdminStates были определены дважды - оставлено одно определение
 # [2025-12-09 16:24] Удалены дублирующиеся: waiting_for_user_id, adding_balance, removing_balance, setting_balance
+# [2025-12-24 13:35] PHASE 3: Добавлены состояния ProModeStates для PRO MODE интеграции
 
 from aiogram.fsm.state import StatesGroup, State
 
@@ -45,6 +46,29 @@ class ReferralStates(StatesGroup):
     entering_yoomoney = State()           # Ввод YooMoney
     entering_phone = State()              # Ввод телефона для СБП
     entering_other_method = State()       # Ввод другого способа
+
+
+# Класс состояний для PRO MODE
+class ProModeStates(StatesGroup):
+    """
+    Машина состояний для PRO MODE
+    
+    Описание:
+    - choosing_mode: Выбор между СТАНДАРТ и PRO
+    - choosing_pro_params: Выбор параметров PRO (соотношение, разрешение)
+    
+    Вход:
+    - callback: profile_settings нажать "⚙️ НАСТРОЙКИ РЕЖИМА"
+    
+    Выход:
+    - state.set_state(None) и возврат в профиль
+    """
+    
+    # State 1: Выбор режима (СТАНДАРТ vs PRO)
+    choosing_mode = State()
+    
+    # State 2: Выбор параметров PRO (соотношение + разрешение)
+    choosing_pro_params = State()
 
 
 # Класс состояний для других процессов
