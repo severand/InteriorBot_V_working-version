@@ -3,6 +3,7 @@
 # [2025-12-24 12:44] Добавлена функция add_balance_and_mode_to_text для footer с режимом
 # [2025-12-24 21:38] ИСПРАВЛЕНА: header должен быть ВНИЗУ, emoji без квадратиков
 # [2025-12-24 21:56] ИСПРАВЛЕНА: убрана проблема с квадратиками - используются Unicode escape для emoji
+# [2025-12-24 22:01] ОПТИМИЗИРОВАНА: линия сокращена с 36 на 18 символов для мобильной версии
 
 import asyncio
 import logging
@@ -87,8 +88,13 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
     Добавляет footer с информацией о балансе и текущем режиме В КОНЕЦ текста.
     
     Footer формат (в конце текста):
-    ────────────────────────────────────
+    ──────────────────
     Баланс: 15 | Режим: PRO
+    
+    [2025-12-24 22:01] ОПТИМИЗИРОВАНО:
+    - Линия сокращена с 36 на 18 символов (в два раза короче)
+    - Теперь всегда вмещается в одну строку на мобильном
+    - Работает корректно как для "PRO" так и для "СТАНДАРТ"
 
     Args:
         text: Исходный текст сообщения
@@ -108,7 +114,7 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
         >>> print(result)
         Выбери стиль дизайна:
         
-        ────────────────────────────────────
+        ──────────────────
         Баланс: 15 | Режим: PRO
     """
     try:
@@ -124,11 +130,13 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
         # \ud83d\udccb = 📋 (clipboard для СТАНДАРТ)
         mode_name = "PRO" if is_pro else "СТАНДАРТ"
         
-        # Формируем footer В КОНЦЕ текста
-        separator = "─" * 36
+        # [2025-12-24 22:01] ОПТИМИЗИРОВАНО: линия в два раза короче для мобильной версии!
+        # Была: separator = "─" * 36 (занимала 2+ строки на мобильном)
+        # Теперь: separator = "─" * 18 (всегда в одну строку)
+        separator = "─" * 18  # ✅ В ДВА РАЗА КОРОЧЕ!
         footer = f"\n\n{separator}\nБаланс: {balance} | Режим: {mode_icon} {mode_name}"
         
-        logger.debug(f"Footer сформирован для user {user_id}: {mode_name} mode, balance {balance}, icon={repr(mode_icon)}")
+        logger.debug(f"Footer сформирован для user {user_id}: {mode_name} mode, balance {balance}, separator={len(separator)}chars")
         
         return text + footer
         
