@@ -1,7 +1,8 @@
 # --- Обновлен: bot/utils/helpers.py ---
 # [2025-12-03 19:32] Добавлена функция add_balance_to_text для автоматического отображения баланса
-# [2025-12-24 12:44] Добавлена функция add_balance_and_mode_to_text для header с режимом
+# [2025-12-24 12:44] Добавлена функция add_balance_and_mode_to_text для footer с режимом
 # [2025-12-24 21:38] ИСПРАВЛЕНА: header должен быть ВНИЗУ, emoji без квадратиков
+# [2025-12-24 21:56] ИСПРАВЛЕНА: убрана проблема с квадратиками - используются Unicode escape для emoji
 
 import asyncio
 import logging
@@ -115,16 +116,19 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
         balance = await db.get_balance(user_id)
         pro_settings = await db.get_user_pro_settings(user_id)
         
-        # Определяем иконку и название режима (без квадратиков!)
+        # [2025-12-24 21:56] ИСПРАВЛЕНО: Используем Unicode escape-sequences вместо строковых emoji
+        # Это предотвращает проблемы с квадратиками в Telegram
         is_pro = pro_settings.get('pro_mode', False)
-        mode_icon = "🔧" if is_pro else "📋"
+        mode_icon = "\ud83d\udd27" if is_pro else "\ud83d\udccb"  # ✅ Unicode escapes!
+        # \ud83d\udd27 = 🔧 (wrench для PRO)
+        # \ud83d\udccb = 📋 (clipboard для СТАНДАРТ)
         mode_name = "PRO" if is_pro else "СТАНДАРТ"
         
         # Формируем footer В КОНЦЕ текста
         separator = "─" * 36
         footer = f"\n\n{separator}\nБаланс: {balance} | Режим: {mode_icon} {mode_name}"
         
-        logger.debug(f"Footer сформирован для user {user_id}: {mode_name} mode, balance {balance}")
+        logger.debug(f"Footer сформирован для user {user_id}: {mode_name} mode, balance {balance}, icon={repr(mode_icon)}")
         
         return text + footer
         
