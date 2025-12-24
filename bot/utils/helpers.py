@@ -5,6 +5,7 @@
 # [2025-12-24 21:56] ИСПРАВЛЕНА: убрана проблема с квадратиками - используются Unicode escape для emoji
 # [2025-12-24 22:01] ОПТИМИЗИРОВАНА: линия сокращена с 36 на 18 символов для мобильной версии
 # [2025-12-24 22:09] HOTFIX: откачена ошибка с Unicode escapes - вернены обычные emoji символы!
+# [2025-12-24 22:19] ДОБАВЛЕН ЭМОДЗИ ДЛЯ СТАНДАРТ: 📋 теперь отображается для режима СТАНДАРТ
 
 import asyncio
 import logging
@@ -91,6 +92,8 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
     Footer формат (в конце текста):
     ──────────────────
     Баланс: 15 | Режим: 🔧 PRO
+    или
+    Баланс: 15 | Режим: 📋 СТАНДАРТ
     
     [2025-12-24 22:01] ОПТИМИЗИРОВАНО:
     - Линия сокращена с 36 на 18 символов (в два раза короче)
@@ -101,6 +104,11 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
     - Использованы обычные emoji символы (вместо Unicode escapes)
     - Решена ошибка 'surrogates not allowed'
     - Все работает корректно!
+    
+    [2025-12-24 22:19] ДОБАВЛЕН ЭМОДЗИ ДЛЯ СТАНДАРТ:
+    - Для PRO: 🔧 PRO
+    - Для СТАНДАРТ: 📋 СТАНДАРТ ← НОВОЕ!
+    - Согласовано со скриншотом (как на экране "Сохранения фото")
 
     Args:
         text: Исходный текст сообщения
@@ -121,18 +129,24 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
         Выбери стиль дизайна:
         
         ──────────────────
-        Баланс: 15 | Режим: 🔧 PRO
+        Баланс: 15 | Режим: 📋 СТАНДАРТ
     """
     try:
         # Получаем баланс и настройки режима
         balance = await db.get_balance(user_id)
         pro_settings = await db.get_user_pro_settings(user_id)
         
-        # [2025-12-24 22:09] ИСПРАВЛЕНО: Использованы обычные emoji (не Unicode escapes!)
+        # [2025-12-24 22:19] ОБНОВЛЕНО: Добавлен эмодзи ДЛЯ СТАНДАРТ режима
+        # Используются обычные emoji (не Unicode escapes!)
         # Unicode escapes вызывают ошибку 'surrogates not allowed' при кодировании
         is_pro = pro_settings.get('pro_mode', False)
-        mode_icon = "🔧" if is_pro else "📋"  # ✅ Обычные emoji - работают везде!
-        mode_name = "PRO" if is_pro else "СТАНДАРТ"
+        
+        if is_pro:
+            mode_icon = "🔧"
+            mode_name = "PRO"
+        else:
+            mode_icon = "📋"
+            mode_name = "СТАНДАРТ"
         
         # [2025-12-24 22:01] ОПТИМИЗИРОВАНО: линия в два раза короче для мобильной версии!
         # Была: separator = "─" * 36 (занимала 2+ строки на мобильном)
@@ -140,7 +154,7 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
         separator = "─" * 18  # ✅ В ДВА РАЗА КОРОЧЕ!
         footer = f"\n\n{separator}\nБаланс: {balance} | Режим: {mode_icon} {mode_name}"
         
-        logger.debug(f"Footer сформирован для user {user_id}: {mode_name} mode, balance {balance}, separator={len(separator)}chars")
+        logger.debug(f"Footer сформирован для user {user_id}: {mode_icon} {mode_name}, balance {balance}")
         
         return text + footer
         
