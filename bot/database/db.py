@@ -1,4 +1,5 @@
 # bot/database/db.py
+# --- ОБНОВЛЕН: 2025-12-24 20:25 - Добавлены методы get_setting/set_setting ---
 # --- ОБНОВЛЕН: 2025-12-24 12:35 - Добавлены методы для PRO MODE функционала ---
 # --- ОБНОВЛЕН: 2025-12-04 11:36 - Добавлены методы для уведомлений и источников трафика ---
 # Добавлены методы get_user_recent_payments и get_referrer_info для расширенного поиска
@@ -712,6 +713,35 @@ class Database:
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
+
+    # ===== НАСТРОЙКИ =====
+
+    async def get_setting(self, key: str) -> Optional[str]:
+        """Получить значение настройки по ключу"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(GET_SETTING, (key,)) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else None
+
+    async def set_setting(self, key: str, value: str) -> bool:
+        """Установить значение настройки"""
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                await db.execute(SET_SETTING, (key, value))
+                await db.commit()
+                logger.info(f"Настройка {key} = {value}")
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка установки настройки {key}: {e}")
+                return False
+
+    async def get_all_settings(self) -> Dict[str, str]:
+        """Получить все настройки"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(GET_ALL_SETTINGS) as cursor:
+                rows = await cursor.fetchall()
+                return {row['key']: row['value'] for row in rows}
 
 
 # Создаем глобальный экземпляр
