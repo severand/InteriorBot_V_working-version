@@ -1,7 +1,26 @@
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ===== LOGGER SETUP =====
+logger = logging.getLogger('InteriorBot')
+logger.setLevel(logging.INFO)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# Formatter
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+console_handler.setFormatter(formatter)
+
+# Add handler to logger
+if not logger.handlers:
+    logger.addHandler(console_handler)
 
 # --- АДМИНИСТРАТОРЫ ----
 ADMIN_IDS = [
