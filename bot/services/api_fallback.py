@@ -1,7 +1,7 @@
 # ========================================
 # ФАЙЛ: bot/services/api_fallback.py
 # НАЗНАЧЕНИЕ: Smart Fallback система для генерации дизайна
-# ВЕРСИЯ: 2.1 (2025-12-23) - KIE NANO BANANA PRIMARY - FIXED TEXT PROMPT BUG
+# ВЕРСИЯ: 2.2 (2025-12-24 20:30) - ИСПРАВЛЕНА ПЕРЕДАЧА PRO MODE
 # АВТОР: Project Owner
 # ========================================
 # ЛОГИКА:
@@ -12,11 +12,12 @@
 # [2025-12-23 23:02] FIXED: smart_generate_with_text теперь правильно передает user_prompt в KIE.AI
 # [2025-12-23 23:02] ДОБАВЛЕНО: Новая функция generate_interior_with_text для KIE, поддерживает текстовые промпты
 # [2025-12-23 23:02] УЛУЧШЕНО: Логирование для отслеживания какой API на самом деле запускается
+# [2025-12-24 20:30] ИСПРАВЛЕНО: Все функции теперь передают use_pro параметр в KIE.AI
 #
 # ИСПОЛЬЗОВАНИЕ:
 # from services.api_fallback import smart_generate_interior, smart_generate_with_text, smart_clear_space
-# url = await smart_generate_interior(photo_id, room, style, bot_token)
-# url = await smart_generate_with_text(photo_id, user_prompt, bot_token, scene_type)
+# url = await smart_generate_interior(photo_id, room, style, bot_token, use_pro=pro_mode)
+# url = await smart_generate_with_text(photo_id, user_prompt, bot_token, scene_type, use_pro=pro_mode)
 # ========================================
 
 import os
@@ -65,6 +66,7 @@ async def smart_generate_interior(
     room: str,
     style: str,
     bot_token: str,
+    use_pro: bool = False,  # ✅ [2025-12-24] ДОБАВЛЕН ПАРАМЕТР
 ) -> Optional[str]:
     """
     Smart Fallback для генерации дизайна интерьера.
@@ -77,6 +79,7 @@ async def smart_generate_interior(
         room: Тип комнаты
         style: Стиль дизайна
         bot_token: Токен бота Telegram
+        use_pro: Использовать PRO режим [2025-12-24] ✅
 
     Returns:
         URL сгенерированного изображения или None
@@ -91,6 +94,7 @@ async def smart_generate_interior(
     logger.info(f"   Room: {room}")
     logger.info(f"   Style: {style}")
     logger.info(f"   Photo: {photo_file_id[:20]}...")
+    logger.info(f"   Mode: {'🕹 PRO' if use_pro else '📋 BASE'}")  # ✅ [2025-12-24]
     logger.info("=" * 70)
 
     result_url = None
@@ -110,6 +114,7 @@ async def smart_generate_interior(
                 room=room,
                 style=style,
                 bot_token=bot_token,
+                use_pro=use_pro,  # ✅ [2025-12-24] ПЕРЕДАЕМ PRO MODE
             )
 
             if result_url:
@@ -176,6 +181,7 @@ async def smart_generate_with_text(
     user_prompt: str,
     bot_token: str,
     scene_type: str = "custom",
+    use_pro: bool = False,  # ✅ [2025-12-24] ДОБАВЛЕН ПАРАМЕТР
 ) -> Optional[str]:
     """
     Smart Fallback для генерации с пользовательским текстовым промптом.
@@ -192,17 +198,20 @@ async def smart_generate_with_text(
         user_prompt: Текстовый промпт от пользователя (ВАЖНО!)
         bot_token: Токен бота Telegram
         scene_type: Тип сцены (house_exterior, plot_exterior, other_room, custom)
+        use_pro: Использовать PRO режим [2025-12-24] ✅
 
     Returns:
         URL сгенерированного изображения или None
     
     [2025-12-23 23:02] FIXED: Теперь правильно передает user_prompt в KIE.AI (был баг!)
+    [2025-12-24 20:30] ИСПРАВЛЕНО: Передача PRO MODE параметра
     """
     logger.info("=" * 70)
     logger.info("✍️  SMART GENERATE WITH TEXT [FALLBACK SYSTEM]")
     logger.info(f"   Scene: {scene_type}")
     logger.info(f"   Prompt: {user_prompt[:50]}...")
     logger.info(f"   Photo: {photo_file_id[:20]}...")
+    logger.info(f"   Mode: {'🕹 PRO' if use_pro else '📋 BASE'}")  # ✅ [2025-12-24]
     logger.info("=" * 70)
 
     result_url = None
@@ -224,6 +233,7 @@ async def smart_generate_with_text(
                 user_prompt=user_prompt,  # ✅ ТЕПЕРЬ ПРАВИЛЬНО ПЕРЕДАЕТСЯ!
                 bot_token=bot_token,
                 scene_type=scene_type,
+                use_pro=use_pro,  # ✅ [2025-12-24] ПЕРЕДАЕМ PRO MODE
             )
 
             if result_url:
@@ -288,6 +298,7 @@ async def smart_generate_with_text(
 async def smart_clear_space(
     photo_file_id: str,
     bot_token: str,
+    use_pro: bool = False,  # ✅ [2025-12-24] ДОБАВЛЕН ПАРАМЕТР
 ) -> Optional[str]:
     """
     Smart Fallback для очистки пространства от мебели.
@@ -298,6 +309,7 @@ async def smart_clear_space(
     Args:
         photo_file_id: ID фото из Telegram
         bot_token: Токен бота Telegram
+        use_pro: Использовать PRO режим [2025-12-24] ✅
 
     Returns:
         URL очищенного изображения или None
@@ -305,6 +317,7 @@ async def smart_clear_space(
     logger.info("=" * 70)
     logger.info("🧽 SMART CLEAR SPACE [FALLBACK SYSTEM]")
     logger.info(f"   Photo: {photo_file_id[:20]}...")
+    logger.info(f"   Mode: {'🕹 PRO' if use_pro else '📋 BASE'}")  # ✅ [2025-12-24]
     logger.info("=" * 70)
 
     result_url = None
@@ -322,6 +335,7 @@ async def smart_clear_space(
             result_url = await clear_space_with_kie(
                 photo_file_id=photo_file_id,
                 bot_token=bot_token,
+                use_pro=use_pro,  # ✅ [2025-12-24] ПЕРЕДАЕМ PRO MODE
             )
 
             if result_url:
