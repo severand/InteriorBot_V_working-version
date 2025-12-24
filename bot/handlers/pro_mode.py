@@ -17,12 +17,15 @@ PHASE 3 TASK 5: ИСПРАВЛЕНЫ ИМПОРТЫ (2025-12-24 19:52)
 PHASE 3 TASK 6: ОБНОВЛЕН СИНТАКСИС AIOGRAM 3.X (2025-12-24 20:05)
 - Добавлен StateFilter для корректной работы с состояниями
 - Исправлены все декораторы @router.callback_query()
+
+PHASE 3 TASK 7: ОКОНЧАТЕЛЬНО ОБНОВЛЕН StateFilter (2025-12-24 20:08)
+- Перенесен импорт: from aiogram.filters import StateFilter
 """
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StateFilter
+from aiogram.filters import StateFilter
 
 from states.fsm import ProModeStates
 from keyboards.inline import (
