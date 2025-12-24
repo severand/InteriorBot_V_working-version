@@ -1,4 +1,4 @@
-# bot/main.py
+# --- ОБНОВЛЕН: 2025-12-24 14:15 - Добавлена регистрация pro_mode router ---
 # --- ОБНОВЛЕН: 2025-12-10 12:03 - Добавлен веб-сервер для вебхука YooKassa ---
 # [2025-12-10 12:03] Добавлен запуск aiohttp веб-сервера для обработки вебхуков YooKassa
 # [2025-12-07 10:43] Добавлен вызов миграции chat_menus при старте
@@ -18,6 +18,7 @@ from config import ADMIN_IDS
 from config import config
 from database.db import Database
 from handlers import user_start, creation, payment, referral, admin
+from handlers.pro_mode import pro_mode_router
 #from handlers.webhook import yookassa_webhook_handler
 
 # Configure logging
@@ -53,6 +54,7 @@ async def main():
         creation.router,
         payment.router,
         referral.router,
+        pro_mode_router,  # ✅ PRO MODE ROUTER (PHASE 3)
     )
 
     # Передаем ADMIN_IDS и BOT_TOKEN в контекст

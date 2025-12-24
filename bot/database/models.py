@@ -1,6 +1,6 @@
 # bot/database/models.py
-# --- ОБНОВЛЕН: 2025-12-07 09:58 - Добавлена таблица chat_menus для системы единого меню ---
-# [2025-12-07 09:58] Добавлена таблица chat_menus с полями: chat_id, user_id, menu_message_id, screen_code, updated_at
+# --- ОБНОВЛЕН: 2025-12-24 12:35 - Добавлены поля для PRO MODE функционала ---
+# [2025-12-07 09:58] Добавлена таблица chat_menus для системы единого меню ---
 """SQL queries for database initialization"""
 
 # ===== СУЩЕСТВУЮЩИЕ ТАБЛИЦЫ =====
@@ -33,6 +33,12 @@ CREATE TABLE IF NOT EXISTS users (
     successful_payments INTEGER DEFAULT 0,
     total_spent INTEGER DEFAULT 0,
     last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    -- PRO MODE поля (новое)
+    pro_mode BOOLEAN DEFAULT 0,
+    pro_aspect_ratio TEXT DEFAULT '16:9',
+    pro_resolution TEXT DEFAULT '1K',
+    pro_mode_changed_at DATETIME,
 
     FOREIGN KEY (referred_by) REFERENCES users (user_id)
 )
@@ -312,4 +318,30 @@ WHERE chat_id = ?
 
 DELETE_CHAT_MENU = """
 DELETE FROM chat_menus WHERE chat_id = ?
+"""
+
+# ===== PRO MODE SQL QUERIES (новое) =====
+
+GET_USER_PRO_SETTINGS = """
+SELECT pro_mode, pro_aspect_ratio, pro_resolution, pro_mode_changed_at
+FROM users
+WHERE user_id = ?
+"""
+
+SET_USER_PRO_MODE = """
+UPDATE users
+SET pro_mode = ?, pro_mode_changed_at = CURRENT_TIMESTAMP
+WHERE user_id = ?
+"""
+
+SET_PRO_ASPECT_RATIO = """
+UPDATE users
+SET pro_aspect_ratio = ?
+WHERE user_id = ?
+"""
+
+SET_PRO_RESOLUTION = """
+UPDATE users
+SET pro_resolution = ?
+WHERE user_id = ?
 """

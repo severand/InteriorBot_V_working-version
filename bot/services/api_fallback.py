@@ -121,7 +121,7 @@ async def smart_generate_interior(
                 logger.warning("⚠️ [ATTEMPT 1] FAILED - No result from KIE.AI NANO BANANA")
 
         except Exception as e:
-            logger.error(f"❌ [ATTEMPT 1] ERROR - KIE.AI NANO BANANA")
+            logger.error("❌ [ATTEMPT 1] ERROR - KIE.AI NANO BANANA")
             logger.error(f"   Exception: {str(e)[:200]}")
 
     else:
@@ -152,7 +152,7 @@ async def smart_generate_interior(
             logger.error("❌ [ATTEMPT 2] FAILED - No result from Replicate")
 
     except Exception as e:
-        logger.error(f"❌ [ATTEMPT 2] ERROR - Replicate nano-banana")
+        logger.error("❌ [ATTEMPT 2] ERROR - Replicate nano-banana")
         logger.error(f"   Exception: {str(e)[:200]}")
 
     # ========================================
@@ -235,7 +235,7 @@ async def smart_generate_with_text(
                 logger.warning("⚠️ [ATTEMPT 1] FAILED - No result from KIE.AI NANO BANANA")
 
         except Exception as e:
-            logger.error(f"❌ [ATTEMPT 1] ERROR - KIE.AI NANO BANANA")
+            logger.error("❌ [ATTEMPT 1] ERROR - KIE.AI NANO BANANA")
             logger.error(f"   Exception: {str(e)[:200]}")
 
     else:
@@ -266,7 +266,7 @@ async def smart_generate_with_text(
             logger.error("❌ [ATTEMPT 2] FAILED - No result from Replicate")
 
     except Exception as e:
-        logger.error(f"❌ [ATTEMPT 2] ERROR - Replicate nano-banana")
+        logger.error("❌ [ATTEMPT 2] ERROR - Replicate nano-banana")
         logger.error(f"   Exception: {str(e)[:200]}")
 
     # ========================================
@@ -333,7 +333,7 @@ async def smart_clear_space(
                 logger.warning("⚠️ [ATTEMPT 1] FAILED - No result from KIE.AI NANO BANANA")
 
         except Exception as e:
-            logger.error(f"❌ [ATTEMPT 1] ERROR - KIE.AI NANO BANANA")
+            logger.error("❌ [ATTEMPT 1] ERROR - KIE.AI NANO BANANA")
             logger.error(f"   Exception: {str(e)[:200]}")
 
     else:
@@ -362,7 +362,7 @@ async def smart_clear_space(
             logger.error("❌ [ATTEMPT 2] FAILED - No result from Replicate")
 
     except Exception as e:
-        logger.error(f"❌ [ATTEMPT 2] ERROR - Replicate nano-banana")
+        logger.error("❌ [ATTEMPT 2] ERROR - Replicate nano-banana")
         logger.error(f"   Exception: {str(e)[:200]}")
 
     # ========================================

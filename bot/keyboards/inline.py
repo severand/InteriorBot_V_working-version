@@ -1,9 +1,10 @@
 # keyboards/inline.py
 # Дата объединения: 05.12.2025
-# --- ОБНОВЛЕН: 2025-12-08 13:50 ---
+# --- ОБНОВЛЕН: 2025-12-24 13:12 ---
 # [2025-12-08 13:50] Добавлена новая клавиатура get_what_is_in_photo_keyboard() - 10 кнопок (интерьер+экстерьер)
 # [2025-12-08 13:50] УДАЛЕНА кнопка "Очистить пространство" из get_room_keyboard() согласно ТЗ
 # [2025-12-08 13:50] Функция get_clear_space_confirm_keyboard() СОХРАНЕНА для будущего использования
+# [2025-12-24 13:12] ОКОНЧАТЕЛЬНАЯ РЕАЛИЗАЦИЯ: 4 кнопки СООТНОШЕНИЯ В ОДНОМ РЯДУ (по 25% каждая)
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -50,6 +51,10 @@ STYLE_TYPES = [
     ("Organic Modern", "Органический Модерн"),
     ("Loft", "Лофт"),
 ]
+
+# --- Параметры PRO MODE ---
+ASPECT_RATIOS = ["16:9", "4:3", "1:1", "9:16"]
+RESOLUTIONS = ["1K", "2K", "4K"]
 
 #  Экран главный
 def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
@@ -218,25 +223,33 @@ def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
 
 # Экран Личного кабинета
 def get_profile_keyboard() -> InlineKeyboardMarkup:
-    """Профиль с новой структурой кнопок (5 кнопок)"""
+    """
+    ФИНАЛЬНО ОБНОВЛЕНА: 2025-12-24 13:05
+    
+    Структура:
+    - Ряд 1: Купить генерации | (пусто)
+    - Ряд 2: Настройки режима | Поддержка  
+    - Ряд 3: Главное меню
+    
+    Распределение: adjust(1, 2, 1)
+    """
     builder = InlineKeyboardBuilder()
 
-    # Ряд 1: Купить генерации | Статистика
+    # Ряд 1: Купить генерации
     builder.row(
-        InlineKeyboardButton(text="💳 Стоимость генераций", callback_data="buy_generations"),
-        # InlineKeyboardButton(text="📊 Статистика", callback_data="show_statistics")
+        InlineKeyboardButton(text="💳 Стоимость генераций", callback_data="buy_generations")
     )
 
-    # Ряд 2: Партнёрская программа | Поддержка
+    # Ряд 2: Настройки режима | Поддержка
     builder.row(
-        # InlineKeyboardButton(text="🎁 Партнёрская программа", callback_data="show_referral_program"),
+        InlineKeyboardButton(text="⚙️ НАСТРОЙКИ РЕЖИМА", callback_data="profile_settings"),
         InlineKeyboardButton(text="💬 Поддержка", callback_data="show_support")
     )
 
     # Ряд 3: Главное меню (широкая кнопка)
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
 
-    builder.adjust(2, 2, 1)
+    builder.adjust(1, 2, 1)
     return builder.as_markup()
 
 
@@ -261,5 +274,115 @@ def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+# ========================================
+# PRO MODE - ФИНАЛЬНЫЕ КЛАВИАТУРЫ
+# ОБНОВЛЕНО: 2025-12-24 13:12
+# ✅ 4 КНОПКИ СООТНОШЕНИЯ В ОДНОМ РЯДУ (по 25% каждая)
+# ========================================
+
+def get_mode_selection_keyboard(current_mode_is_pro: bool) -> InlineKeyboardMarkup:
+    """
+    Клавиатура экрана выбора режима СТАНДАРТ vs PRO.
+    
+    ФИНАЛЬНАЯ ВЕРСИЯ: 2025-12-24 13:12
+    
+    Структура:
+    - Ряд 1: [СТАНДАРТ 50%] [✅ PRO 50%]  (по 50% каждая в одном ряду)
+    - Ряд 2: [⬅️ Назад 50%] [🏠 Главное 50%]  (по 50% каждая в одном ряду)
+    
+    Распределение: adjust(2, 2)
+    
+    Args:
+        current_mode_is_pro: True если текущий режим PRO, False если СТАНДАРТ
+    
+    Returns:
+        InlineKeyboardMarkup с 4 кнопками (2 ряда по 2)
+    """
+    builder = InlineKeyboardBuilder()
+    
+    # Определяем метки активности
+    std_mark = "" if current_mode_is_pro else "✅"
+    pro_mark = "✅" if current_mode_is_pro else ""
+    
+    # РЯД 1: РЕЖИМЫ (по 50% ширины каждая в одном ряду)
+    builder.row(
+        InlineKeyboardButton(
+            text=f"{std_mark} 📋 СТАНДАРТ".strip(),
+            callback_data="mode_std"
+        ),
+        InlineKeyboardButton(
+            text=f"{pro_mark} 🔧 PRO".strip(),
+            callback_data="mode_pro"
+        )
+    )
+    
+    # РЯД 2: НАВИГАЦИЯ (по 50% ширины каждая в одном ряду)
+    builder.row(
+        InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data="show_profile"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
+    )
+    
+    builder.adjust(2, 2)
+    return builder.as_markup()
 
 
+def get_pro_params_keyboard(
+    current_ratio: str = "16:9",
+    current_resolution: str = "1K"
+) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для выбора параметров PRO режима.
+    
+    ФИНАЛЬНАЯ ВЕРСИЯ: 2025-12-24 13:12
+    БЕЗ ПУСТЫХ РЯДОВ!
+    
+    Структура:
+    - РЫД 1: 4 кнопки соотношения В ОДНОМ РЯДУ (по 25% каждая)
+      * [✅ 16:9] [4:3] [1:1] [9:16] (ВСЕ В ОДНОМ РЯДУ!)
+    - РЫД 2: 3 кнопки разрешения (33% ширины каждая в одном ряду)
+      * [✅ 1K] [2K] [4K] (все в одном ряду)
+    - РЫД 3: 2 кнопки навигации (по 50% ширины каждая в одном ряду)
+      * [⬅️ Назад] [🏠 Главное]
+    
+    Args:
+        current_ratio: текущее соотношение (по умолчанию "16:9")
+        current_resolution: текущее разрешение (по умолчанию "1K")
+    
+    Returns:
+        InlineKeyboardMarkup с кнопками для выбора параметров
+    """
+    builder = InlineKeyboardBuilder()
+    
+    # ===== РЫД 1: СООТНОШЕНИЕ СТОРОН (4 кнопки В ОДНОМ РЯДУ!) =====
+    aspect_buttons = []
+    for ratio in ASPECT_RATIOS:
+        mark = "✅" if ratio == current_ratio else ""
+        button_text = f"{mark} {ratio}".strip()
+        aspect_buttons.append(
+            InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"aspect_{ratio}"
+            )
+        )
+    builder.row(*aspect_buttons)  # ✅ 4 КНОПКИ В ОДНОМ РЯДУ! (по 25% каждая)
+    
+    # ===== РЫД 2: РАЗРЕШЕНИЕ (3 кнопки в одном ряду) =====
+    resolution_buttons = []
+    for resolution in RESOLUTIONS:
+        mark = "✅" if resolution == current_resolution else ""
+        button_text = f"{mark} {resolution}".strip()
+        resolution_buttons.append(
+            InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"res_{resolution}"
+            )
+        )
+    builder.row(*resolution_buttons)  # 3 в одном ряду (по 33% каждая)
+    
+    # ===== РЫД 3: НАВИГАЦИЯ (2 кнопки по 50% ширины в одном ряду) =====
+    builder.row(
+        InlineKeyboardButton(text="⬅️ Назад к режимам", callback_data="profile_settings"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
+    )
+    
+    return builder.as_markup()

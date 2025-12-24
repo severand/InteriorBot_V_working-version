@@ -432,7 +432,7 @@ async def generate_interior_with_nano_banana(
 ) -> Optional[str]:
     """
     Генерация дизайна интерьера через Nano Banana (Kie.ai).
-    [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
+    [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод на английский
     [2025-12-23 23:02] ПРИМЕЧАНИЕ: Это использует предустановленный style (room + style from design_styles)
     [НОВОЕ 2025-12-24] ДОБАВЛена поддержка PRO режима
     """
@@ -450,7 +450,7 @@ async def generate_interior_with_nano_banana(
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
+        # [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод на английский
         prompt = await build_design_prompt(style, room, translate=True)
         logger.info(f"📄 Промпт сгенерирован и переведен (длина: {len(prompt)} символов)")
 
@@ -561,8 +561,7 @@ async def clear_space_with_kie(
 ) -> Optional[str]:
     """
     Очистка пространства через Nano Banana.
-    [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
-    [НОВОЕ 2025-12-24] ДОБАВЛена поддержка PRO режима
+    [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод
     """
     logger.info("="*70)
     logger.info("📋 ОЧИСТКА ПРОСТРАНСТВА [Kie.ai]")
@@ -576,7 +575,7 @@ async def clear_space_with_kie(
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
+        # [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод
         prompt = await build_clear_space_prompt(translate=True)
         logger.info(f"📄 Промпт очистки (переведен): {prompt}")
 
