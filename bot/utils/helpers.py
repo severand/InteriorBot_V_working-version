@@ -4,7 +4,6 @@
 # [2025-12-24 21:38] ИСПРАВЛЕНА: header должен быть ВНИЗУ, emoji без квадратиков
 # [2025-12-24 21:56] ИСПРАВЛЕНА: убрана проблема с квадратиками - используются Unicode escape для emoji
 # [2025-12-24 22:01] ОПТИМИЗИРОВАНА: линия сокращена с 36 на 18 символов для мобильной версии
-# [2025-12-24 22:09] HOTFIX: откачена ошибка с Unicode escapes - вернены обычные emoji символы!
 
 import asyncio
 import logging
@@ -90,17 +89,12 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
     
     Footer формат (в конце текста):
     ──────────────────
-    Баланс: 15 | Режим: 🔧 PRO
+    Баланс: 15 | Режим: PRO
     
     [2025-12-24 22:01] ОПТИМИЗИРОВАНО:
     - Линия сокращена с 36 на 18 символов (в два раза короче)
     - Теперь всегда вмещается в одну строку на мобильном
     - Работает корректно как для "PRO" так и для "СТАНДАРТ"
-    
-    [2025-12-24 22:09] ИСПРАВЛЕНО:
-    - Использованы обычные emoji символы (вместо Unicode escapes)
-    - Решена ошибка 'surrogates not allowed'
-    - Все работает корректно!
 
     Args:
         text: Исходный текст сообщения
@@ -121,17 +115,19 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
         Выбери стиль дизайна:
         
         ──────────────────
-        Баланс: 15 | Режим: 🔧 PRO
+        Баланс: 15 | Режим: PRO
     """
     try:
         # Получаем баланс и настройки режима
         balance = await db.get_balance(user_id)
         pro_settings = await db.get_user_pro_settings(user_id)
         
-        # [2025-12-24 22:09] ИСПРАВЛЕНО: Использованы обычные emoji (не Unicode escapes!)
-        # Unicode escapes вызывают ошибку 'surrogates not allowed' при кодировании
+        # [2025-12-24 21:56] ИСПРАВЛЕНО: Используем Unicode escape-sequences вместо строковых emoji
+        # Это предотвращает проблемы с квадратиками в Telegram
         is_pro = pro_settings.get('pro_mode', False)
-        mode_icon = "🔧" if is_pro else "🔧"  # ✅ Обычные emoji - работают везде!
+        mode_icon = "\ud83d\udd27" if is_pro else "\ud83d\udccb"  # ✅ Unicode escapes!
+        # \ud83d\udd27 = 🔧 (wrench для PRO)
+        # \ud83d\udccb = 📋 (clipboard для СТАНДАРТ)
         mode_name = "PRO" if is_pro else "СТАНДАРТ"
         
         # [2025-12-24 22:01] ОПТИМИЗИРОВАНО: линия в два раза короче для мобильной версии!
