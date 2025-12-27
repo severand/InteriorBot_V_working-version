@@ -4,6 +4,7 @@
 # [2025-12-24 21:38] ИСПРАВЛЕНА: header должен быть ВНИЗУ, emoji без квадратиков
 # [2025-12-24 21:56] ИСПРАВЛЕНА: убрана проблема с квадратиками - используются Unicode escape для emoji
 # [2025-12-24 22:01] ОПТИМИЗИРОВАНА: линия сокращена с 36 на 18 символов для мобильной версии
+# [2025-12-27 09:41] КРИТИЧНО ИСПРАВЛЕНО: Surrogate characters заменены на правильные Unicode escapes (U+1F527, U+1F4CB)
 
 import asyncio
 import logging
@@ -89,7 +90,14 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
     
     Footer формат (в конце текста):
     ──────────────────
-    Баланс: 15 | Режим: PRO
+    Баланс: 15 | Режим: 🔧 PRO
+    
+    [2025-12-27 09:41] КРИТИЧНО ИСПРАВЛЕНО:
+    - Заменены surrogate characters на правильные Unicode escapes
+    - Была: \ud83d\udd27 (НЕПРАВИЛЬНО - surrogate)
+    - Стало: \U0001f527 (ПРАВИЛЬНО - 4-байтовый Unicode)
+    - Emoji 🔧 (wrench PRO) и 📋 (clipboard СТАНДАРТ) работают корректно
+    - UTF-8 кодирование теперь безопасно
     
     [2025-12-24 22:01] ОПТИМИЗИРОВАНО:
     - Линия сокращена с 36 на 18 символов (в два раза короче)
@@ -115,19 +123,19 @@ async def add_balance_and_mode_to_text(text: str, user_id: int) -> str:
         Выбери стиль дизайна:
         
         ──────────────────
-        Баланс: 15 | Режим: PRO
+        Баланс: 15 | Режим: 🔧 PRO
     """
     try:
         # Получаем баланс и настройки режима
         balance = await db.get_balance(user_id)
         pro_settings = await db.get_user_pro_settings(user_id)
         
-        # [2025-12-24 21:56] ИСПРАВЛЕНО: Используем Unicode escape-sequences вместо строковых emoji
-        # Это предотвращает проблемы с квадратиками в Telegram
+        # [2025-12-27 09:41] КРИТИЧНО ИСПРАВЛЕНО: Правильные Unicode escapes для emoji
+        # Использование \U0001XXXX (32-bit) вместо \uXXXX (16-bit surrogates)
         is_pro = pro_settings.get('pro_mode', False)
-        mode_icon = "\ud83d\udd27" if is_pro else "\ud83d\udccb"  # ✅ Unicode escapes!
-        # \ud83d\udd27 = 🔧 (wrench для PRO)
-        # \ud83d\udccb = 📋 (clipboard для СТАНДАРТ)
+        mode_icon = "\U0001f527" if is_pro else "\U0001f4cb"  # ✅ ПРАВИЛЬНО!
+        # \U0001f527 = 🔧 (wrench для PRO)
+        # \U0001f4cb = 📋 (clipboard для СТАНДАРТ)
         mode_name = "PRO" if is_pro else "СТАНДАРТ"
         
         # [2025-12-24 22:01] ОПТИМИЗИРОВАНО: линия в два раза короче для мобильной версии!
