@@ -1,5 +1,6 @@
 # bot/database/models.py
-# --- ОБНОВЛЕН: 2025-12-24 12:35 - Добавлены поля для PRO MODE функционала ---
+# --- ОБНОВЛЕН: 2025-12-27 21:45 - КРИТИЧНО: Добавлена таблица для сохранения current_mode ---
+# [2025-12-24 12:35] Добавлены поля для PRO MODE функционала ---
 # [2025-12-07 09:58] Добавлена таблица chat_menus для системы единого меню ---
 """SQL queries for database initialization"""
 
@@ -81,6 +82,18 @@ CREATE TABLE IF NOT EXISTS user_activity (
     user_id INTEGER NOT NULL,
     action_type TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (user_id)
+)
+"""
+
+# ===== 🚨 КРИТИЧЕСКАЯ ТАБЛИЦА: ТЕКУЩИЙ РЕЖИМ ПОЛЬЗОВАТЕЛЯ (НОВОЕ) =====
+# [2025-12-27 21:45] КРИТИЧНО: Добавлена для сохранения выбранного режима при перезагрузке
+
+CREATE_USER_SESSION_MODES_TABLE = """
+CREATE TABLE IF NOT EXISTS user_session_modes (
+    user_id INTEGER PRIMARY KEY,
+    current_mode TEXT DEFAULT 'NEW_DESIGN',
+    mode_changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (user_id)
 )
 """
@@ -230,6 +243,17 @@ LOG_USER_ACTIVITY = """
 INSERT INTO user_activity (user_id, action_type)
 VALUES (?, ?)
 """
+
+# --- 🚨 ТЕКУЩИЙ РЕЖИМ ПОЛЬЗОВАТЕЛЯ (НОВОЕ) ---
+GET_USER_CURRENT_MODE = "SELECT current_mode FROM user_session_modes WHERE user_id = ?"
+SET_USER_CURRENT_MODE = """
+INSERT INTO user_session_modes (user_id, current_mode, mode_changed_at)
+VALUES (?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(user_id) DO UPDATE SET
+    current_mode = excluded.current_mode,
+    mode_changed_at = CURRENT_TIMESTAMP
+"""
+CLEAR_USER_CURRENT_MODE = "DELETE FROM user_session_modes WHERE user_id = ?"
 
 # --- Реферальный баланс ---
 GET_REFERRAL_BALANCE = "SELECT referral_balance FROM users WHERE user_id = ?"
