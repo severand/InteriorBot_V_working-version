@@ -24,7 +24,7 @@ from config_kie import config_kie
 
 from services.design_styles import get_room_name, get_style_description, is_valid_room, is_valid_style
 from services.prompts import build_design_prompt, build_clear_space_prompt
-from services.translator import translate_to_english  # ✅ ИМПОРТ В НАЧАЛО!
+from services.translator import translate_prompt_to_english as translate_to_english
 
 logger = logging.getLogger(__name__)
 
