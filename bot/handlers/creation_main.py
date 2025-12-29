@@ -11,7 +11,7 @@ import html
 from aiogram import Router, F
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StateFilter
+from aiogram.filters.state import StateFilter
 from aiogram.types import CallbackQuery, Message
 
 from database.db import db
