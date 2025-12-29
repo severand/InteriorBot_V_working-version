@@ -33,7 +33,6 @@ from states.fsm import CreationStates, WorkMode
 from utils.texts import (
     MODE_SELECTION_TEXT,
     UPLOADING_PHOTO_TEMPLATES,
-    PHOTO_SAVED_TEXT,
     NO_BALANCE_TEXT,
     TOO_MANY_PHOTOS_TEXT,
     UPLOAD_PHOTO_TEXT,
@@ -425,7 +424,7 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
         if balance <= 0:
             await state.clear()
             menu_msg = await message.answer(
-                NO_BALANCE_TEXT,
+                ERROR_INSUFFICIENT_BALANCE,
                 reply_markup=get_payment_keyboard(),
                 parse_mode="Markdown"
             )
