@@ -3,7 +3,8 @@
 # [2025-12-29] НОВЫЙ ФАЙЛ: Часть 2 рефакторинга creation.py
 # Содержит: room_choice (SCREEN 3), choose_style_1/2 (SCREEN 4-5), style_choice_handler (SCREEN 6 + генерация)
 # + post_generation_menu (SCREEN 6), change_style_after_gen
-# [2025-12-30 01:15] 🔥 CRITICAL FIX: Используем edit_message_media() вместо answer_photo() - ОДНО сообщение!
+# [2025-12-30 01:20] 🔥 BUGFIX #1: Убрать work_mode из add_balance_and_mode_to_text() - функция принимает 2 аргумента!
+# [2025-12-30 01:20] 🔥 BUGFIX #2: Убрать answer_photo() в fallback - редактировать текст, а не отправлять новое фото
 
 import asyncio
 import logging
@@ -65,7 +66,7 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
         await state.set_state(CreationStates.room_choice)
         
         text = f"🏠 **Выберите тип помещения**"
-        text = await add_balance_and_mode_to_text(text, user_id, data.get('work_mode'))
+        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
         
         await edit_menu(
             callback=callback,
@@ -87,6 +88,7 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
 
 # ===== SCREEN 3→4: ROOM_CHOICE_HANDLER =====
 # [2025-12-29] НОВОЕ (V3)
+# [2025-12-30 01:20] 🔥 BUGFIX #1: Убрать work_mode argument
 @router.callback_query(
     StateFilter(CreationStates.room_choice),
     F.data.startswith("room_")
@@ -105,14 +107,13 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
         room = callback.data.replace("room_", "")
         balance = await db.get_balance(user_id)
         data = await state.get_data()
-        work_mode = data.get('work_mode')
         
         # Сохраняем выбор комнаты в FSM
         await state.update_data(selected_room=room)
         await state.set_state(CreationStates.choose_style_1)
         
         text = f"🎨 **Выберите стиль дизайна**"
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
         
         await edit_menu(
             callback=callback,
@@ -154,7 +155,7 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
         await state.set_state(CreationStates.choose_style_1)
         
         text = f"🎨 **Выберите стиль дизайна (страница 1)**"
-        text = await add_balance_and_mode_to_text(text, user_id, data.get('work_mode'))
+        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
         
         await edit_menu(
             callback=callback,
@@ -195,7 +196,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
         await state.set_state(CreationStates.choose_style_2)
         
         text = f"🎨 **Выберите стиль дизайна (страница 2)**"
-        text = await add_balance_and_mode_to_text(text, user_id, data.get('work_mode'))
+        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
         
         await edit_menu(
             callback=callback,
@@ -215,8 +216,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 
 # ===== SCREEN 4-5 to 6: STYLE_CHOICE_HANDLER (Выбор стиля + генерация) =====
 # [2025-12-29] ОБНОВЛЕНО (V3) - Добавлена установка state.post_generation
-# [2025-12-30 01:15] 🔥 CRITICAL FIX: Используем edit_message_media() вместо answer_photo()
-#                   РЕЗУЛЬТАТ: ОДНО сообщение с фото и кнопками!
+# [2025-12-30 01:20] 🔥 BUGFIX #2: Убрать answer_photo() в fallback - редактировать меню, не отправлять новое
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -225,23 +225,17 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     """
     SCREEN 4-5→6: Обработчик выбора стиля и генерация дизайна
     
-    🔥 CRITICAL FIX [2025-12-30 01:15]:
-    - РАНЬШЕ: answer_photo() + answer() = 2 СООБЩЕНИЯ
-    - ТЕПЕРЬ: edit_message_media() = 1 СООБЩЕНИЕ
-    
-    Логика:
-    1. Валидация + проверка баланса
-    2. Показываем "Генерирую дизайн..."
-    3. Генерируем через API
-    4. ✅ НОВОЕ: Используем edit_message_media() + edit_message_text()
-    5. РЕЗУЛЬТАТ: Фото + текст + кнопки в ОДНОМ сообщении
+    🔥 BUGFIX #2 [2025-12-30 01:20]:
+    - БЫЛО: answer_photo() → ВТОРОЕ ФОТО
+    - ТЕПЕРЬ: edit_message_media() → ОДНО ФОТО в ОДНОМ сообщении
+    - Fallback: edit_message_text() вместо answer()
     
     Log: "[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}"
     """
     style = callback.data.split("_")[-1]
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
-    menu_message_id = callback.message.message_id  # ✅ Получаем ID текущего меню
+    menu_message_id = callback.message.message_id
 
     await db.log_activity(user_id, f'style_{style}')
 
@@ -320,11 +314,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         style_name = html.escape(style.replace('_', ' ').title(), quote=True)
         caption = f"✨ Ваш новый дизайн {room_name} в стиле <b>{style_name}</b>!"
         
-        # ✅ Подготовка текста для post_generation меню
+        # Подготовка текста для post_generation меню
         post_gen_text = await add_balance_and_mode_to_text(
             "✅ **Выбери что дальше**",
-            user_id,
-            data.get('work_mode')
+            user_id
         )
 
         photo_sent = False
@@ -350,17 +343,18 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         except Exception as media_error:
             logger.warning(f"⚠️ [STYLE_CHOICE] FAILED edit_message_media: {media_error}")
 
-            # ===== ПОПЫТКА 2: Отправка по URL (если edit_message_media не сработал) =====
+            # ===== ПОПЫТКА 2: Отправка фото + редактирование текста (БЕЗ дублирования!) =====
             try:
-                logger.info(f"🔄 [STYLE_CHOICE] FALLBACK 1 - answer_photo() по URL")
+                logger.info(f"🔄 [STYLE_CHOICE] FALLBACK - Sending photo separately")
                 
-                await callback.message.answer_photo(
+                # Отправляем фото
+                photo_msg = await callback.message.answer_photo(
                     photo=result_image_url,
                     caption=caption,
                     parse_mode="HTML"
                 )
                 
-                # Редактируем старое меню на post_generation
+                # ✅ БЕЗ дублирования! Редактируем СТАРОЕ меню (не создаем новое)
                 try:
                     await callback.message.bot.edit_message_text(
                         chat_id=chat_id,
@@ -369,24 +363,17 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                         reply_markup=get_post_generation_keyboard(),
                         parse_mode="Markdown"
                     )
+                    logger.info(f"✅ [STYLE_CHOICE] FALLBACK: Old menu edited with post_generation text")
                 except Exception as e:
-                    logger.debug(f"Не удалось отредактировать старое меню: {e}")
-                    # Отправляем новое меню
-                    new_menu = await callback.message.answer(
-                        text=post_gen_text,
-                        reply_markup=get_post_generation_keyboard(),
-                        parse_mode="Markdown"
-                    )
-                    await state.update_data(menu_message_id=new_menu.message_id)
-                    await db.save_chat_menu(chat_id, user_id, new_menu.message_id, 'post_generation')
+                    logger.debug(f"⚠️ Не удалось отредактировать старое меню: {e}")
                 
                 photo_sent = True
-                logger.info(f"✅ [STYLE_CHOICE] FALLBACK 1 SUCCESS - Photo sent via URL")
+                logger.info(f"✅ [STYLE_CHOICE] FALLBACK SUCCESS - Photo sent via URL")
 
             except Exception as url_error:
                 logger.warning(f"⚠️ [STYLE_CHOICE] FALLBACK 1 FAILED: {url_error}")
 
-                # ===== ПОПЫТКА 3: FALLBACK через BufferedInputFile =====
+                # ===== ПОПЫТКА 3: FALLBACK через BufferedInputFile (БЕЗ дублирования!) =====
                 try:
                     logger.info(f"🔄 [STYLE_CHOICE] FALLBACK 2 - BufferedInputFile")
 
@@ -395,13 +382,13 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                             if resp.status == 200:
                                 photo_data = await resp.read()
 
-                                await callback.message.answer_photo(
+                                photo_msg = await callback.message.answer_photo(
                                     photo=BufferedInputFile(photo_data, filename="design.jpg"),
                                     caption=caption,
                                     parse_mode="HTML"
                                 )
                                 
-                                # Редактируем старое меню
+                                # ✅ Редактируем СТАРОЕ меню
                                 try:
                                     await callback.message.bot.edit_message_text(
                                         chat_id=chat_id,
@@ -410,15 +397,9 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                                         reply_markup=get_post_generation_keyboard(),
                                         parse_mode="Markdown"
                                     )
+                                    logger.info(f"✅ [STYLE_CHOICE] FALLBACK 2: Old menu edited")
                                 except Exception as e:
-                                    logger.debug(f"Не удалось отредактировать меню: {e}")
-                                    new_menu = await callback.message.answer(
-                                        text=post_gen_text,
-                                        reply_markup=get_post_generation_keyboard(),
-                                        parse_mode="Markdown"
-                                    )
-                                    await state.update_data(menu_message_id=new_menu.message_id)
-                                    await db.save_chat_menu(chat_id, user_id, new_menu.message_id, 'post_generation')
+                                    logger.debug(f"⚠️ Не удалось отредактировать меню: {e}")
                                 
                                 photo_sent = True
                                 logger.info(f"✅ [STYLE_CHOICE] FALLBACK 2 SUCCESS - Photo via BufferedInputFile")
@@ -445,7 +426,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
         # УСПЕХ - Устанавливаем состояние POST_GENERATION
         await state.set_state(CreationStates.post_generation)
-        await state.update_data(menu_message_id=menu_message_id)  # Сохраняем в FSM
+        await state.update_data(menu_message_id=menu_message_id)
         await db.save_chat_menu(chat_id, user_id, menu_message_id, 'post_generation')
 
         logger.info(f"[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}")
@@ -483,13 +464,12 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
     try:
         data = await state.get_data()
         balance = await db.get_balance(user_id)
-        work_mode = data.get('work_mode')
         
         # Будем на этом экране
         await state.set_state(CreationStates.post_generation)
         
         text = f"✅ **Выбери что дальше**"
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
         
         await edit_menu(
             callback=callback,
@@ -541,7 +521,7 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, adm
 
     balance = await db.get_balance(user_id)
     text = f"🎨 **Выберите стиль дизайна**"
-    text = await add_balance_and_mode_to_text(text, user_id, data.get('work_mode'))
+    text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
 
     await edit_menu(
         callback=callback,
