@@ -5,6 +5,7 @@
 # + старые handlers для обратной совместимости (what_is_in_photo)
 # [2025-12-29 21:18] Исправлены вызовы add_balance_and_mode_to_text - удален work_mode
 # [2025-12-29 22:30] HOTFIX: Исправлена функция select_mode() - передан параметр current_mode_is_pro
+# [2025-12-29 22:50] FIX: Исправлена ошибка AttributeError - get_pro_mode_data → get_user_pro_settings
 
 import asyncio
 import logging
@@ -72,13 +73,14 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
     
     Log: "[V3] SELECT_MODE - user_id={user_id}"
     HOTFIX: [2025-12-29 22:30] - Передан параметр current_mode_is_pro в get_mode_selection_keyboard
+    FIX: [2025-12-29 22:50] - Исправлена ошибка: get_pro_mode_data → get_user_pro_settings
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
 
     try:
         # Получаем текущий режим ИЗ БД
-        pro_data = await db.get_pro_mode_data(user_id)
+        pro_data = await db.get_user_pro_settings(user_id)
         current_mode_is_pro = pro_data['pro_mode'] if pro_data else False
         
         # Получаем баланс
