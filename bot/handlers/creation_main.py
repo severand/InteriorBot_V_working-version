@@ -4,6 +4,7 @@
 # Содержит: select_mode (SCREEN 1), set_work_mode, photo_handler (SCREEN 2)
 # + старые handlers для обратной совместимости (what_is_in_photo)
 # [2025-12-29 21:18] Исправлены вызовы add_balance_and_mode_to_text - удален work_mode
+# [2025-12-29 22:30] HOTFIX: Исправлена функция select_mode() - передан параметр current_mode_is_pro
 
 import asyncio
 import logging
@@ -65,20 +66,21 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
     SCREEN 1: Выбор режима работы
     
     Логика:
-    1. Получение текущего режима из FSM
+    1. Получение текущего режима из БД (PRO или СТАНДАРТ)
     2. Получение баланса пользователя
     3. Отправка меню выбора режима
     
     Log: "[V3] SELECT_MODE - user_id={user_id}"
+    HOTFIX: [2025-12-29 22:30] - Передан параметр current_mode_is_pro в get_mode_selection_keyboard
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
 
     try:
-        # Получаем текущий режим
-        data = await state.get_data()
-        current_mode = data.get('work_mode', 'Не выбран')
-
+        # Получаем текущий режим ИЗ БД
+        pro_data = await db.get_pro_mode_data(user_id)
+        current_mode_is_pro = pro_data['pro_mode'] if pro_data else False
+        
         # Получаем баланс
         balance = await db.get_balance(user_id)
 
@@ -91,16 +93,16 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
         # Добавляем footer с балансом
         text = await add_balance_and_mode_to_text(text=text, user_id=user_id)
 
-        # Редактируем меню
+        # Редактируем меню с ПЕРЕДАЧЕЙ параметра current_mode_is_pro
         await edit_menu(
             callback=callback,
             state=state,
             text=text,
-            keyboard=get_mode_selection_keyboard(),
+            keyboard=get_mode_selection_keyboard(current_mode_is_pro=current_mode_is_pro),
             screen_code='select_mode'
         )
         
-        logger.info(f"[V3] SELECT_MODE - user_id={user_id}, current_mode={current_mode}, balance={balance}")
+        logger.info(f"[V3] SELECT_MODE - user_id={user_id}, current_mode_is_pro={current_mode_is_pro}, balance={balance}")
         
     except Exception as e:
         logger.error(f"[ERROR] SELECT_MODE failed: {e}", exc_info=True)
