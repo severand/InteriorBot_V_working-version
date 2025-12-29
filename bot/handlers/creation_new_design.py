@@ -1,8 +1,9 @@
 # bot/handlers/creation_new_design.py
 # ===== PHASE 2: NEW_DESIGN MODE (SCREEN 3-6) =====
+# [2025-12-29] ОБНОВЛЕНО: Добавлены post_generation_menu() и явная установка состояния
 # [2025-12-29] НОВЫЙ ФАЙЛ: Часть 2 рефакторинга creation.py
 # Содержит: room_choice (SCREEN 3), choose_style_1/2 (SCREEN 4-5), style_choice_handler (SCREEN 6 + генерация)
-# + post_generation, change_style_after_gen
+# + post_generation_menu (SCREEN 6), change_style_after_gen
 
 import asyncio
 import logging
@@ -230,7 +231,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 
 
 # ===== SCREEN 4-5 to 6: STYLE_CHOICE_HANDLER (Выбор стиля + генерация) =====
-# [2025-12-29] НОВОЕ (V3)
+# [2025-12-29] ОБНОВЛЕНО (V3) - Добавлена установка state.post_generation
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -247,8 +248,9 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     5. Вывод прогресса ("Генерирую...")
     6. Вызов smart_generate_interior() с PRO параметром
     7. Отправка фото с fallback (URL → BufferedInputFile)
-    8. Удаление старого меню, создание НОВОГО (под фото)
-    9. Меню POST_GENERATION
+    8. Остановка состояния CreationStates.post_generation
+    9. Удаление старого меню, создание НОВОГО (под фото)
+    10. Меню POST_GENERATION
     
     Styles: style_modern, style_minimalist, style_classic, ...
     
@@ -387,7 +389,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             )
             return
 
-        # УСПЕХ - Удаляем старое меню, создаем НОВОЕ (под фото)
+        # УСПЕХ - Устанавливаем состояние POST_GENERATION
+        await state.set_state(CreationStates.post_generation)
+
+        # Удаляем старое меню
         old_menu_id = data.get('menu_message_id')
         if old_menu_id:
             try:
@@ -416,6 +421,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         await db.save_chat_menu(chat_id, user_id, new_menu.message_id, 'post_generation')
 
         logger.info(f"[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}")
+        logger.info(f"[V3] NEW_DESIGN+POST_GENERATION - menu shown, user_id={user_id}")
 
     else:
         # Ошибка генерации - возвращаем баланс
@@ -429,6 +435,55 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             keyboard=get_main_menu_keyboard(is_admin=user_id in admins),
             screen_code='generation_error'
         )
+
+
+# ===== SCREEN 6: POST_GENERATION_MENU (Меню после генерации) =====
+# [2025-12-29] НОВОЕ (V3)
+@router.callback_query(
+    StateFilter(CreationStates.post_generation),
+    F.data == "post_generation"
+)
+async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
+    """
+    SCREEN 6: Меню после генерации (POST_GENERATION)
+    
+    Пользователь может:
+    - 🎨 Выбрать новый стиль
+    - 🏠 Выбрать новую комнату
+    - ✅ Удовлетворен и гово в МЕНЮ
+    
+    Log: "[V3] NEW_DESIGN+POST_GENERATION - menu shown, user_id={user_id}"
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+
+    try:
+        data = await state.get_data()
+        balance = await db.get_balance(user_id)
+        work_mode = data.get('work_mode')
+        
+        # Будем на этом экране
+        await state.set_state(CreationStates.post_generation)
+        
+        text = f"✅ **Выбери что дальше**"
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+        
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_post_generation_keyboard(),
+            screen_code='post_generation'
+        )
+        
+        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'post_generation')
+        
+        logger.info(f"[V3] NEW_DESIGN+POST_GENERATION - menu shown, user_id={user_id}")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] POST_GENERATION_MENU failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
 
 
 # ===== POST-GENERATION: CHANGE_STYLE (Смена стиля после генерации) =====
