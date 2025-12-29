@@ -1,8 +1,7 @@
 # bot/handlers/user_start.py
-# --- ОБНОВЛЕН: 2025-12-10 13:30 - Исправлена обработка payment_success через создание меню ---
-# [2025-12-10 13:30] Убран некорректный вызов edit_menu(user_id=...)
-# [2025-12-10 13:30] Добавлено удаление старого меню перед созданием нового
-# [2025-12-10 13:30] Исправлена логика - создаём ОДНО меню вместо редактирования
+# --- ОБНОВЛЕН: 2025-12-29 21:07 - Исправлены ошибки FSM и главного меню ---
+# [2025-12-29 21:07] PHASE 1.8: Замена waiting_for_photo на uploading_photo
+# [2025-12-29 21:07] Исправлены кнопки главного меню - должны отображать MODE_SELECTION_TEXT
 
 import logging
 from aiogram import Router, F
@@ -13,7 +12,7 @@ from database.db import db
 from config import config
 from states.fsm import CreationStates
 from keyboards.inline import get_main_menu_keyboard, get_profile_keyboard, get_upload_photo_keyboard
-from utils.texts import START_TEXT, UPLOAD_PHOTO_TEXT
+from utils.texts import START_TEXT, UPLOAD_PHOTO_TEXT, MODE_SELECTION_TEXT
 from utils.navigation import edit_menu, show_main_menu
 from utils.helpers import add_balance_to_text
 
@@ -116,7 +115,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
         pass
 
     # ===== 7️⃣ ОТПРАВЛЯЕМ ГЛАВНОЕ МЕНЮ =====
-    text = await add_balance_to_text(START_TEXT, user_id)
+    text = await add_balance_to_text(MODE_SELECTION_TEXT, user_id)
     menu_msg = await message.answer(
         text,
         reply_markup=get_main_menu_keyboard(is_admin=user_id in admins),
@@ -125,7 +124,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
 
     # ===== 8️⃣ 💾 СОХРАНЯЕМ В FSM + БД =====
     await state.update_data(menu_message_id=menu_msg.message_id)
-    await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'main_menu')
+    await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'selecting_mode')
 
     logger.info(f"✅ [START] User {user_id}: menu created, msg_id={menu_msg.message_id}, new={is_new_user}")
 
@@ -215,14 +214,14 @@ async def start_creation(callback: CallbackQuery, state: FSMContext):
     if menu_message_id:
         await state.update_data(menu_message_id=menu_message_id)
 
-    await state.set_state(CreationStates.waiting_for_photo)
+    await state.set_state(CreationStates.uploading_photo)
 
     await edit_menu(
         callback=callback,
         state=state,
         text=UPLOAD_PHOTO_TEXT,
         keyboard=get_upload_photo_keyboard(),
-        screen_code='upload_photo'  # ← ДОБАВЛЕН screen_code
+        screen_code='uploading_photo'  # ← ОБНОВЛЕНО screen_code
     )
     await callback.answer()
 
