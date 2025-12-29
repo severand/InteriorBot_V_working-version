@@ -3,8 +3,7 @@
 # [2025-12-29] НОВЫЙ ФАЙЛ: Часть 2 рефакторинга creation.py
 # Содержит: room_choice (SCREEN 3), choose_style_1/2 (SCREEN 4-5), style_choice_handler (SCREEN 6 + генерация)
 # + post_generation_menu (SCREEN 6), change_style_after_gen
-# [2025-12-30 01:20] 🔥 BUGFIX #1: Убрать work_mode из add_balance_and_mode_to_text() - функция принимает 2 аргумента!
-# [2025-12-30 01:20] 🔥 BUGFIX #2: Убрать answer_photo() в fallback - редактировать текст, а не отправлять новое фото
+# [2025-12-30 01:29] ✅ FIX: Возвращен work_mode в вызовы add_balance_and_mode_to_text() - функция теперь принимает 3 аргумента!
 
 import asyncio
 import logging
@@ -61,12 +60,13 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
 
     try:
         data = await state.get_data()
+        work_mode = data.get('work_mode')
         balance = await db.get_balance(user_id)
         
         await state.set_state(CreationStates.room_choice)
         
         text = f"🏠 **Выберите тип помещения**"
-        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
         
         await edit_menu(
             callback=callback,
@@ -88,7 +88,7 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
 
 # ===== SCREEN 3→4: ROOM_CHOICE_HANDLER =====
 # [2025-12-29] НОВОЕ (V3)
-# [2025-12-30 01:20] 🔥 BUGFIX #1: Убрать work_mode argument
+# [2025-12-30 01:29] ✅ FIX: Возвращен work_mode
 @router.callback_query(
     StateFilter(CreationStates.room_choice),
     F.data.startswith("room_")
@@ -105,15 +105,16 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
 
     try:
         room = callback.data.replace("room_", "")
-        balance = await db.get_balance(user_id)
         data = await state.get_data()
+        work_mode = data.get('work_mode')
+        balance = await db.get_balance(user_id)
         
         # Сохраняем выбор комнаты в FSM
         await state.update_data(selected_room=room)
         await state.set_state(CreationStates.choose_style_1)
         
         text = f"🎨 **Выберите стиль дизайна**"
-        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
         
         await edit_menu(
             callback=callback,
@@ -150,12 +151,13 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
 
     try:
         data = await state.get_data()
+        work_mode = data.get('work_mode')
         balance = await db.get_balance(user_id)
         
         await state.set_state(CreationStates.choose_style_1)
         
         text = f"🎨 **Выберите стиль дизайна (страница 1)**"
-        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
         
         await edit_menu(
             callback=callback,
@@ -191,12 +193,13 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
     
     try:
         data = await state.get_data()
+        work_mode = data.get('work_mode')
         balance = await db.get_balance(user_id)
         
         await state.set_state(CreationStates.choose_style_2)
         
         text = f"🎨 **Выберите стиль дизайна (страница 2)**"
-        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
         
         await edit_menu(
             callback=callback,
@@ -243,6 +246,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     data = await state.get_data()
     photo_id = data.get('photo_id')
     room = data.get('selected_room')
+    work_mode = data.get('work_mode')  # ✅ Получаем work_mode
 
     if not photo_id or not room:
         await callback.answer(
@@ -317,7 +321,8 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         # Подготовка текста для post_generation меню
         post_gen_text = await add_balance_and_mode_to_text(
             "✅ **Выбери что дальше**",
-            user_id
+            user_id,
+            work_mode  # ✅ 3-й аргумент!
         )
 
         photo_sent = False
@@ -463,13 +468,14 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
 
     try:
         data = await state.get_data()
+        work_mode = data.get('work_mode')
         balance = await db.get_balance(user_id)
         
         # Будем на этом экране
         await state.set_state(CreationStates.post_generation)
         
         text = f"✅ **Выбери что дальше**"
-        text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
         
         await edit_menu(
             callback=callback,
@@ -503,6 +509,7 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, adm
     data = await state.get_data()
     photo_id = data.get('photo_id')
     room = data.get('selected_room')
+    work_mode = data.get('work_mode')  # ✅ Получаем work_mode
 
     if not photo_id or not room:
         try:
@@ -521,7 +528,7 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, adm
 
     balance = await db.get_balance(user_id)
     text = f"🎨 **Выберите стиль дизайна**"
-    text = await add_balance_and_mode_to_text(text, user_id)  # ✅ 2 аргумента!
+    text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
 
     await edit_menu(
         callback=callback,
