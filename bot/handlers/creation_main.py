@@ -377,7 +377,7 @@ async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
     if menu_message_id:
         await state.update_data(menu_message_id=menu_message_id)
 
-    await state.set_state(CreationStates.waiting_for_photo)
+    await state.set_state(CreationStates.uploading_photo)
 
     await edit_menu(
         callback=callback,
@@ -387,77 +387,3 @@ async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
         screen_code='upload_photo'
     )
     await callback.answer()
-
-
-# ===== OLD SYSTEM: PHOTO_UPLOADED (для what_is_in_photo) =====
-@router.message(CreationStates.waiting_for_photo, F.photo)
-async def photo_uploaded(message: Message, state: FSMContext, admins: list[int]):
-    """Обработка загруженного фото (старая система -> what_is_in_photo)"""
-    user_id = message.from_user.id
-    await db.log_activity(user_id, 'photo_upload')
-
-    # Блок альбомов
-    if message.media_group_id:
-        data = await state.get_data()
-        cached_group_id = data.get('media_group_id')
-        try:
-            await message.delete()
-        except Exception:
-            pass
-        if cached_group_id != message.media_group_id:
-            await state.update_data(media_group_id=message.media_group_id)
-            msg = await message.answer(TOO_MANY_PHOTOS_TEXT)
-            await asyncio.sleep(3)
-            try:
-                await msg.delete()
-            except Exception:
-                pass
-        return
-
-    await state.update_data(media_group_id=None)
-    photo_file_id = message.photo[-1].file_id
-
-    # Проверка баланса
-    if user_id not in admins:
-        balance = await db.get_balance(user_id)
-        if balance <= 0:
-            await state.clear()
-            menu_msg = await message.answer(
-                ERROR_INSUFFICIENT_BALANCE,
-                reply_markup=get_payment_keyboard(),
-                parse_mode="Markdown"
-            )
-            await state.update_data(menu_message_id=menu_msg.message_id)
-            chat_id = message.chat.id
-            await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'no_balance')
-            return
-
-    # Сохраняем фото и переходим к экрану "Что на фото"
-    await state.update_data(photo_id=photo_file_id)
-    await state.update_data(scene_type=None, room=None, style=None)
-    await state.set_state(CreationStates.what_is_in_photo)
-
-    # Удаляем старое меню
-    data = await state.get_data()
-    old_menu_id = data.get('menu_message_id')
-    if old_menu_id:
-        try:
-            await message.bot.delete_message(
-                chat_id=message.chat.id,
-                message_id=old_menu_id
-            )
-        except Exception as e:
-            logger.debug(f"Не удалось удалить старое меню: {e}")
-
-    # Отправляем НОВОЕ сообщение с экраном "Что на фото"
-    text_with_balance = await add_balance_and_mode_to_text(WHAT_IS_IN_PHOTO_TEXT, user_id)
-    sent_msg = await message.answer(
-        text=text_with_balance,
-        reply_markup=get_what_is_in_photo_keyboard(),
-        parse_mode="Markdown"
-    )
-
-    await state.update_data(menu_message_id=sent_msg.message_id)
-    await db.save_chat_menu(message.chat.id, user_id, sent_msg.message_id, 'what_is_in_photo')
-
-    logger.info(f"[V3] PHOTO_UPLOADED - what_is_in_photo screen shown, user_id={user_id}")
