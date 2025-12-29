@@ -140,7 +140,53 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Ошибка при выборе комнаты", show_alert=True)
 
 
-# ===== SCREEN 4: CHOOSE_STYLE_1 (Первая часть стилей) =====
+# ===== SCREEN 4: CHOOSE_STYLE_1 (Первая страница стилей) =====
+# [2025-12-29] НОВОЕ (V3)
+@router.callback_query(
+    StateFilter(CreationStates.choose_style_2),
+    F.data == "styles_page_1"
+)
+async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
+    """
+    SCREEN 5→4: Вернуться на первую страницу стилей
+    
+    Log: "[V3] NEW_DESIGN+CHOOSE_STYLE - back to page 1, user_id={user_id}"
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+
+    try:
+        data = await state.get_data()
+        balance = await db.get_balance(user_id)
+        
+        await state.set_state(CreationStates.choose_style_1)
+        
+        text = CHOOSE_STYLE_TEXT.format(
+            balance=balance,
+            current_mode=data.get('work_mode'),
+            selected_room=data.get('selected_room')
+        )
+        text = await add_balance_and_mode_to_text(text, user_id, data.get('work_mode'))
+        
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_choose_style_1_keyboard(),
+            screen_code='choose_style_1'
+        )
+        
+        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'choose_style_1')
+        
+        logger.info(f"[V3] NEW_DESIGN+CHOOSE_STYLE - back to page 1, user_id={user_id}")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] CHOOSE_STYLE_1_MENU failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
+
+
+# ===== SCREEN 5: CHOOSE_STYLE_2 (Вторая страница стилей) =====
 # [2025-12-29] НОВОЕ (V3)
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1),
@@ -148,7 +194,7 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
 )
 async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
     """
-    SCREEN 4→5: Вторая страница стилей
+    SCREEN 4→5: Показать вторую страницу стилей
     
     Log: "[V3] NEW_DESIGN+CHOOSE_STYLE - page 2 shown, user_id={user_id}"
     """
@@ -183,7 +229,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
 
 
-# ===== SCREEN 4-5 to 6: STYLE_CHOICE_HANDLER (Обработка выбора стиля + генерация) =====
+# ===== SCREEN 4-5 to 6: STYLE_CHOICE_HANDLER (Выбор стиля + генерация) =====
 # [2025-12-29] НОВОЕ (V3)
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
@@ -191,16 +237,20 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 )
 async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
     """
-    SCREEN 4-5→6: Обработка выбора стиля и начало генерации
+    SCREEN 4-5→6: Обработчик выбора стиля и генерация дизайна
     
     Операции:
-    1. Нарсование текста прогресса ("⚡ Генериру...")
-    2. Проверка баланса
-    3. Минусование баланса (ЦЕНТРАЛОЕ!)
-    4. Генерация на smart_generate_interior()
-    5. Отправка фото
-    6. Удаление старого меню, создание НОВОГО (под фото)
-    7. Меню после генерации
+    1. Извлечение стиля из callback_data
+    2. Проверка наличия комнаты и фото
+    3. Проверка баланса
+    4. Минусование баланса
+    5. Вывод прогресса ("Генерирую...")
+    6. Вызов smart_generate_interior() с PRO параметром
+    7. Отправка фото с fallback (URL → BufferedInputFile)
+    8. Удаление старого меню, создание НОВОГО (под фото)
+    9. Меню POST_GENERATION
+    
+    Styles: style_modern, style_minimalist, style_classic, ...
     
     Log: "[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}"
     """
@@ -217,7 +267,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
     if not photo_id or not room:
         await callback.answer(
-            "⚠️ Сессия устарела. Загружите фото заново.",
+            "⚠️ Сессия устарела. Загрузите фото заново.",
             show_alert=True
         )
         await state.clear()
@@ -239,7 +289,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             )
             return
 
-    # Минусование баланса (ЦЕНТРАЛОНАЯ ОПЕРАЦИЯ!)
+    # Минусование баланса
     if not is_admin:
         await db.decrease_balance(user_id)
 
@@ -247,7 +297,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     await edit_menu(
         callback=callback,
         state=state,
-        text="⚡ Генериру новый дизайн...",
+        text="⚡ Генерирую новый дизайн...",
         keyboard=None,
         show_balance=False,
         screen_code='generating_design'
@@ -287,7 +337,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
         photo_sent = False
 
-        # ПОПЫТКА 1: ОТПРАВКА ПО URL
+        # ПОПЫТКА 1: Отправка по URL
         try:
             await callback.message.answer_photo(
                 photo=result_image_url,
@@ -300,7 +350,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         except Exception as url_error:
             logger.warning(f"⚠️ Не удалось отправить по URL: {url_error}")
 
-            # ПОПЫТКА 2: FALLBACK
+            # ПОПЫТКА 2: FALLBACK через BufferedInputFile
             try:
                 logger.info(f"🔄 Переключаемся на BufferedInputFile для user_id={user_id}")
 
@@ -324,16 +374,20 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
         # Если обе попытки не сработали
         if not photo_sent:
+            # Возвращаем баланс
+            if not is_admin:
+                await db.increase_balance(user_id, 1)
+            
             await edit_menu(
                 callback=callback,
                 state=state,
-                text="❌ Ошибка при отправке изображения. Попробуйте еще раз.",
+                text="❌ Ошибка при отправке изображения. Баланс возвращен. Попробуйте еще раз.",
                 keyboard=get_main_menu_keyboard(is_admin=is_admin),
                 screen_code='generation_error'
             )
             return
 
-        # УсПЕХ - ИУДАЛИ старое меню, СОЗДАЛИ НОВОЕ (ПОД ФОТО)
+        # УСПЕХ - Удаляем старое меню, создаем НОВОЕ (под фото)
         old_menu_id = data.get('menu_message_id')
         if old_menu_id:
             try:
@@ -345,7 +399,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             except Exception as e:
                 logger.debug(f"Не удалось удалить старое меню: {e}")
 
-        # ОтПРАВЛЯЕМ НОВОЕ меню
+        # Отправляем НОВОЕ меню
         text_with_balance = await add_balance_and_mode_to_text(
             "✅ Выбери что дальше 👇",
             user_id
@@ -364,17 +418,21 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         logger.info(f"[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}")
 
     else:
+        # Ошибка генерации - возвращаем баланс
+        if not is_admin:
+            await db.increase_balance(user_id, 1)
+        
         await edit_menu(
             callback=callback,
             state=state,
-            text="❌ Ошибка генерации. Попробуйте еще раз.",
+            text="❌ Ошибка генерации. Баланс возвращен. Попробуйте еще раз.",
             keyboard=get_main_menu_keyboard(is_admin=user_id in admins),
             screen_code='generation_error'
         )
 
 
-# ===== POST-GENERATION: CHANGE_STYLE =====
-# [2025-12-29] ОБНОВЛЕНО (V3)
+# ===== POST-GENERATION: CHANGE_STYLE (Смена стиля после генерации) =====
+# [2025-12-29] НОВОЕ (V3)
 @router.callback_query(F.data == "change_style")
 async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
