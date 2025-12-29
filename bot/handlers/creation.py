@@ -15,6 +15,10 @@
 # --- ОБНОВЛЕНО: 2025-12-24 21:00 - ПОКАЗ РЕЖИМА В HEADER СООБЩЕНИЙ ---
 # [2025-12-24 21:00] ЗАМЕНЕНЫ: Все вызовы add_balance_to_text на add_balance_and_mode_to_text
 # [2025-12-24 21:00] РЕЗУЛЬТАТ: Header теперь показывает "⚡ Баланс: N | Режим: 🔧 PRO" или "📋 СТАНДАРТ"
+# --- ФАЗА 1.4: 2025-12-29 20:45 - V3 MULTI-MODE SYSTEM (SELECT_MODE + PHOTO) ---
+# [2025-12-29 20:45] ДОБАВЛЕНЫ: Импорты для SELECT_MODE и PHOTO handlers
+# [2025-12-29 20:45] СТРУКТУРА: Выбор режима создания → Загрузка фото → Определение типа сцены
+# [2025-12-29 20:45] ДУБЛИКАТЫ УДАЛЕНЫ: Обработчики не дублируют существующую логику
 
 import asyncio
 import logging
@@ -34,7 +38,8 @@ from keyboards.inline import (
     get_payment_keyboard,
     get_post_generation_keyboard,
     get_upload_photo_keyboard,
-    get_what_is_in_photo_keyboard  # ДОБАВИТЬ ЭТУ СТРОКУ
+    get_what_is_in_photo_keyboard,  # ✅ ФАЗА 1.4: Для выбора типа сцены (интерьер/экстерьер)
+    get_mode_selection_keyboard,  # ✅ ФАЗА 1.4: Новая клавиатура для выбора режима (NEW_DESIGN/REDESIGN/CONSULTATION)
 )
 
 # ОБНОВЛЕНО: 2025-12-23 - Использование Smart Fallback системы
@@ -44,7 +49,7 @@ from services.api_fallback import (
     smart_clear_space,
 )
 
-from states.fsm import CreationStates
+from states.fsm import CreationStates, WorkMode  # ✅ ФАЗА 1.4: Добавлен WorkMode для V3 Multi-Mode
 
 from utils.texts import (
     CHOOSE_STYLE_TEXT,
@@ -52,10 +57,11 @@ from utils.texts import (
     NO_BALANCE_TEXT,
     TOO_MANY_PHOTOS_TEXT,
     UPLOAD_PHOTO_TEXT,
-    WHAT_IS_IN_PHOTO_TEXT,  # ДОБАВИТЬ
-    EXTERIOR_HOUSE_PROMPT_TEXT,  # ДОБАВИТЬ
-    EXTERIOR_PLOT_PROMPT_TEXT,  # ДОБАВИТЬ
-    ROOM_DESCRIPTION_PROMPT_TEXT  # ДОБАВИТЬ
+    WHAT_IS_IN_PHOTO_TEXT,
+    EXTERIOR_HOUSE_PROMPT_TEXT,
+    EXTERIOR_PLOT_PROMPT_TEXT,
+    ROOM_DESCRIPTION_PROMPT_TEXT,
+    MODE_SELECTION_TEXT,  # ✅ ФАЗА 1.4: Текст экрана выбора режима
 )
 
 # ОБНОВЛЕНО: 2025-12-24 21:00 - Импорт обновленной функции для header с режимом
@@ -77,6 +83,45 @@ async def go_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: li
     await show_main_menu(callback, state, admins)
     await callback.answer()
 
+
+# ===== ФАЗА 1.4: SELECT_MODE - ВЫБОР РЕЖИМА СОЗДАНИЯ =====
+# ✅ НОВЫЙ ОБРАБОТЧИК: Экран выбора режима (NEW_DESIGN / REDESIGN / CONSULTATION)
+# Дата добавления: 2025-12-29 20:45
+# Блокирует дублирование логики - выделен в отдельный обработчик
+
+@router.callback_query(F.data == "select_mode")
+async def select_mode_handler(callback: CallbackQuery, state: FSMContext):
+    """
+    ✅ ФАЗА 1.4: SELECT_MODE
+    
+    Новый обработчик для выбора режима создания:
+    - NEW_DESIGN: Полный дизайн комнаты (фото помещения обязательно)
+    - REDESIGN: Переделка существующего дизайна (фото либо помещения, либо текстовое описание)
+    - CONSULTATION: Консультация дизайнера (только текстовый чат, генерации нет)
+    
+    Дата добавления: 2025-12-29 20:45
+    Организация: Выбор режима → Загрузка фото (или текст) → Генерация
+    Время выполнения: 30 мин (импорты + структура)
+    """
+    user_id = callback.from_user.id
+    await db.log_activity(user_id, 'select_mode')
+
+    # [2025-12-24 21:00] Обновлено: Использование add_balance_and_mode_to_text для header
+    text_with_balance = await add_balance_and_mode_to_text(MODE_SELECTION_TEXT, user_id)
+
+    await edit_menu(
+        callback=callback,
+        state=state,
+        text=text_with_balance,
+        keyboard=get_mode_selection_keyboard(),  # ✅ ФАЗА 1.4: Новая клавиатура
+        screen_code='select_mode'  # ✅ ФАЗА 1.4: Уникальный screen_code
+    )
+    await callback.answer()
+
+
+# ===== ФАЗА 1.4: PHOTO_HANDLER - ОБРАБОТКА ЗАГРУЖЕННОГО ФОТО =====
+# ✅ ОБНОВЛЕНО: Переименовано из choose_new_photo на create_design с поддержкой режимов
+# Дата обновления: 2025-12-29 20:45
 
 @router.callback_query(F.data == "create_design")
 async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
