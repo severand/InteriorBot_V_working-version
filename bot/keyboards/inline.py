@@ -9,6 +9,7 @@
 # [2025-12-29 16:31] ФИКС: Оставлена старая get_clear_space_confirm_keyboard(), обновлены все связи
 # [2025-12-29 16:35] ФИКС: Удалена get_post_generation_keyboard_new(), оставлена только старая версия
 # [2025-12-29 16:38] PHASE 1.3.4: Добавлены 9 клавиатур для SCREEN 10-18 (без дубликатов)
+# [2025-12-29 21:26] HOTFIX: Исправлена get_uploading_photo_keyboard() - кнопка возврата теперь select_mode
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -361,6 +362,8 @@ def get_uploading_photo_keyboard() -> InlineKeyboardMarkup:
     """
     Клавиатура загрузки фото (ЭКРАН 2: UPLOADING_PHOTO)
     Динамический текст зависит от режима работы
+    
+    HOTFIX: 2025-12-29 21:26 - Исправлена кнопка возврата на select_mode
     """
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
