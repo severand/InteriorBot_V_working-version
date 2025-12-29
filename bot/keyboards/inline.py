@@ -5,8 +5,9 @@
 # [2025-12-08 13:50] УДАЛЕНА кнопка "Очистить пространство" из get_room_keyboard() согласно ТЗ
 # [2025-12-24 13:12] ОКОНЧАТЕЛЬНАЕ РЕАЛИЗАЦИЕ: 4 кнопки СООТНОШЕНИЯ В ОДНОМ РЯДУ (по 25% каждая)
 # [2025-12-29 15:20] PHASE 1.3.1: Добавлена новая функция get_work_mode_selection_keyboard() для SCREEN 1
-# [2025-12-29 16:21] PHASE 1.3.2: Добавлены клавиатуры для SCREEN 2-5 (uploading_photo, room_choice, choose_style_1, choose_style_2)
-# [2025-12-29 16:25] PHASE 1.3.3: Добавлены клавиатуры для SCREEN 6-9 (post_generation_new, text_input, edit_design, clear_confirm)
+# [2025-12-29 16:21] PHASE 1.3.2: Добавлены клавиатуры для SCREEN 2-5
+# [2025-12-29 16:25] PHASE 1.3.3: Добавлены клавиатуры для SCREEN 6-9
+# [2025-12-29 16:31] ФИКС: Оставлена старая get_clear_space_confirm_keyboard(), фикс get_edit_design_keyboard(), проверены все связи
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -41,21 +42,15 @@ STYLE_TYPES = [
     ("rustic", "Рустик"),
     ("japandi", "Джапанди"),
     ("boho", "Бохо / Эклектика"),
-    #("mediterranean", "Средиземноморский"),
     ("midcentury", "Mid‭‑century / винтаж"),
     ("artdeco", "Арт‭деко"),
-    #("hitech", "Хай-тек"),
-    #("classic", "Классический"),
-    #("contemporary", "Контемпорари"),
-    #("eclectic", "Эклектика"),
-    #("transitional", "Переходный"),
     ("coastal", "Прибрежный"),
     ("Organic Modern", "Органический Модерн"),
     ("Loft", "Лофт"),
 ]
 
 # ========================================
-# НОВЫЕ СТРАНИЦЫ СТИЛеЙ ДЛЯ PHASE 1.3.2
+# НОВЫЕ СТРАНИЦЫ СТИЛЕЙ ДЛЯ PHASE 1.3.2
 # ========================================
 STYLE_PAGE_1 = [
     ("modern", "Современный"),
@@ -255,13 +250,13 @@ def get_post_generation_keyboard(show_continue_editing: bool = False) -> InlineK
     return builder.as_markup()
 
 
-# Экран подтверждения очистки пространства (Старая)
+# Экран подтверждения очистки пространства (Старая - СОХРАНЕНО)
 def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
     """
     Клавиатура подтверждения очистки пространства
 
-    ПРИМЕЧАНИЕ: Функция СОХРАНЕНА для будущего использования.
-    НОВАЯ версия в get_clear_confirm_keyboard()!
+    ОСНОВНАЯ ФУНКЦИя для генерации!
+    Дата: 2025-12-08
     """
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="✅ Очистить", callback_data="clear_space_execute"))
@@ -273,14 +268,7 @@ def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
 # Экран Личного кабинета
 def get_profile_keyboard() -> InlineKeyboardMarkup:
     """
-    ФИНАЛЬНО ОБНОвЛЕНА: 2025-12-24 13:05
-    
-    Структура:
-    - Ряд 1: Купить генерации | (пусто)
-    - Ряд 2: Настройки режима | Поддержка  
-    - Ряд 3: Главное меню
-    
-    Распределение: adjust(1, 2, 1)
+    ФИНАЛЬНО ОБНОВЛЕНА: 2025-12-24 13:05
     """
     builder = InlineKeyboardBuilder()
 
@@ -295,7 +283,7 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="💬 Поддержка", callback_data="show_support")
     )
 
-    # Ряд 3: Главное меню (широкая кнопка)
+    # Ряд 3: Главное меню
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
 
     builder.adjust(1, 2, 1)
@@ -327,20 +315,10 @@ def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
 def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
     """
     Клавиатура выбора режима работы (ЭКРАН 1: MAIN_MENU)
-    
-    Структура (по 1 кнопке в ряд):
-    ├─ 📋 Создать новый дизайн
-    ├─ ✏️ Редактировать дизайн
-    ├─ 🎁 Примерить дизайн
-    ├─ 🛋️ Расставить мебель
-    ├─ 🏠 Дизайн фасада дома
-    ├─ ───────── (разделитель)
-    ├─ 👤 Личный кабинет и ⚙️ Админ (если существуют)
-    └─ ❌ Закрыть меню
+    Все 5 режимов + разделитель
     """
     builder = InlineKeyboardBuilder()
 
-    # 5 новых моделей работы (каждый в отдельном ряду)
     builder.row(InlineKeyboardButton(
         text="📋 Создать новый дизайн",
         callback_data="select_mode_new_design"
@@ -362,7 +340,7 @@ def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
         callback_data="select_mode_facade_design"
     ))
 
-    # Разделитель (неактивная кнопка)
+    # Разделитель
     builder.row(InlineKeyboardButton(
         text="─────────",
         callback_data="dummy_separator"
@@ -374,90 +352,64 @@ def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
 
 # ========================================
 # PHASE 1.3.2: SCREEN 2-5 - НОВЫЕ КЛАВИАТУРЫ
-# ОБНОВЛЕНО: 2025-12-29 16:21
 # ========================================
 
 def get_uploading_photo_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура загрузки фото (ЭКРАН 2: UPLOADING_PHOTO)
-    
-    Структура:
-    ├─ 🏠 Вернуться к режимам
-    
-    Динамический текст зависит от режима работы
-    Здесь только навигация!
+    Клавиатура загрузки фото (ЭКРАН 2)
+    Динамический текст в handler
     """
     builder = InlineKeyboardBuilder()
-    
     builder.row(InlineKeyboardButton(
         text="🏠 Вернуться к режимам",
         callback_data="select_mode"
     ))
-    
     builder.adjust(1)
     return builder.as_markup()
 
 
 def get_room_choice_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура выбора комнаты (ЭКРАН 3: ROOM_CHOICE)
-    
-    Структура (по 2 в ряд):
-    ├─ 💪 Гостиная | 🍽 Кухня
-    ├─ 🛏 Спальня | 👶 Детская
-    ├─ 🏠 Студия | 💼 Кабинет
-    ├─ 🚿 Ванная | 🚿 Санузел
-    ├─ 🚪 Прихожая | 👗 Гардеробная
-    ├─ ⬅️ Новое фото | 🏠 Главное меню
-    
-    Дата: 2025-12-29 16:21
+    Клавиатура выбора комнаты (ЭКРАН 3)
+    10 комнат, по 2 в ряд
     """
     builder = InlineKeyboardBuilder()
-    
-    # Добавляем комнаты по 2 в ряд
     for i in range(0, len(ROOMS_WITH_EMOJI), 2):
         buttons = [InlineKeyboardButton(
             text=ROOMS_WITH_EMOJI[i][0],
             callback_data=ROOMS_WITH_EMOJI[i][1]
         )]
-        
         if i + 1 < len(ROOMS_WITH_EMOJI):
             buttons.append(InlineKeyboardButton(
                 text=ROOMS_WITH_EMOJI[i+1][0],
                 callback_data=ROOMS_WITH_EMOJI[i+1][1]
             ))
-        
         builder.row(*buttons)
     
     builder.row(
         InlineKeyboardButton(text="⬅️ Новое фото", callback_data="uploading_photo"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
     )
-    
     builder.adjust(2)
     return builder.as_markup()
 
 
 def get_choose_style_1_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура выбора стиля 1 (ЭКРАН 4: CHOOSE_STYLE_1)
-    
-    От get_choose_style_2_keyboard
+    Клавиатура выбора стиля 1 (ЭКРАН 4)
+    12 стилей, по 2 в ряд
     """
     builder = InlineKeyboardBuilder()
-    
     for i in range(0, len(STYLE_PAGE_1), 2):
         buttons = [InlineKeyboardButton(
             text=STYLE_PAGE_1[i][1],
             callback_data=f"style_{STYLE_PAGE_1[i][0]}"
         )]
-        
         if i + 1 < len(STYLE_PAGE_1):
             buttons.append(InlineKeyboardButton(
                 text=STYLE_PAGE_1[i+1][1],
                 callback_data=f"style_{STYLE_PAGE_1[i+1][0]}"
             ))
-        
         builder.row(*buttons)
     
     builder.row(
@@ -465,127 +417,91 @@ def get_choose_style_1_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode"),
         InlineKeyboardButton(text="▶️ Ещё", callback_data="choose_style_2")
     )
-    
     builder.adjust(2)
     return builder.as_markup()
 
 
 def get_choose_style_2_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура выбора стиля 2 (ЭКРАН 5: CHOOSE_STYLE_2)
-    
-    Дополнительные стили
+    Клавиатура выбора стиля 2 (ЭКРАН 5)
+    12 эндовых стилей, по 2 в ряд
     """
     builder = InlineKeyboardBuilder()
-    
     for i in range(0, len(STYLE_PAGE_2), 2):
         buttons = [InlineKeyboardButton(
             text=STYLE_PAGE_2[i][1],
             callback_data=f"style_{STYLE_PAGE_2[i][0]}"
         )]
-        
         if i + 1 < len(STYLE_PAGE_2):
             buttons.append(InlineKeyboardButton(
                 text=STYLE_PAGE_2[i+1][1],
                 callback_data=f"style_{STYLE_PAGE_2[i+1][0]}"
             ))
-        
         builder.row(*buttons)
     
     builder.row(
         InlineKeyboardButton(text="⬅️ Назад", callback_data="choose_style_1"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
     )
-    
     builder.adjust(2)
     return builder.as_markup()
 
 
 # ========================================
 # PHASE 1.3.3: SCREEN 6-9 - НОВЫЕ КЛАВИАТУРЫ
-# ОБНОВЛЕНО: 2025-12-29 16:25
+# ОБНОВЛЕНО: 2025-12-29 16:31
+# ФИКС: Оставлена старая get_clear_space_confirm_keyboard()
 # ========================================
 
 def get_post_generation_keyboard_new() -> InlineKeyboardMarkup:
     """
-    Клавиатура после генерации (ЭКРАН 6: POST_GENERATION)
-    
+    Клавиатура после генерации (ЭКРАН 6)
     НОВАЯ версия для PHASE 1.3.3
-    Динамическая в зависимости от режима!
-    
-    Структура:
-    ├─ 🎨 Новый стиль | 🏠 Новая комната
-    ├─ ✏️ Текстовое редактирование
-    ├─ 🏠 Главное меню
-    
-    Дата: 2025-12-29 16:25
     """
     builder = InlineKeyboardBuilder()
-    
-    # Ряд 1: Новый стиль и новая комната (по 2 в ряд)
     builder.row(
         InlineKeyboardButton(text="🎨 Новый стиль", callback_data="choose_style_1"),
         InlineKeyboardButton(text="🏠 Новая комната", callback_data="room_choice")
     )
-    
-    # Ряд 2: Текстовое редактирование
     builder.row(InlineKeyboardButton(
         text="✏️ Текстовое редактирование",
         callback_data="text_input"
     ))
-    
-    # Ряд 3: Главное меню
     builder.row(InlineKeyboardButton(
         text="🏠 Главное меню",
         callback_data="select_mode"
     ))
-    
     builder.adjust(2, 1, 1)
     return builder.as_markup()
 
 
 def get_text_input_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура текстового редактирования (ЭКРАН 7: TEXT_INPUT)
-    
-    После ввода текста, пользователь может отказаться
-    и вернуться к предыдущему экрану
-    
-    Дата: 2025-12-29 16:25
+    Клавиатура текстового редактирования (ЭКРАН 7)
     """
     builder = InlineKeyboardBuilder()
-    
-    # Кнопка назад
     builder.row(InlineKeyboardButton(
         text="⬅️ Назад",
         callback_data="back_from_text_input"
     ))
-    
     builder.adjust(1)
     return builder.as_markup()
 
 
 def get_edit_design_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура редактирования дизайна (ЭКРАН 8: EDIT_DESIGN)
-    
-    После редактирования доступны:
-    - Очистить фото
-    - Ввести текст
-    - Новое фото
-    - Главное меню
-    
-    Дата: 2025-12-29 16:25
+    Клавиатура редактирования дизайна (ЭКРАН 8)
+    НСИ callback_data должны быть clear_space_confirm, не clear_confirm!
     """
     builder = InlineKeyboardBuilder()
     
-    # Ряд 1: Очистить фото и Ввести текст (по 2 в ряд)
+    # Первый ряд
     builder.row(
-        InlineKeyboardButton(text="📁 Очистить фото", callback_data="clear_confirm"),
+        InlineKeyboardButton(text="📁 Очистить фото", callback_data="clear_space_confirm"),
         InlineKeyboardButton(text="📑 Ввести текст", callback_data="text_input")
     )
     
-    # Ряд 2: Новое фото и Главное меню (по 2 в ряд)
+    # Второй ряд
     builder.row(
         InlineKeyboardButton(text="⬅️ Новое фото", callback_data="uploading_photo"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
@@ -595,44 +511,18 @@ def get_edit_design_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_clear_confirm_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура подтверждения очистки (ЭКРАН 9: CLEAR_CONFIRM)
-    
-    НОВАЯ версия для PHASE 1.3.3
-    (НЕ путать с get_clear_space_confirm_keyboard - старая версия)
-    
-    Дата: 2025-12-29 16:25
-    """
-    builder = InlineKeyboardBuilder()
-    
-    # Кнопки на одном ряду (по 50% каждая)
-    builder.row(
-        InlineKeyboardButton(text="✅ Да, очистить", callback_data="clear_execute"),
-        InlineKeyboardButton(text="❌ Отмена", callback_data="edit_design")
-    )
-    
-    builder.adjust(2)
-    return builder.as_markup()
-
-
 # ========================================
 # PRO MODE - ФИНАЛЬНЫЕ КЛАВИАТУРЫ
 # ОБНОВЛЕНО: 2025-12-24 13:12
-# ✅ 4 КНОПКИ СООТНОШЕНИЯ В ОДНОМ РЯДУ (по 25% каждая)
 # ========================================
 
 def get_mode_selection_keyboard(current_mode_is_pro: bool) -> InlineKeyboardMarkup:
     """
-    Клавиатура экрана выбора режима СТАНДАРТ vs PRO.
-    
-    ФИНАЛЬНАЯ ВЕРСИЕ: 2025-12-24 13:12
+    Клавиатура экрана выбора режима СТАНДАРТ vs PRO
     """
     builder = InlineKeyboardBuilder()
-    
     std_mark = "" if current_mode_is_pro else "✅"
     pro_mark = "✅" if current_mode_is_pro else ""
-    
     builder.row(
         InlineKeyboardButton(
             text=f"{std_mark} 📋 СТАНДАРТ".strip(),
@@ -643,12 +533,10 @@ def get_mode_selection_keyboard(current_mode_is_pro: bool) -> InlineKeyboardMark
             callback_data="mode_pro"
         )
     )
-    
     builder.row(
         InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data="show_profile"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
     )
-    
     builder.adjust(2, 2)
     return builder.as_markup()
 
@@ -658,12 +546,9 @@ def get_pro_params_keyboard(
     current_resolution: str = "1K"
 ) -> InlineKeyboardMarkup:
     """
-    Клавиатура для выбора параметров PRO режима.
-    
-    ФИНАЛЬНАЯ ВЕРСИЕ: 2025-12-24 13:12
+    Клавиатура для выбора параметров PRO режима
     """
     builder = InlineKeyboardBuilder()
-    
     aspect_buttons = []
     for ratio in ASPECT_RATIOS:
         mark = "✅" if ratio == current_ratio else ""
@@ -675,7 +560,6 @@ def get_pro_params_keyboard(
             )
         )
     builder.row(*aspect_buttons)
-    
     resolution_buttons = []
     for resolution in RESOLUTIONS:
         mark = "✅" if resolution == current_resolution else ""
@@ -687,10 +571,8 @@ def get_pro_params_keyboard(
             )
         )
     builder.row(*resolution_buttons)
-    
     builder.row(
         InlineKeyboardButton(text="⬅️ Назад к режимам", callback_data="profile_settings"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
     )
-    
     return builder.as_markup()
