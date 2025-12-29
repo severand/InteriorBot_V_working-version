@@ -17,6 +17,7 @@
 # [2025-12-30 00:17] CRITICAL FIX: Убрана двойная отправка фото - используем edit_message_media()
 # [2025-12-30 00:30] HOTFIX: Очистка от дублирования - set_work_mode больше НЕ редактирует меню
 # [2025-12-30 00:38] CRITICAL FIX: Восстановлен edit_menu() для работы кнопок - edit_menu() генерирует тОЛЬКО edit_message_text
+# [2025-12-30 00:45] 🔍 DEBUG: Добавлено ДЕТАЛЬНОЕ логирование отправки фото для поиска источника дубликата
 
 import asyncio
 import logging
@@ -137,7 +138,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     
     CRITICAL FIX: [2025-12-30 00:38]
     - ВОССТАНОВЛЕН edit_menu() нУЖНЪ в Telegram API
-    - КНОПки НЕ работают без edit_message_text
+    - КНОПКИ НЕ работают без edit_message_text
     - photo_handler добавит фото через edit_message_media() ПОТОМ
     """
     user_id = callback.from_user.id
@@ -177,7 +178,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📸 Загрузите фото")
         
         # ✅ CRITICAL FIX: [2025-12-30 00:38]
-        # EDIT_MESSAGE_TEXT REQUIRED - КНОПки НЕ работают без edit_menu()
+        # EDIT_MESSAGE_TEXT REQUIRED - КНОПКИ НЕ работают без edit_menu()
         # edit_menu() не ОТПРАВЛЯЕТ фото - только редактирует текст и кнопки
         await edit_menu(
             callback=callback,
@@ -208,6 +209,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 # [2025-12-30 00:05] BUGFIX: отправляем фото ДО меню с кнопками (в правильном порядке)
 # [2025-12-30 00:17] CRITICAL FIX: Убрана двойная отправка фото - используем edit_message_media()
 # [2025-12-30 00:38] CRITICAL FIX: Восстановлен edit_menu() - photo_handler теперь добавляет фото через edit_message_media()
+# [2025-12-30 00:45] 🔍 DEBUG: Добавлено ДЕТАЛЬНОЕ логирование каждого шага отправки фото
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
@@ -225,7 +227,7 @@ async def photo_handler(message: Message, state: FSMContext):
        - FACADE_DESIGN → LOADING_FACADE_SAMPLE
     
     CRITICAL FIX: [2025-12-29 23:24]
-    - получаем menu_message_id ИЗ FSM state (не тиремы из БД)
+    - получаем menu_message_id ИЗ FSM state (не тирем из БД)
     - теперь фото будет обработано корректно
     
     FIX: [2025-12-29 23:35]
@@ -244,6 +246,14 @@ async def photo_handler(message: Message, state: FSMContext):
     - set_work_mode() ВОССТАНОВЛЕН - редактирует менючНЫЙ текст
     - photo_handler ДОБАВЛЯЕТ фото через edit_message_media()
     - ОСТАЕТСЯ ОДНО сообщение с фото!
+    
+    DEBUG FIX: [2025-12-30 00:45]
+    - 🔍 Добавлены ДЕТАЛЬНЫЕ логи для отслеживания отправки фото:
+      * 🎬 Вход в функцию
+      * 📸 ПЕРЕД вызовом edit_message_media()
+      * ✅ ПОСЛЕ успешного вызова
+      * ⚠️ Fallback создание нового сообщения
+      * 📊 Результат каждой операции
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -251,7 +261,7 @@ async def photo_handler(message: Message, state: FSMContext):
     work_mode = data.get('work_mode')
     menu_message_id = data.get('menu_message_id')  # ПОЛУЧАЕМ ИЗ FSM ✅
 
-    logger.info(f"[V3] PHOTO_HANDLER START - user_id={user_id}, work_mode={work_mode}, menu_id={menu_message_id}")
+    logger.info(f"🎬 [PHOTO_HANDLER] START - user_id={user_id}, work_mode={work_mode}, menu_id={menu_message_id}")
 
     try:
         # ===== 1. ВАЛИДАЦИЯ =====
@@ -317,6 +327,8 @@ async def photo_handler(message: Message, state: FSMContext):
         # ===== 3. СОХРАНЕНИЕ ФОТО =====
         photo_id = message.photo[-1].file_id
         
+        logger.info(f"💾 [PHOTO_HANDLER] Saving photo_id={photo_id[:20]}... to FSM state")
+        
         # ✅ ИСПРАВЛЕНО: Удалена строка await db.save_photo(user_id, photo_id)
         # Такого метода нет. Фото сохраняется через FSM state:
         
@@ -378,6 +390,8 @@ async def photo_handler(message: Message, state: FSMContext):
         
         if menu_message_id:
             try:
+                logger.info(f"📸 [PHOTO_HANDLER] CALLING edit_message_media - menu_id={menu_message_id}, transitioning to {screen}")
+                
                 await message.bot.edit_message_media(
                     chat_id=chat_id,
                     message_id=menu_message_id,
@@ -388,10 +402,15 @@ async def photo_handler(message: Message, state: FSMContext):
                     ),
                     reply_markup=keyboard
                 )
-                logger.info(f"[V3] ✅ Photo added to existing menu via edit_message_media - transitioning to {screen}")
+                
+                logger.info(f"✅ [PHOTO_HANDLER] SUCCESS edit_message_media - Photo added to menu_id={menu_message_id}, screen={screen}")
+                
             except Exception as e:
-                logger.warning(f"⚠️ Не удалось отредактировать меню с фото: {e}. Создаем новое.")
+                logger.warning(f"⚠️ [PHOTO_HANDLER] FAILED edit_message_media for menu_id={menu_message_id}: {e}. Creating NEW message with photo.")
+                
                 # Fallback: создаем новое сообщение с фото
+                logger.info(f"📸 [PHOTO_HANDLER] FALLBACK - Creating NEW message with photo")
+                
                 new_msg = await message.bot.send_photo(
                     chat_id=chat_id,
                     photo=photo_id,
@@ -399,10 +418,15 @@ async def photo_handler(message: Message, state: FSMContext):
                     reply_markup=keyboard,
                     parse_mode="Markdown"
                 )
+                
+                logger.info(f"✅ [PHOTO_HANDLER] FALLBACK SUCCESS - New photo message created, msg_id={new_msg.message_id}")
+                
                 await state.update_data(menu_message_id=new_msg.message_id)
                 await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
         else:
-            logger.warning(f"[WARNING] No menu_message_id found - creating new message with photo")
+            logger.warning(f"⚠️ [PHOTO_HANDLER] No menu_message_id found - creating NEW message with photo")
+            logger.info(f"📸 [PHOTO_HANDLER] Creating NEW message with photo (no menu_id)")
+            
             new_msg = await message.bot.send_photo(
                 chat_id=chat_id,
                 photo=photo_id,
@@ -410,13 +434,16 @@ async def photo_handler(message: Message, state: FSMContext):
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
+            
+            logger.info(f"✅ [PHOTO_HANDLER] SUCCESS - New photo message created, msg_id={new_msg.message_id}")
+            
             await state.update_data(menu_message_id=new_msg.message_id)
             await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
         
-        logger.info(f"[V3] {work_mode.upper()}+UPLOADING_PHOTO - photo saved and transitioned to {screen}, user_id={user_id}")
+        logger.info(f"📊 [PHOTO_HANDLER] COMPLETE - user_id={user_id}, work_mode={work_mode}, transitioned to {screen}")
         
     except Exception as e:
-        logger.error(f"[ERROR] PHOTO_HANDLER failed for user {user_id}: {e}", exc_info=True)
+        logger.error(f"❌ [PHOTO_HANDLER] FATAL ERROR for user {user_id}: {e}", exc_info=True)
         try:
             error_msg = await message.answer("❌ Ошибка при обработке фото. Попробуйте еще раз.")
             # ✅ НОВОЕ: Удаляем сообщение об ошибке через 3 сек
