@@ -6,8 +6,8 @@
 # [2025-12-24 13:12] ОКОНЧАТЕЛЬНАЕ РЕАЛИЗАЦИЕ: 4 кнопки СООТНОШЕНИЯ В ОДНОМ РЯДУ (по 25% каждая)
 # [2025-12-29 15:20] PHASE 1.3.1: Добавлена новая функция get_work_mode_selection_keyboard() для SCREEN 1
 # [2025-12-29 16:21] PHASE 1.3.2: Добавлены клавиатуры для SCREEN 2-5
-# [2025-12-29 16:25] PHASE 1.3.3: Добавлены клавиатуры для SCREEN 6-9
-# [2025-12-29 16:31] ФИКС: Оставлена старая get_clear_space_confirm_keyboard(), фикс get_edit_design_keyboard(), проверены все связи
+# [2025-12-29 16:31] ФИКС: Оставлена старая get_clear_space_confirm_keyboard(), обновлены все связи
+# [2025-12-29 16:35] ФИКС: Удалена get_post_generation_keyboard_new(), оставлена только старая версия
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -217,16 +217,17 @@ def get_style_keyboard() -> InlineKeyboardMarkup:
 # Экран после генерации  или очистки помещения
 def get_post_generation_keyboard(show_continue_editing: bool = False) -> InlineKeyboardMarkup:
     """
-    ОБНОВЛЕНО: 2025-12-08 21:18
-
-    Универсальная клавиатура после генерации (ОБАС ОПЕРАЦИОННАЯ).
+    ОСНОВНАЯ версия клавиатуры после генерации (SCREEN 6).
+    Используется для всех сценариев генерации.
 
     Логика:
-    - Если show_continue_editing = True → это сценарий РУЧНОГО ПРОМПТА (дом, участок, другое помещение)
+    - Если show_continue_editing = True → РУЧНОЙ ПРОМПТ (дом, участок, другое помещение)
       Ряд 1: [✏️ Продолжить редактирование] [📸 Новое фото]
-    - Если show_continue_editing = False → это сценарий ПО СТИЛЮ
+    - Если show_continue_editing = False → ГЕНЕРАЦИЯ ПО СТИЛЮ
       Ряд 1: [🔄 Другой стиль] [📸 Новое фото]
     - Ряд 2: [🏠 Главное меню]
+    
+    ОБНОВЛЕНО: 2025-12-29 16:35 (PHASE 1.3.3 cleanup)
     """
     builder = InlineKeyboardBuilder()
 
@@ -250,12 +251,12 @@ def get_post_generation_keyboard(show_continue_editing: bool = False) -> InlineK
     return builder.as_markup()
 
 
-# Экран подтверждения очистки пространства (Старая - СОХРАНЕНО)
+# Экран подтверждения очистки пространства
 def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура подтверждения очистки пространства
-
-    ОСНОВНАЯ ФУНКЦИя для генерации!
+    Клавиатура подтверждения очистки пространства (SCREEN 9)
+    ОСНОВНАЯ ФУНКЦИя для SCREEN 9!
+    
     Дата: 2025-12-08
     """
     builder = InlineKeyboardBuilder()
@@ -352,12 +353,13 @@ def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
 
 # ========================================
 # PHASE 1.3.2: SCREEN 2-5 - НОВЫЕ КЛАВИАТУРЫ
+# ОБНОВЛЕНО: 2025-12-29 16:21
 # ========================================
 
 def get_uploading_photo_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура загрузки фото (ЭКРАН 2)
-    Динамический текст в handler
+    Клавиатура загрузки фото (ЭКРАН 2: UPLOADING_PHOTO)
+    Динамический текст зависит от режима работы
     """
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
@@ -370,7 +372,7 @@ def get_uploading_photo_keyboard() -> InlineKeyboardMarkup:
 
 def get_room_choice_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура выбора комнаты (ЭКРАН 3)
+    Клавиатура выбора комнаты (ЭКРАН 3: ROOM_CHOICE)
     10 комнат, по 2 в ряд
     """
     builder = InlineKeyboardBuilder()
@@ -396,7 +398,7 @@ def get_room_choice_keyboard() -> InlineKeyboardMarkup:
 
 def get_choose_style_1_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура выбора стиля 1 (ЭКРАН 4)
+    Клавиатура выбора стиля 1 (ЭКРАН 4: CHOOSE_STYLE_1)
     12 стилей, по 2 в ряд
     """
     builder = InlineKeyboardBuilder()
@@ -423,7 +425,7 @@ def get_choose_style_1_keyboard() -> InlineKeyboardMarkup:
 
 def get_choose_style_2_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура выбора стиля 2 (ЭКРАН 5)
+    Клавиатура выбора стиля 2 (ЭКРАН 5: CHOOSE_STYLE_2)
     12 эндовых стилей, по 2 в ряд
     """
     builder = InlineKeyboardBuilder()
@@ -448,36 +450,16 @@ def get_choose_style_2_keyboard() -> InlineKeyboardMarkup:
 
 
 # ========================================
-# PHASE 1.3.3: SCREEN 6-9 - НОВЫЕ КЛАВИАТУРЫ
-# ОБНОВЛЕНО: 2025-12-29 16:31
-# ФИКС: Оставлена старая get_clear_space_confirm_keyboard()
+# PHASE 1.3.3: SCREEN 7-8 - ТЕКСТОВЫЙ ВВОД И РЕДАКТИРОВАНИЕ
+# ОБНОВЛЕНО: 2025-12-29 16:35
+# ФИКС: Удалена get_post_generation_keyboard_new()
+# СОХРАНЕНЫ: get_post_generation_keyboard() и get_clear_space_confirm_keyboard()
 # ========================================
-
-def get_post_generation_keyboard_new() -> InlineKeyboardMarkup:
-    """
-    Клавиатура после генерации (ЭКРАН 6)
-    НОВАЯ версия для PHASE 1.3.3
-    """
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="🎨 Новый стиль", callback_data="choose_style_1"),
-        InlineKeyboardButton(text="🏠 Новая комната", callback_data="room_choice")
-    )
-    builder.row(InlineKeyboardButton(
-        text="✏️ Текстовое редактирование",
-        callback_data="text_input"
-    ))
-    builder.row(InlineKeyboardButton(
-        text="🏠 Главное меню",
-        callback_data="select_mode"
-    ))
-    builder.adjust(2, 1, 1)
-    return builder.as_markup()
-
 
 def get_text_input_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура текстового редактирования (ЭКРАН 7)
+    Клавиатура текстового редактирования (ЭКРАН 7: TEXT_INPUT)
+    После ввода текста пользователь может вернуться назад
     """
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
@@ -490,8 +472,10 @@ def get_text_input_keyboard() -> InlineKeyboardMarkup:
 
 def get_edit_design_keyboard() -> InlineKeyboardMarkup:
     """
-    Клавиатура редактирования дизайна (ЭКРАН 8)
-    НСИ callback_data должны быть clear_space_confirm, не clear_confirm!
+    Клавиатура редактирования дизайна (ЭКРАН 8: EDIT_DESIGN)
+    Опции: очистить фото, ввести текст, новое фото, главное меню
+    
+    NSI: callback_data должны быть clear_space_confirm, не clear_confirm!
     """
     builder = InlineKeyboardBuilder()
     
