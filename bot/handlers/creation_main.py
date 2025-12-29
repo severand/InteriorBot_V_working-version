@@ -14,6 +14,7 @@
 # [2025-12-29 23:40] FIX: добавляем автоматическое удаление сообщений об ошибке через 3 сек + улучшена обработка ошибок при редактировании меню
 # [2025-12-29 23:45] CRITICAL FIX: НЕ УДАЛЯЕМ ФОТО! Оно остается в чате и будет редактироваться через edit_message_media()
 # [2025-12-30 00:05] BUGFIX: ФОТО ДОЛЖНО БЫТЬ НАД МЕНЮ! Отправляем фото ДО меню с кнопками
+# [2025-12-30 00:17] CRITICAL FIX: Убрана двойная отправка фото - используем edit_message_media() для добавления фото в существующее меню
 
 import asyncio
 import logging
@@ -23,7 +24,7 @@ from aiogram import Router, F
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.filters.state import StateFilter
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InputMediaPhoto
 
 from database.db import db
 
@@ -196,6 +197,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 # ===== SCREEN 2: PHOTO_HANDLER (Загрузка фото для всех режимов) =====
 # [2025-12-29] ОБНОВЛЕНО (V3)
 # [2025-12-30 00:05] BUGFIX: отправляем фото ДО меню с кнопками (в правильном порядке)
+# [2025-12-30 00:17] CRITICAL FIX: Убрана двойная отправка фото - используем edit_message_media()
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
@@ -229,9 +231,10 @@ async def photo_handler(message: Message, state: FSMContext):
     - Фото остается в чате
     - Будет редактироваться позже через edit_message_media()
     
-    BUGFIX: [2025-12-30 00:05]
-    - ОТПРАВЛЯЕМ ФОТО ДО МЕНЮ С КНОПКАМИ!
-    - Правильный порядок: фото → инлайн-меню
+    CRITICAL FIX: [2025-12-30 00:17]
+    - УДАЛЕН блок send_photo() который создавал отдельное сообщение
+    - Теперь используем edit_message_media() для добавления фото в существующее меню
+    - Результат: 1 сообщение (фото + текст + кнопки) вместо 2
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -359,38 +362,45 @@ async def photo_handler(message: Message, state: FSMContext):
             await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
             return
         
-        # ===== 5. ОТПРАВЛЯЕМ ФОТО ПЕРВЫМ, ПОТОМ МЕНЮ =====
-        # BUGFIX: [2025-12-30 00:05] Правильный порядок: ФОТО → МЕНЮ
-        # Сначала отправляем само фото отдельным сообщением
-        try:
-            await message.bot.send_photo(
-                chat_id=chat_id,
-                photo=photo_id,
-                caption="📸 Ваше фото"
-            )
-            logger.info(f"[V3] Photo sent as separate message for user_id={user_id}")
-        except Exception as e:
-            logger.warning(f"⚠️ Не удалось отправить фото отдельным сообщением: {e}")
+        # ===== 5. ДОБАВЛЯЕМ ФОТО В СУЩЕСТВУЮЩЕЕ МЕНЮ =====
+        # ✅ CRITICAL FIX: [2025-12-30 00:17]
+        # Используем edit_message_media() вместо send_photo()
+        # Результат: фото + текст + кнопки в ОДНОМ сообщении
         
-        # ===== 6. ТЕПЕРЬ ОТПРАВЛЯЕМ МЕНЮ С КНОПКАМИ =====
         if menu_message_id:
             try:
-                await message.bot.edit_message_text(
+                await message.bot.edit_message_media(
                     chat_id=chat_id,
                     message_id=menu_message_id,
-                    text=text,
+                    media=InputMediaPhoto(
+                        media=photo_id,
+                        caption=text,
+                        parse_mode="Markdown"
+                    ),
+                    reply_markup=keyboard
+                )
+                logger.info(f"[V3] ✅ Photo added to existing menu via edit_message_media - transitioning to {screen}")
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось отредактировать меню с фото: {e}. Создаем новое.")
+                # Fallback: создаем новое сообщение с фото
+                new_msg = await message.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo_id,
+                    caption=text,
                     reply_markup=keyboard,
                     parse_mode="Markdown"
                 )
-                logger.info(f"[V3] Successfully edited menu - transitioning to {screen}")
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось отредактировать меню: {e}. Создаем новое.")
-                new_msg = await message.answer(text=text, reply_markup=keyboard, parse_mode="Markdown")
                 await state.update_data(menu_message_id=new_msg.message_id)
                 await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
         else:
-            logger.warning(f"[WARNING] No menu_message_id found - creating new message")
-            new_msg = await message.answer(text=text, reply_markup=keyboard, parse_mode="Markdown")
+            logger.warning(f"[WARNING] No menu_message_id found - creating new message with photo")
+            new_msg = await message.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo_id,
+                caption=text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
             await state.update_data(menu_message_id=new_msg.message_id)
             await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
         
