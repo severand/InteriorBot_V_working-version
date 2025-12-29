@@ -8,8 +8,9 @@
 # [2025-12-29 22:50] FIX: Исправлена ошибка AttributeError - get_pro_mode_data → get_user_pro_settings
 # [2025-12-29 22:55] FIX: Исправлена логика главного меню - select_mode теперь показывает 5 режимов работы
 # [2025-12-29 23:10] FIX: Убрано дублирование footer на экране выбора режима работы
-# [2025-12-29 23:14] FIX: Убрано дублирование footer на экране загружки фото - НЕ добавляем footer для UPLOADING_PHOTO
+# [2025-12-29 23:14] FIX: Убрано дублирование footer на экране загрузки фото - НЕ добавляем footer для UPLOADING_PHOTO
 # [2025-12-29 23:24] CRITICAL FIX: сохраняем menu_message_id в FSM state не только в БД - теперь photo_handler сможет получить menu_message_id из FSM
+# [2025-12-29 23:35] FIX: удаляем несуществующий вызов db.save_photo() - фото сохраняется через FSM state
 
 import asyncio
 import logging
@@ -154,7 +155,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         # Сохраняем режим и menu_message_id В FSM ✅
         await state.update_data(
             work_mode=work_mode.value,
-            menu_message_id=menu_message_id  # КОРИТНО! сохраняем в FSM
+            menu_message_id=menu_message_id  # КРИТИЧНО! сохраняем в FSM
         )
         await state.set_state(CreationStates.uploading_photo)
         
@@ -162,7 +163,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         balance = await db.get_balance(user_id)
         
         # Динамический текст в зависимости от режима
-        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📸 Загружите фото")
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📸 Загрузите фото")
         
         # Редактируем меню
         await edit_menu(
@@ -194,7 +195,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
-    SCREEN 2: Загружка фото (UPLOADING_PHOTO)
+    SCREEN 2: Загрузка фото (UPLOADING_PHOTO)
     
     Логика:
     1. Валидация фото
@@ -208,8 +209,12 @@ async def photo_handler(message: Message, state: FSMContext):
        - FACADE_DESIGN → LOADING_FACADE_SAMPLE
     
     CRITICAL FIX: [2025-12-29 23:24]
-    - получаем menu_message_id ИЗ FSM state (не тираем из БД)
+    - получаем menu_message_id ИЗ FSM state (не тирем из БД)
     - теперь фото будет обработано корректно
+    
+    FIX: [2025-12-29 23:35]
+    - УДАЛЕН вызов db.save_photo() - этого метода нет
+    - фото сохраняется в FSM через state.update_data()
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -283,7 +288,9 @@ async def photo_handler(message: Message, state: FSMContext):
         
         # ===== 3. СОХРАНЕНИЕ ФОТО =====
         photo_id = message.photo[-1].file_id
-        await db.save_photo(user_id, photo_id)
+        
+        # ✅ ИСПРАВЛЕНО: Убрана строка await db.save_photo(user_id, photo_id)
+        # Такого метода не существует. Фото сохраняется через FSM state.
         
         await state.update_data(
             photo_id=photo_id,
@@ -392,4 +399,3 @@ async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
         keyboard=get_upload_photo_keyboard(),
         screen_code='upload_photo'
     )
-    await callback.answer()
