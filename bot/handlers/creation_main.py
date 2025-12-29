@@ -11,7 +11,8 @@
 # [2025-12-29 23:14] FIX: Убрано дублирование footer на экране загрузки фото - НЕ добавляем footer для UPLOADING_PHOTO
 # [2025-12-29 23:24] CRITICAL FIX: сохраняем menu_message_id в FSM state не только в БД - теперь photo_handler сможет получить menu_message_id из FSM
 # [2025-12-29 23:35] FIX: удаляем несуществующий вызов db.save_photo() - фото сохраняется через FSM state
-# [2025-12-29 23:40] FIX: добавляем автоматическое удаление сообщений об ошибке через 3 сек + улучшена обработка исключений
+# [2025-12-29 23:40] FIX: добавляем автоматическое удаление сообщений об ошибке через 3 сек + улучшена обработка ошибок при редактировании меню
+# [2025-12-29 23:45] CRITICAL FIX: НЕ УДАЛЯЕМ ФОТО! Оно остается в чате и будет редактироваться через edit_message_media()
 
 import asyncio
 import logging
@@ -220,6 +221,11 @@ async def photo_handler(message: Message, state: FSMContext):
     FIX: [2025-12-29 23:40]
     - добавляем автоматическое удаление сообщений об ошибке через 3 сек
     - улучшена обработка исключений при редактировании меню
+    
+    FIX: [2025-12-29 23:45] CRITICAL
+    - НЕ УДАЛЯЕМ ФОТО!
+    - Фото остается в чате
+    - Будет редактироваться позже через edit_message_media()
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -247,25 +253,15 @@ async def photo_handler(message: Message, state: FSMContext):
                     await state.update_data(menu_message_id=new_msg.message_id)
                     await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
                     # ✅ НОВОЕ: Удаляем сообщение об ошибке через 3 сек
-                    asyncio.create_task(self._delete_message_after_delay(message.bot, chat_id, new_msg.message_id, 3))
+                    asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, new_msg.message_id, 3))
             else:
                 new_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
                 await state.update_data(menu_message_id=new_msg.message_id)
                 await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
                 # ✅ НОВОЕ: Удаляем сообщение об ошибке через 3 сек
-                asyncio.create_task(self._delete_message_after_delay(message.bot, chat_id, new_msg.message_id, 3))
+                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, new_msg.message_id, 3))
             
-            try:
-                await message.delete()
-            except:
-                pass
             return
-        
-        # Удаляем сообщение пользователя с фото
-        try:
-            await message.delete()
-        except Exception as e:
-            logger.debug(f"⚠️ Не удалось удалить сообщение пользователя: {e}")
         
         # ===== 2. ПРОВЕРКА БАЛАНСА =====
         balance = await db.get_balance(user_id)
@@ -296,7 +292,7 @@ async def photo_handler(message: Message, state: FSMContext):
             
             # ✅ НОВОЕ: Удаляем сообщение об ошибке через 3 сек
             if error_msg:
-                asyncio.create_task(self._delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
             
             return
         
@@ -386,19 +382,20 @@ async def photo_handler(message: Message, state: FSMContext):
         try:
             error_msg = await message.answer("❌ Ошибка при обработке фото. Попробуйте еще раз.")
             # ✅ НОВОЕ: Удаляем сообщение об ошибке через 3 сек
-            asyncio.create_task(self._delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+            asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
         except:
             pass
-    
-    @staticmethod
-    async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int):
-        """Удалить сообщение через N секунд"""
-        try:
-            await asyncio.sleep(delay)
-            await bot.delete_message(chat_id=chat_id, message_id=message_id)
-            logger.debug(f"✅ Удалено сообщение об ошибке {message_id} в чате {chat_id}")
-        except Exception as e:
-            logger.debug(f"⚠️ Не удалось удалить сообщение {message_id}: {e}")
+
+
+# ===== HELPER: _delete_message_after_delay =====
+async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int):
+    """Удалить сообщение через N секунд"""
+    try:
+        await asyncio.sleep(delay)
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+        logger.debug(f"✅ Удалено сообщение об ошибке {message_id} в чате {chat_id}")
+    except Exception as e:
+        logger.debug(f"⚠️ Не удалось удалить сообщение {message_id}: {e}")
 
 
 # ===== OLD SYSTEM: CREATE_DESIGN (для обратной совместимости) =====
