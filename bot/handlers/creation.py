@@ -29,6 +29,11 @@
 # [2025-12-29 23:56] ЛОГИКА: Перехватывает фото на экранах room_choice, choose_style, etc
 # [2025-12-29 23:56] ДЕЙСТВИЕ: Переход обратно на uploading_photo без удаления фото
 # [2025-12-29 23:56] СОХРАНЕНИЕ: photo_id в FSM для использования на новой загрузке
+# --- ФАЗА 1.5.3: 2025-12-30 00:02 - ФИКСАЦИЯ ПОЗИЦИИ ФОТО ---
+# [2025-12-30 00:02] ИСПРАВЛЕНО: Фото больше не появляется отдельным сообщением
+# [2025-12-30 00:02] УДАЛЕНО: message.answer_photo из photo_redirect_handler
+# [2025-12-30 00:02] ДОБАВЛЕНО: Редактирование меню через edit_menu() вместо создания нового
+# [2025-12-30 00:02] РЕЗУЛЬТАТ: Single Menu Pattern 100%, фото не дублируется
 
 import asyncio
 import logging
@@ -456,8 +461,10 @@ async def photo_handler(message: Message, state: FSMContext):
 
 
 # ===== ФАЗА 1.5.2: ЛОВУШКА ДЛЯ ФОТО НА ДРУГИХ СОСТОЯНИЯХ (NEW!) =====
-# ✅ ДОБАВЛЕНО 2025-12-29 23:56: Перехват фото на всех других экранах
+# ✅ ДОБАВЛЕНО 2025-12-29 23:56: Перехват фото на вторых экранах
+# ✅ ИСПРАВЛЕНО 2025-12-30 00:02: Фото больше не создается отдельным сообщением
 # Дата добавления: 2025-12-29 23:56
+# Обновлено: 2025-12-30 00:02
 # Время выполнения: 30 минут
 
 @router.message(F.photo)
@@ -468,11 +475,15 @@ async def photo_redirect_handler(message: Message, state: FSMContext):
     Логика:
     1. Проверяем текущее состояние FSM
     2. Если состояние НЕ uploading_photo - это ВТОРОЙ экран загрузки фото
-    3. Вместо удаления фото - ПЕРЕХОДИМ НА ЭКРАН загрузки фото
-    4. Сохраняем photo_id и старый state для восстановления
-    5. Удаляем сообщение пользователя (рекомендация отправлять через меню)
+    3. Вместо удаления фото - СОХРАНЯЕМ его
+    4. ПЕРЕХОДИМ обратно на экран uploading_photo
+    5. Редактируем меню (не создаём новое!) через edit_menu()
+    6. Удаляем сообщение пользователя ТОЛЬКО после всего
     
     Исключение: Если state вообще не установлен - отправляем в главное меню
+    
+    ВАЖНО: Фото НЕ создается отдельным сообщением!
+           Просто редактируем меню для переходна на uploading_photo
     
     Log: "[V3] PHOTO_REDIRECT - Переход на uploading_photo из {current_state}, user_id={user_id}"
     Время выполнения: 30 минут
@@ -500,11 +511,11 @@ async def photo_redirect_handler(message: Message, state: FSMContext):
                 pass
             return
         
-        # ===== ПРОВЕРКА 2: Это УЖЕ экран загрузки фото? =====
+        # ===== ПРОВЕРКА 2: Это уже экран uploading_photo? =====
         if current_state == CreationStates.uploading_photo.state:
             # Это должно было обработаться выше в @router.message(StateFilter(uploading_photo), F.photo)
             # Если сюда попало - значит что-то не так, но не критично
-            logger.warning(f"[WARNING] Фото на uploading_photo но попало сюда: user_id={user_id}")
+            logger.warning(f"[WARNING] Фото на uploading_photo попало сюда: user_id={user_id}")
             try:
                 await message.delete()
             except:
@@ -512,7 +523,7 @@ async def photo_redirect_handler(message: Message, state: FSMContext):
             return
         
         # ===== ОСНОВНАЯ ЛОГИКА: ВТОРОЙ ЭКРАН ЗАГРУЗКИ =====
-        # Сохраняем текущее состояние (для восстановления если нужно)
+        # Сохраняем текущее состояние (для возможного восстановления)
         previous_state = current_state
         previous_data = data.copy()
         
@@ -553,32 +564,23 @@ async def photo_redirect_handler(message: Message, state: FSMContext):
         menu_info = await db.get_chat_menu(chat_id)
         menu_message_id = menu_info.get('menu_message_id') if menu_info else None
         
-        # Редактируем или создаём меню
-        if menu_message_id:
-            try:
-                await message.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=menu_message_id,
-                    text=text,
-                    reply_markup=get_upload_photo_keyboard(),
-                    parse_mode="Markdown"
-                )
-                logger.info(f"✅ Меню отредактировано для uploading_photo: msg_id={menu_message_id}")
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось отредактировать меню: {e}. Создаем новое.")
-                new_msg = await message.answer(text=text, reply_markup=get_upload_photo_keyboard(), parse_mode="Markdown")
-                await state.update_data(menu_message_id=new_msg.message_id)
-                await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
-        else:
-            # Создаём новое меню
-            new_msg = await message.answer(text=text, reply_markup=get_upload_photo_keyboard(), parse_mode="Markdown")
-            await state.update_data(menu_message_id=new_msg.message_id)
-            await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
+        # ===== КРИТИЧНО: РЕДАКТИРУЕМ МЕНЮ (не создаём новое!) =====
+        # [2025-12-30 00:02] ИСПРАВЛЕНО: Больше НЕ вызываем message.answer_photo!
+        # Просто редактируем существующее меню через edit_menu()
+        
+        await edit_menu(
+            callback=None,  # Это сообщение, а не callback
+            state=state,
+            text=text,
+            keyboard=get_upload_photo_keyboard(),
+            screen_code='uploading_photo'
+        )
         
         # Сохраняем в БД
-        await db.save_chat_menu(chat_id, user_id, menu_message_id or 0, 'uploading_photo')
+        if menu_message_id:
+            await db.save_chat_menu(chat_id, user_id, menu_message_id, 'uploading_photo')
         
-        # Удаляем сообщение пользователя
+        # Удаляем сообщение пользователя ТОЛЬКО ПОСЛЕ редактирования меню
         try:
             await message.delete()
         except Exception as e:
