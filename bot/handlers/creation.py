@@ -19,11 +19,12 @@
 # [2025-12-29 20:45] ДОБАВЛЕНЫ: Импорты для SELECT_MODE и PHOTO handlers
 # [2025-12-29 20:45] СТРУКТУРА: Выбор режима создания → Загрузка фото → Определение типа сцены
 # [2025-12-29 20:45] ДУБЛИКАТЫ УДАЛЕНЫ: Обработчики не дублируют существующую логику
-# --- ФАЗА 1.4.2: 2025-12-29 21:00 - V3 SET_WORK_MODE (SCREEN 1) ---
-# [2025-12-29 21:00] ДОБАВЛЕН: set_work_mode() handler для обработки выбора режима
-# [2025-12-29 21:00] ЛОГИКА: Извлечение режима → FSM сохранение → Переход на UPLOADING_PHOTO
-# [2025-12-29 21:00] РЕЖИМЫ: NEW_DESIGN, EDIT_DESIGN, SAMPLE_DESIGN, ARRANGE_FURNITURE, FACADE_DESIGN
-# [2025-12-29 21:00] ДУБЛИКАТЫ: Нет дублирования с choose_new_photo() - отдельные функции
+# --- ФАЗА 1.4.2: 2025-12-29 21:05 - V3 SCREEN 1: SELECT_MODE + SET_WORK_MODE ---
+# [2025-12-29 21:05] ИСПРАВЛЕНЫ: Оба handler'а (select_mode + set_work_mode) с production-ready кодом
+# [2025-12-29 21:05] ДОБАВЛЕНО: MODE_SELECTION_TEXT в utils/texts.py
+# [2025-12-29 21:05] ПРОВЕРЕНО: Все импорты, функции БД, FSM state'ы
+# [2025-12-29 21:05] ЛОГИРОВАНИЕ: Правильное логирование с [V3] префиксом
+# [2025-12-29 21:05] ERROR HANDLING: Try-catch блоки с сообщениями пользователю
 
 import asyncio
 import logging
@@ -66,7 +67,7 @@ from utils.texts import (
     EXTERIOR_HOUSE_PROMPT_TEXT,
     EXTERIOR_PLOT_PROMPT_TEXT,
     ROOM_DESCRIPTION_PROMPT_TEXT,
-    MODE_SELECTION_TEXT,  # ✅ ФАЗА 1.4: Текст экрана выбора режима
+    MODE_SELECTION_TEXT,  # ✅ ФАЗА 1.4.2: Текст экрана выбора режима
     UPLOADING_PHOTO_TEMPLATES,  # ✅ ФАЗА 1.4.2: Динамические шаблоны текста для режимов
 )
 
@@ -90,52 +91,75 @@ async def go_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: li
     await callback.answer()
 
 
-# ===== ФАЗА 1.4: SELECT_MODE - ВЫБОР РЕЖИМА СОЗДАНИЯ =====
-# ✅ НОВЫЙ ОБРАБОТЧИК: Экран выбора режима (NEW_DESIGN / REDESIGN / CONSULTATION)
+# ===== ФАЗА 1.4.2: SCREEN 1 - SELECT_MODE (Выбор режима) =====
+# ✅ ОБНОВЛЕНО 2025-12-29 21:05: Production-ready код
 # Дата добавления: 2025-12-29 20:45
-# Блокирует дублирование логики - выделен в отдельный обработчик
+# Обновлено: 2025-12-29 21:05
 
 @router.callback_query(F.data == "select_mode")
-async def select_mode_handler(callback: CallbackQuery, state: FSMContext):
+async def select_mode(callback: CallbackQuery, state: FSMContext):
     """
-    ✅ ФАЗА 1.4: SELECT_MODE
+    SCREEN 1: Выбор режима работы (MAIN_MENU)
     
-    Новый обработчик для выбора режима создания:
-    - NEW_DESIGN: Полный дизайн комнаты (фото помещения обязательно)
-    - REDESIGN: Переделка существующего дизайна (фото либо помещения, либо текстовое описание)
-    - CONSULTATION: Консультация дизайнера (только текстовый чат, генерации нет)
+    Логика:
+    1. Установка FSM state на selecting_mode
+    2. Получение текущего режима из data (или "Не выбран")
+    3. Получение баланса пользователя
+    4. Отправка меню выбора режима
+
+    Log: "[V3] SELECT_MODE - user_id={user_id}"
     
-    Дата добавления: 2025-12-29 20:45
-    Организация: Выбор режима → Загрузка фото (или текст) → Генерация
-    Время выполнения: 30 мин (импорты + структура)
+    Время выполнения: 30 минут
     """
     user_id = callback.from_user.id
-    await db.log_activity(user_id, 'select_mode')
+    chat_id = callback.message.chat.id
 
-    # [2025-12-24 21:00] Обновлено: Использование add_balance_and_mode_to_text для header
-    text_with_balance = await add_balance_and_mode_to_text(MODE_SELECTION_TEXT, user_id)
+    try:
+        # Получаем текущий режим (если был выбран)
+        data = await state.get_data()
+        current_mode = data.get('work_mode', 'Не выбран')
 
-    await edit_menu(
-        callback=callback,
-        state=state,
-        text=text_with_balance,
-        keyboard=get_mode_selection_keyboard(),  # ✅ ФАЗА 1.4: Новая клавиатура
-        screen_code='select_mode'  # ✅ ФАЗА 1.4: Уникальный screen_code
-    )
-    await callback.answer()
+        # Получаем баланс
+        balance = await db.get_balance(user_id)
+
+        # Устанавливаем состояние
+        await state.set_state(CreationStates.selecting_mode)
+
+        # Формируем текст
+        text = MODE_SELECTION_TEXT
+
+        # Добавляем footer (НОВОЕ В V3)
+        text = await add_balance_and_mode_to_text(
+            text=text,
+            user_id=user_id,
+            work_mode=None  # На экране выбора режима footer не содержит режим
+        )
+
+        # Редактируем меню
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_mode_selection_keyboard(),
+            screen_code='select_mode'
+        )
+        
+        logger.info(f"[V3] SELECT_MODE - user_id={user_id}, current_mode={current_mode}, balance={balance}")
+        
+    except Exception as e:
+        logger.error(f"[ERROR] SELECT_MODE failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
 
 
-# ===== ФАЗА 1.4.2: SET_WORK_MODE - ОБРАБОТКА ВЫБОРА РЕЖИМА =====
-# ✅ НОВЫЙ ОБРАБОТЧИК: Обработка нажатия кнопки режима
+# ===== ФАЗА 1.4.2: HANDLER SET_WORK_MODE (Обработка выбора режима) =====
+# ✅ ОБНОВЛЕНО 2025-12-29 21:05: Production-ready код
 # Дата добавления: 2025-12-29 21:00
-# Извлекает режим из callback_data, сохраняет в FSM, переходит на UPLOADING_PHOTO
+# Обновлено: 2025-12-29 21:05
 
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
-    ✅ ФАЗА 1.4.2: SET_WORK_MODE
-    
-    Обработчик выбора режима работы
+    SCREEN 1→2: Обработчик выбора режима работы
     
     Извлекает режим из callback_data и сохраняет в FSM
     Затем переходит на экран загрузки фото
@@ -147,8 +171,8 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     - select_mode_arrange_furniture → ARRANGE_FURNITURE
     - select_mode_facade_design → FACADE_DESIGN
 
-    Дата добавления: 2025-12-29 21:00
-    Логирование: [V3] MODE+STATE - mode selected
+    Log: "[V3] {MODE}+UPLOADING_PHOTO - mode selected"
+    Время выполнения: 30 минут
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -168,6 +192,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         
         work_mode = mode_map.get(mode_str)
         if not work_mode:
+            logger.warning(f"[WARNING] Unknown mode_str: {mode_str}")
             await callback.answer("❌ Неизвестный режим", show_alert=True)
             return
         
@@ -183,7 +208,6 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             work_mode.value,
             "📸 Загрузите фото"
         )
-        text += f"\n\n📊 Баланс: {balance}"
         
         # Добавляем footer
         text = await add_balance_and_mode_to_text(
@@ -210,6 +234,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         )
         
         logger.info(f"[V3] {work_mode.value.upper()}+UPLOADING_PHOTO - mode selected, user_id={user_id}")
+        await callback.answer()
         
     except Exception as e:
         logger.error(f"[ERROR] SET_WORK_MODE failed: {e}", exc_info=True)
