@@ -1,9 +1,9 @@
-# bot/handlers/creation_new_design.py
 # ===== PHASE 2: NEW_DESIGN MODE (SCREEN 3-6) =====
 # [2025-12-29] ОБНОВЛЕНО: Добавлены post_generation_menu() и явная установка состояния
 # [2025-12-29] НОВЫЙ ФАЙЛ: Часть 2 рефакторинга creation.py
 # Содержит: room_choice (SCREEN 3), choose_style_1/2 (SCREEN 4-5), style_choice_handler (SCREEN 6 + генерация)
 # + post_generation_menu (SCREEN 6), change_style_after_gen
+# [2025-12-30 01:15] 🔥 CRITICAL FIX: Используем edit_message_media() вместо answer_photo() - ОДНО сообщение!
 
 import asyncio
 import logging
@@ -12,7 +12,7 @@ import html
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.filters.state import StateFilter
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InputMediaPhoto
 
 from database.db import db
 
@@ -215,6 +215,8 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 
 # ===== SCREEN 4-5 to 6: STYLE_CHOICE_HANDLER (Выбор стиля + генерация) =====
 # [2025-12-29] ОБНОВЛЕНО (V3) - Добавлена установка state.post_generation
+# [2025-12-30 01:15] 🔥 CRITICAL FIX: Используем edit_message_media() вместо answer_photo()
+#                   РЕЗУЛЬТАТ: ОДНО сообщение с фото и кнопками!
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -223,11 +225,23 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     """
     SCREEN 4-5→6: Обработчик выбора стиля и генерация дизайна
     
+    🔥 CRITICAL FIX [2025-12-30 01:15]:
+    - РАНЬШЕ: answer_photo() + answer() = 2 СООБЩЕНИЯ
+    - ТЕПЕРЬ: edit_message_media() = 1 СООБЩЕНИЕ
+    
+    Логика:
+    1. Валидация + проверка баланса
+    2. Показываем "Генерирую дизайн..."
+    3. Генерируем через API
+    4. ✅ НОВОЕ: Используем edit_message_media() + edit_message_text()
+    5. РЕЗУЛЬТАТ: Фото + текст + кнопки в ОДНОМ сообщении
+    
     Log: "[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}"
     """
     style = callback.data.split("_")[-1]
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
+    menu_message_id = callback.message.message_id  # ✅ Получаем ID текущего меню
 
     await db.log_activity(user_id, f'style_{style}')
 
@@ -305,45 +319,116 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         room_name = html.escape(room.replace('_', ' ').title(), quote=True)
         style_name = html.escape(style.replace('_', ' ').title(), quote=True)
         caption = f"✨ Ваш новый дизайн {room_name} в стиле <b>{style_name}</b>!"
+        
+        # ✅ Подготовка текста для post_generation меню
+        post_gen_text = await add_balance_and_mode_to_text(
+            "✅ **Выбери что дальше**",
+            user_id,
+            data.get('work_mode')
+        )
 
         photo_sent = False
 
-        # ПОПЫТКА 1: Отправка по URL
+        # ===== ПОПЫТКА 1: edit_message_media для ОДНОГО сообщения =====
         try:
-            await callback.message.answer_photo(
-                photo=result_image_url,
-                caption=caption,
-                parse_mode="HTML"
+            logger.info(f"📸 [STYLE_CHOICE] CALLING edit_message_media - menu_id={menu_message_id}, style={style}")
+            
+            await callback.message.bot.edit_message_media(
+                chat_id=chat_id,
+                message_id=menu_message_id,
+                media=InputMediaPhoto(
+                    media=result_image_url,
+                    caption=caption,
+                    parse_mode="HTML"
+                ),
+                reply_markup=get_post_generation_keyboard()
             )
+            
             photo_sent = True
-            logger.info(f"✅ Фото отправлено по URL: user_id={user_id}")
+            logger.info(f"✅ [STYLE_CHOICE] SUCCESS edit_message_media - Photo + menu in ONE message, menu_id={menu_message_id}")
 
-        except Exception as url_error:
-            logger.warning(f"⚠️ Не удалось отправить по URL: {url_error}")
+        except Exception as media_error:
+            logger.warning(f"⚠️ [STYLE_CHOICE] FAILED edit_message_media: {media_error}")
 
-            # ПОПЫТКА 2: FALLBACK через BufferedInputFile
+            # ===== ПОПЫТКА 2: Отправка по URL (если edit_message_media не сработал) =====
             try:
-                logger.info(f"🔄 Переключаемся на BufferedInputFile для user_id={user_id}")
+                logger.info(f"🔄 [STYLE_CHOICE] FALLBACK 1 - answer_photo() по URL")
+                
+                await callback.message.answer_photo(
+                    photo=result_image_url,
+                    caption=caption,
+                    parse_mode="HTML"
+                )
+                
+                # Редактируем старое меню на post_generation
+                try:
+                    await callback.message.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=menu_message_id,
+                        text=post_gen_text,
+                        reply_markup=get_post_generation_keyboard(),
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.debug(f"Не удалось отредактировать старое меню: {e}")
+                    # Отправляем новое меню
+                    new_menu = await callback.message.answer(
+                        text=post_gen_text,
+                        reply_markup=get_post_generation_keyboard(),
+                        parse_mode="Markdown"
+                    )
+                    await state.update_data(menu_message_id=new_menu.message_id)
+                    await db.save_chat_menu(chat_id, user_id, new_menu.message_id, 'post_generation')
+                
+                photo_sent = True
+                logger.info(f"✅ [STYLE_CHOICE] FALLBACK 1 SUCCESS - Photo sent via URL")
 
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(result_image_url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                        if resp.status == 200:
-                            photo_data = await resp.read()
+            except Exception as url_error:
+                logger.warning(f"⚠️ [STYLE_CHOICE] FALLBACK 1 FAILED: {url_error}")
 
-                            await callback.message.answer_photo(
-                                photo=BufferedInputFile(photo_data, filename="design.jpg"),
-                                caption=caption,
-                                parse_mode="HTML"
-                            )
-                            photo_sent = True
-                            logger.info(f"✅ Фото отправлено через BufferedInputFile: user_id={user_id}")
-                        else:
-                            logger.error(f"❌ HTTP {resp.status} при скачивании")
+                # ===== ПОПЫТКА 3: FALLBACK через BufferedInputFile =====
+                try:
+                    logger.info(f"🔄 [STYLE_CHOICE] FALLBACK 2 - BufferedInputFile")
 
-            except Exception as buffer_error:
-                logger.error(f"❌ Fallback тоже не сработал: {buffer_error}")
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(result_image_url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                            if resp.status == 200:
+                                photo_data = await resp.read()
 
-        # Если обе попытки не сработали
+                                await callback.message.answer_photo(
+                                    photo=BufferedInputFile(photo_data, filename="design.jpg"),
+                                    caption=caption,
+                                    parse_mode="HTML"
+                                )
+                                
+                                # Редактируем старое меню
+                                try:
+                                    await callback.message.bot.edit_message_text(
+                                        chat_id=chat_id,
+                                        message_id=menu_message_id,
+                                        text=post_gen_text,
+                                        reply_markup=get_post_generation_keyboard(),
+                                        parse_mode="Markdown"
+                                    )
+                                except Exception as e:
+                                    logger.debug(f"Не удалось отредактировать меню: {e}")
+                                    new_menu = await callback.message.answer(
+                                        text=post_gen_text,
+                                        reply_markup=get_post_generation_keyboard(),
+                                        parse_mode="Markdown"
+                                    )
+                                    await state.update_data(menu_message_id=new_menu.message_id)
+                                    await db.save_chat_menu(chat_id, user_id, new_menu.message_id, 'post_generation')
+                                
+                                photo_sent = True
+                                logger.info(f"✅ [STYLE_CHOICE] FALLBACK 2 SUCCESS - Photo via BufferedInputFile")
+                            else:
+                                logger.error(f"❌ [STYLE_CHOICE] HTTP {resp.status}")
+
+                except Exception as buffer_error:
+                    logger.error(f"❌ [STYLE_CHOICE] FALLBACK 2 FAILED: {buffer_error}")
+
+        # Если все три попытки не сработали
         if not photo_sent:
             # Возвращаем баланс
             if not is_admin:
@@ -360,37 +445,11 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
         # УСПЕХ - Устанавливаем состояние POST_GENERATION
         await state.set_state(CreationStates.post_generation)
-
-        # Удаляем старое меню
-        old_menu_id = data.get('menu_message_id')
-        if old_menu_id:
-            try:
-                await callback.message.bot.delete_message(
-                    chat_id=chat_id,
-                    message_id=old_menu_id
-                )
-                await db.delete_chat_menu(chat_id)
-            except Exception as e:
-                logger.debug(f"Не удалось удалить старое меню: {e}")
-
-        # Отправляем НОВОЕ меню
-        text_with_balance = await add_balance_and_mode_to_text(
-            "✅ Выбери что дальше 👇",
-            user_id
-        )
-
-        new_menu = await callback.message.answer(
-            text=text_with_balance,
-            reply_markup=get_post_generation_keyboard(),
-            parse_mode="Markdown"
-        )
-
-        # Сохраняем в FSM + БД
-        await state.update_data(menu_message_id=new_menu.message_id)
-        await db.save_chat_menu(chat_id, user_id, new_menu.message_id, 'post_generation')
+        await state.update_data(menu_message_id=menu_message_id)  # Сохраняем в FSM
+        await db.save_chat_menu(chat_id, user_id, menu_message_id, 'post_generation')
 
         logger.info(f"[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}")
-        logger.info(f"[V3] NEW_DESIGN+POST_GENERATION - menu shown, user_id={user_id}")
+        logger.info(f"[V3] NEW_DESIGN+POST_GENERATION - ready, user_id={user_id}")
 
     else:
         # Ошибка генерации - возвращаем баланс
