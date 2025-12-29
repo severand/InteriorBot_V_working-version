@@ -7,7 +7,8 @@
 # [2025-12-29 22:30] HOTFIX: Исправлена функция select_mode() - передан параметр current_mode_is_pro
 # [2025-12-29 22:50] FIX: Исправлена ошибка AttributeError - get_pro_mode_data → get_user_pro_settings
 # [2025-12-29 22:55] FIX: Исправлена логика главного меню - select_mode теперь показывает 5 режимов работы
-# [2025-12-29 23:10] FIX: Убрано дублирование footer на экране select_mode - MODE_SELECTION_TEXT уже содержит полный текст
+# [2025-12-29 23:10] FIX: Убрано дублирование footer на экране выбора режима работы
+# [2025-12-29 23:14] FIX: Убрано дублирование footer на экране загрузки фото - НЕ добавляем footer для UPLOADING_PHOTO
 
 import asyncio
 import logging
@@ -121,7 +122,9 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     - select_mode_arrange_furniture → ARRANGE_FURNITURE
     - select_mode_facade_design → FACADE_DESIGN
     
-    Log: "[V3] {MODE}+UPLOADING_PHOTO - mode selected"
+    FIX: [2025-12-29 23:14] - НЕ добавляем footer на экран UPLOADING_PHOTO
+         UPLOADING_PHOTO_TEMPLATES содержит только краткий текст про загрузку
+         Footer не нужен на этом экране
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -155,11 +158,10 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         # Динамический текст в зависимости от режима
         text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📸 Загрузите фото")
         
-        # Добавляем footer (автоматически детектируется)
-        text = await add_balance_and_mode_to_text(
-            text=text,
-            user_id=user_id
-        )
+        # ✅ НЕ добавляем footer на экран UPLOADING_PHOTO!
+        # UPLOADING_PHOTO_TEMPLATES содержит только краткий текст про загрузку
+        # Footer здесь не нужен, нужно просто чистый экран с кнопкой загрузки
+        # text НЕ обрабатываем через add_balance_and_mode_to_text()
         
         # Редактируем меню
         await edit_menu(
