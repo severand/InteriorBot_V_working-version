@@ -6,6 +6,7 @@
 # [2025-12-29 21:18] Исправлены вызовы add_balance_and_mode_to_text - удален work_mode
 # [2025-12-29 22:30] HOTFIX: Исправлена функция select_mode() - передан параметр current_mode_is_pro
 # [2025-12-29 22:50] FIX: Исправлена ошибка AttributeError - get_pro_mode_data → get_user_pro_settings
+# [2025-12-29 22:55] FIX: Исправлена логика главного меню - select_mode теперь показывает 5 режимов работы
 
 import asyncio
 import logging
@@ -20,7 +21,7 @@ from aiogram.types import CallbackQuery, Message
 from database.db import db
 
 from keyboards.inline import (
-    get_mode_selection_keyboard,
+    get_work_mode_selection_keyboard,  # ✅ ИСПРАВЛЕНО: 5 режимов работы
     get_upload_photo_keyboard,
     get_what_is_in_photo_keyboard,
     get_payment_keyboard,
@@ -59,52 +60,46 @@ async def go_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: li
     await callback.answer()
 
 
-# ===== SCREEN 1: SELECT_MODE (Выбор режима) =====
-# [2025-12-29] НОВОЕ (V3)
+# ===== SCREEN 1: SELECT_MODE (Выбор режима работы) =====
+# [2025-12-29] НОВОЕ (V3) - ЭКРАН С 5 РЕЖИМАМИ РАБОТЫ
 @router.callback_query(F.data == "select_mode")
 async def select_mode(callback: CallbackQuery, state: FSMContext):
     """
-    SCREEN 1: Выбор режима работы
+    SCREEN 1: Выбор режима работы (5 вариантов)
     
-    Логика:
-    1. Получение текущего режима из БД (PRO или СТАНДАРТ)
-    2. Получение баланса пользователя
-    3. Отправка меню выбора режима
+    Экран 1 основного потока:
+    - 📋 Создать новый дизайн (NEW_DESIGN)
+    - ✏️ Редактировать дизайн (EDIT_DESIGN)
+    - 🎁 Примерить дизайн (SAMPLE_DESIGN)
+    - 🛋️ Расставить мебель (ARRANGE_FURNITURE)
+    - 🏠 Дизайн фасада дома (FACADE_DESIGN)
     
     Log: "[V3] SELECT_MODE - user_id={user_id}"
-    HOTFIX: [2025-12-29 22:30] - Передан параметр current_mode_is_pro в get_mode_selection_keyboard
-    FIX: [2025-12-29 22:50] - Исправлена ошибка: get_pro_mode_data → get_user_pro_settings
+    FIX: [2025-12-29 22:55] - Используется get_work_mode_selection_keyboard (5 режимов)
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
 
     try:
-        # Получаем текущий режим ИЗ БД
-        pro_data = await db.get_user_pro_settings(user_id)
-        current_mode_is_pro = pro_data['pro_mode'] if pro_data else False
-        
-        # Получаем баланс
-        balance = await db.get_balance(user_id)
-
         # Устанавливаем состояние
         await state.set_state(CreationStates.selecting_mode)
 
         # Формируем текст
-        text = MODE_SELECTION_TEXT
+        text = "🎨 **Выберите режим работы**\n\n5 способов создать дизайн:"
 
         # Добавляем footer с балансом
         text = await add_balance_and_mode_to_text(text=text, user_id=user_id)
 
-        # Редактируем меню с ПЕРЕДАЧЕЙ параметра current_mode_is_pro
+        # Редактируем меню с клавиатурой 5 режимов работы ✅
         await edit_menu(
             callback=callback,
             state=state,
             text=text,
-            keyboard=get_mode_selection_keyboard(current_mode_is_pro=current_mode_is_pro),
+            keyboard=get_work_mode_selection_keyboard(),  # ✅ ИСПРАВЛЕНО!
             screen_code='select_mode'
         )
         
-        logger.info(f"[V3] SELECT_MODE - user_id={user_id}, current_mode_is_pro={current_mode_is_pro}, balance={balance}")
+        logger.info(f"[V3] SELECT_MODE - user_id={user_id}, showing 5 work modes")
         
     except Exception as e:
         logger.error(f"[ERROR] SELECT_MODE failed: {e}", exc_info=True)
