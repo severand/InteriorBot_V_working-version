@@ -18,6 +18,12 @@
 # [2025-12-29 22:30] ПРОВЕРЕНО: Все импорты и функции БД (get_chat_menu, save_photo, save_chat_menu)
 # [2025-12-29 22:30] ВАЛИДАЦИЯ: Фото, баланс, режим работы
 # [2025-12-29 22:30] SINGLE MENU PATTERN: 100% соответствие SMP
+# --- ФАЗА 1.5.1: 2025-12-29 23:00 - V3 SCREEN 3: ROOM_CHOICE (NEW_DESIGN only) ---
+# [2025-12-29 23:00] ДОБАВЛЕНЫ: room_choice_menu() и room_choice_handler()
+# [2025-12-29 23:00] ЛОГИКА: Выбор комнаты только для NEW_DESIGN режима
+# [2025-12-29 23:00] ПЕРЕХОД: UPLOADING_PHOTO → ROOM_CHOICE → CHOOSE_STYLE_1
+# [2025-12-29 23:00] СОХРАНЕНИЕ: selected_room в FSM и БД
+# [2025-12-29 23:00] ЛОГИРОВАНИЕ: [V3] NEW_DESIGN+ROOM_CHOICE префикс
 
 import asyncio
 import logging
@@ -442,6 +448,125 @@ async def photo_handler(message: Message, state: FSMContext):
             await message.answer("❌ Ошибка при обработке фото. Попробуйте еще раз.")
         except:
             pass
+
+
+# ===== ФАЗА 1.5.1: SCREEN 3 - ROOM_CHOICE (NEW_DESIGN только) =====
+# ✅ ДОБАВЛЕНО 2025-12-29 23:00: Production-ready код
+# Дата добавления: 2025-12-29 23:00
+# Время выполнения: 1 час
+
+@router.callback_query(F.data == "room_choice")
+async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
+    """
+    SCREEN 3: Меню выбора комнаты (ROOM_CHOICE)
+    Только для режима NEW_DESIGN
+    
+    Логика:
+    1. Получение баланса пользователя
+    2. Установка FSM state на room_choice
+    3. Формирование текста с информацией о балансе
+    4. Отправка меню выбора комнаты
+    5. Сохранение menu_message_id в БД
+    
+    Log: "[V3] NEW_DESIGN+ROOM_CHOICE - menu shown, user_id={user_id}"
+    Время выполнения: 1 час
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+
+    try:
+        data = await state.get_data()
+        balance = await db.get_balance(user_id)
+        
+        await state.set_state(CreationStates.room_choice)
+        
+        text = ROOM_CHOICE_TEXT.format(balance=balance)
+        text = await add_balance_and_mode_to_text(text, user_id, data.get('work_mode'))
+        
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_room_choice_keyboard(),
+            screen_code='room_choice'
+        )
+        
+        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'room_choice')
+        
+        logger.info(f"[V3] NEW_DESIGN+ROOM_CHOICE - menu shown, user_id={user_id}")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] ROOM_CHOICE_MENU failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("room_"))
+async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
+    """
+    SCREEN 3→4: Обработчик выбора комнаты
+    Сохраняет выбор и переходит на экран выбора стиля (SCREEN 4 - CHOOSE_STYLE_1)
+    
+    Поддерживаемые комнаты:
+    - room_living_room (Гостиная)
+    - room_kitchen (Кухня)
+    - room_bedroom (Спальня)
+    - room_nursery (Детская)
+    - room_studio (Студия)
+    - room_home_office (Кабинет)
+    - room_bathroom_full (Ванная)
+    - room_toilet (Туалет)
+    - room_entryway (Прихожая)
+    - room_wardrobe (Гардеробная)
+    
+    Логика:
+    1. Извлечение типа комнаты из callback_data
+    2. Получение баланса
+    3. Сохранение выбора в FSM (selected_room)
+    4. Установка FSM state на choose_style_1
+    5. Формирование текста с информацией о выбранной комнате
+    6. Отправка меню выбора стиля
+    7. Сохранение menu_message_id в БД
+    
+    Log: "[V3] NEW_DESIGN+ROOM_CHOICE - selected: {room}, user_id={user_id}"
+    Время выполнения: 1 час
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+
+    try:
+        room = callback.data.replace("room_", "")
+        balance = await db.get_balance(user_id)
+        data = await state.get_data()
+        work_mode = data.get('work_mode')
+        
+        # Сохраняем выбор комнаты в FSM
+        await state.update_data(selected_room=room)
+        await state.set_state(CreationStates.choose_style_1)
+        
+        text = CHOOSE_STYLE_TEXT.format(
+            balance=balance,
+            current_mode=work_mode,
+            selected_room=room
+        )
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+        
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_choose_style_1_keyboard(),
+            screen_code='choose_style_1'
+        )
+        
+        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'choose_style_1')
+        
+        logger.info(f"[V3] NEW_DESIGN+ROOM_CHOICE - selected: {room}, user_id={user_id}")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] ROOM_CHOICE_HANDLER failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при выборе комнаты", show_alert=True)
 
 
 # ===== ФАЗА 1.4: PHOTO_HANDLER - ОБРАБОТКА ЗАГРУЖЕННОГО ФОТО =====
