@@ -15,7 +15,8 @@
 # [2025-12-29 23:45] CRITICAL FIX: НЕ УДАЛЯЕМ ФОТО! Оно остается в чате и будет редактироваться через edit_message_media()
 # [2025-12-30 00:05] BUGFIX: ФОТО ДОЛЖНО БЫТЬ НАД МЕНЮ! Отправляем фото ДО меню с кнопками
 # [2025-12-30 00:17] CRITICAL FIX: Убрана двойная отправка фото - используем edit_message_media()
-# [2025-12-30 00:30] HOTFIX: Очистка гнезда двойных фото - удалена избыточная логика в set_work_mode
+# [2025-12-30 00:30] HOTFIX: Очистка от дублирования - set_work_mode больше НЕ редактирует меню
+# [2025-12-30 00:38] CRITICAL FIX: Восстановлен edit_menu() для работы кнопок - edit_menu() генерирует тОЛЬКО edit_message_text
 
 import asyncio
 import logging
@@ -117,7 +118,7 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
 
 # ===== HANDLER: SET_WORK_MODE (Обработка выбора режима) =====
 # [2025-12-29] НОВОЕ (V3)
-# [2025-12-30 00:30] HOTFIX: Убран вызов edit_menu() чтобы избежать дублирования сообщений
+# [2025-12-30 00:38] CRITICAL FIX: Восстановлен edit_menu() для работы кнопок
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
@@ -134,10 +135,10 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     - сохраняем menu_message_id В FSM state (помимо БД)
     - тогда photo_handler сможет получить menu_message_id из FSM
     
-    HOTFIX: [2025-12-30 00:30]
-    - УБРАН вызов edit_menu() после выбора режима
-    - Меню будет отредактировано ТОЛЬКО в photo_handler
-    - Это избегает дублирования сообщений и фото
+    CRITICAL FIX: [2025-12-30 00:38]
+    - ВОССТАНОВЛЕН edit_menu() нУЖНЪ в Telegram API
+    - КНОПки НЕ работают без edit_message_text
+    - photo_handler добавит фото через edit_message_media() ПОТОМ
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -169,10 +170,24 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         )
         await state.set_state(CreationStates.uploading_photo)
         
-        # ✅ HOTFIX [2025-12-30 00:30]: НЕ вызываем edit_menu() здесь!
-        # Это вызвано бы дублирование сообщений
-        # photo_handler сам отредактирует меню с фото
-        # Просто сохраняем в БД для consistency
+        # Получаем баланс
+        balance = await db.get_balance(user_id)
+        
+        # Динамический текст в зависимости от режима
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📸 Загрузите фото")
+        
+        # ✅ CRITICAL FIX: [2025-12-30 00:38]
+        # EDIT_MESSAGE_TEXT REQUIRED - КНОПки НЕ работают без edit_menu()
+        # edit_menu() не ОТПРАВЛЯЕТ фото - только редактирует текст и кнопки
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_upload_photo_keyboard(),
+            screen_code='uploading_photo'
+        )
+        
+        # Сохраняем в БД также (backup)
         await db.save_chat_menu(
             chat_id,
             user_id,
@@ -192,11 +207,11 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 # [2025-12-29] ОБНОВЛЕНО (V3)
 # [2025-12-30 00:05] BUGFIX: отправляем фото ДО меню с кнопками (в правильном порядке)
 # [2025-12-30 00:17] CRITICAL FIX: Убрана двойная отправка фото - используем edit_message_media()
-# [2025-12-30 00:30] HOTFIX: Очистка от дублирования - set_work_mode больше НЕ редактирует меню
+# [2025-12-30 00:38] CRITICAL FIX: Восстановлен edit_menu() - photo_handler теперь добавляет фото через edit_message_media()
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
-    SCREEN 2: Загрузка фото (UPLOADING_PHOTO)
+    SCREEN 2: Загружка фото (UPLOADING_PHOTO)
     
     Логика:
     1. Валидация фото
@@ -225,10 +240,10 @@ async def photo_handler(message: Message, state: FSMContext):
     - Используем edit_message_media() для добавления фото в существующее меню
     - Фото и кнопки теперь в ОДНОМ сообщении
     
-    HOTFIX: [2025-12-30 00:30]
-    - set_work_mode() больше НЕ редактирует меню
-    - photo_handler сам ВСЁ отредактирует через edit_message_media()
-    - Это исключает дублирование фото
+    CRITICAL FIX: [2025-12-30 00:38]
+    - set_work_mode() ВОССТАНОВЛЕН - редактирует менючНЫЙ текст
+    - photo_handler ДОБАВЛЯЕТ фото через edit_message_media()
+    - ОСТАЕТСЯ ОДНО сообщение с фото!
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
