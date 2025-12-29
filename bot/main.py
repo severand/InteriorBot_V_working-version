@@ -1,5 +1,6 @@
-# --- ОБНОВЛЕН: 2025-12-24 14:15 - Добавлена регистрация pro_mode router ---
-# --- ОБНОВЛЕН: 2025-12-10 12:03 - Добавлен веб-сервер для вебхука YooKassa ---
+# --- ОБНОВЛЕНО: 2025-12-29 - Рефакторинг creation.py на 4 модуля ---
+# --- ОБНОВЛЕНО: 2025-12-24 14:15 - Добавлена регистрация pro_mode router ---
+# --- ОБНОВЛЕНО: 2025-12-10 12:03 - Добавлен веб-сервер для вебхуков YooKassa ---
 # [2025-12-10 12:03] Добавлен запуск aiohttp веб-сервера для обработки вебхуков YooKassa
 # [2025-12-07 10:43] Добавлен вызов миграции chat_menus при старте
 # [2025-12-07 10:43] Добавлен await db.migrate_add_chat_menus_table() для создания таблицы единого меню
@@ -17,7 +18,13 @@ from aiogram.enums import ParseMode
 from config import ADMIN_IDS
 from config import config
 from database.db import Database
-from handlers import user_start, creation, payment, referral, admin
+from handlers import user_start, payment, referral, admin
+from handlers import (
+    router_main,
+    router_new_design,
+    router_exterior,
+    router_extras,
+)
 from handlers.pro_mode import pro_mode_router
 #from handlers.webhook import yookassa_webhook_handler
 
@@ -48,13 +55,24 @@ async def main():
     dp = Dispatcher()
 
     # Register routers
+    # Ордер регистрации вАЖНО!
+    # 1. Админ
+    # 2. Пользовательские команды
+    # 3. Платежи
+    # 4. Подтвердитель PRO режима
+    # 5. Рефералы
+    # 6. Основные сценарии создания дизайна
+    # 7. ПОСЛЕДНО: Фаловые обработчики (катч-элс для всего остального)
     dp.include_routers(
-        admin.router,  # ✅ ПЕРВЫМ!
+        admin.router,  # ✅ АДМИН ПЕРВЫМ!
         user_start.router,
-        creation.router,
         payment.router,
-        referral.router,
         pro_mode_router,  # ✅ PRO MODE ROUTER (PHASE 3)
+        referral.router,
+        router_main,  # ✅ ОСНОВНОЕ (выбор режима + загрузка фото)
+        router_new_design,  # ✅ NEW_DESIGN (режим срежим)
+        router_exterior,  # ✅ EXTERIOR + ОЛД СИСТЕМА
+        router_extras,  # ✅ ПОСЛЕДНЮЩИМ! Фаловые обработчики
     )
 
     # Передаем ADMIN_IDS и BOT_TOKEN в контекст
@@ -80,7 +98,6 @@ async def main():
         # Start polling
         await dp.start_polling(bot)
     finally:
-        await runner.cleanup()
         await bot.session.close()
 
 
