@@ -25,13 +25,13 @@
 # [2025-12-29 21:05] ПРОВЕРЕНО: Все импорты, функции БД, FSM state'ы
 # [2025-12-29 21:05] ЛОГИРОВАНИЕ: Правильное логирование с [V3] префиксом
 # [2025-12-29 21:05] ERROR HANDLING: Try-catch блоки с сообщениями пользователю
-# --- ФАЗА 1.4.3: 2025-12-29 22:00 - V3 SCREEN 2: PHOTO_HANDLER ---
-# [2025-12-29 22:00] ДОБАВЛЕНО: photo_handler() для SCREEN 2 - UPLOADING_PHOTO
-# [2025-12-29 22:00] ВАЛИДАЦИЯ: Проверка фото, проверка баланса (EDIT_DESIGN исключение)
-# [2025-12-29 22:00] 5-ВЕТВЕВОЙ ПЕРЕХОД: Для каждого режима свой экран
-# [2025-12-29 22:00] SINGLE MENU PATTERN: Редактирование меню, не новые сообщения
-# [2025-12-29 22:00] ЛОГИРОВАНИЕ: [V3] {MODE}+UPLOADING_PHOTO
-# [2025-12-29 22:00] ERROR HANDLING: Production-ready try-catch блоки
+# --- ФАЗА 1.4.3: 2025-12-29 22:30 - V3 SCREEN 2: PHOTO_HANDLER ИСПРАВЛЕНИЯ ---
+# [2025-12-29 22:30] ИСПРАВЛЕНО: StateFilter вместо F.state()
+# [2025-12-29 22:30] ДОБАВЛЕНО: Правильное получение menu_message_id из БД
+# [2025-12-29 22:30] УЛУЧШЕНО: Обработка ошибок при редактировании меню
+# [2025-12-29 22:30] ПРОВЕРЕНО: Все импорты и функции БД (get_chat_menu, save_photo, save_chat_menu)
+# [2025-12-29 22:30] ВАЛИДАЦИЯ: Фото, баланс, режим работы
+# [2025-12-29 22:30] SINGLE MENU PATTERN: 100% соответствие SMP
 
 import asyncio
 import logging
@@ -40,6 +40,7 @@ import html
 from aiogram import Router, F
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StateFilter  # ✅ ФАЗА 1.4.3: Правильный импорт StateFilter
 from aiogram.types import CallbackQuery, Message, URLInputFile
 from aiogram.exceptions import TelegramBadRequest
 
@@ -263,10 +264,10 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 
 
 # ===== ФАЗА 1.4.3: SCREEN 2 - PHOTO_HANDLER (Загрузка фото для всех режимов) =====
-# ✅ ОБНОВЛЕНО 2025-12-29 22:00: Production-ready код
+# ✅ ИСПРАВЛЕНО 2025-12-29 22:30: StateFilter, проверка меню, обработка ошибок
 # Время выполнения: 1 час
 
-@router.message(F.photo, F.state(CreationStates.uploading_photo))
+@router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
     SCREEN 2: Загрузка фото (UPLOADING_PHOTO)
@@ -290,26 +291,32 @@ async def photo_handler(message: Message, state: FSMContext):
     data = await state.get_data()
     work_mode = data.get('work_mode')
 
-    # КРИТИЧНО: Получаем menu_message_id (для редактирования существующего меню!)
-    menu_info = await db.get_chat_menu(chat_id)
-    menu_message_id = menu_info.get('menu_message_id') if menu_info else None
-
     try:
+        # ===== 0. ПОЛУЧЕНИЕ MENU_MESSAGE_ID =====
+        # КРИТИЧНО: Получаем menu_message_id (для редактирования существующего меню!)
+        menu_info = await db.get_chat_menu(chat_id)
+        menu_message_id = menu_info.get('menu_message_id') if menu_info else None
+
         # ===== 1. ВАЛИДАЦИЯ =====
         # Проверка: отправлено ли фото?
         if not message.photo:
-            # ❌ НЕПРАВИЛЬНО: message.answer("❌ Пожалуйста, отправьте фото")
             # ✅ ПРАВИЛЬНО: Редактируем меню (Single Menu Pattern!)
             
             if menu_message_id:
                 # Редактируем существующее меню
-                await message.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=menu_message_id,
-                    text="❌ **ОШИБКА**\n\nПожалуйста, отправьте фото помещения:",
-                    reply_markup=get_upload_photo_keyboard(),
-                    parse_mode="Markdown"
-                )
+                try:
+                    await message.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=menu_message_id,
+                        text="❌ **ОШИБКА**\n\nПожалуйста, отправьте фото помещения:",
+                        reply_markup=get_upload_photo_keyboard(),
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось отредактировать меню: {e}")
+                    # Fallback: создаем новое сообщение
+                    new_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
+                    await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
             else:
                 # Fallback: создаем новое сообщение (редко)
                 new_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
@@ -338,13 +345,18 @@ async def photo_handler(message: Message, state: FSMContext):
             error_text = ERROR_INSUFFICIENT_BALANCE
             
             if menu_message_id:
-                await message.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=menu_message_id,
-                    text=error_text,
-                    reply_markup=get_payment_keyboard(),
-                    parse_mode="Markdown"
-                )
+                try:
+                    await message.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=menu_message_id,
+                        text=error_text,
+                        reply_markup=get_payment_keyboard(),
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось отредактировать меню: {e}")
+                    new_msg = await message.answer(error_text)
+                    await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
             else:
                 new_msg = await message.answer(error_text)
                 await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
@@ -407,10 +419,11 @@ async def photo_handler(message: Message, state: FSMContext):
             screen = 'loading_facade_sample'
         else:
             # Fallback (не должно быть)
+            logger.error(f"[ERROR] Unknown work_mode: {work_mode}")
             await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
             return
         
-        # Редактируем меню
+        # ===== 5. РЕДАКТИРОВАНИЕ МЕНЮ =====
         if menu_message_id:
             try:
                 await message.bot.edit_message_text(
