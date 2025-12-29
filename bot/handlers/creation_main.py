@@ -11,6 +11,7 @@
 # [2025-12-29 23:14] FIX: Убрано дублирование footer на экране загрузки фото - НЕ добавляем footer для UPLOADING_PHOTO
 # [2025-12-29 23:24] CRITICAL FIX: сохраняем menu_message_id в FSM state не только в БД - теперь photo_handler сможет получить menu_message_id из FSM
 # [2025-12-29 23:35] FIX: удаляем несуществующий вызов db.save_photo() - фото сохраняется через FSM state
+# [2025-12-29 23:40] FIX: добавляем автоматическое удаление сообщений об ошибке через 3 сек + улучшена обработка исключений
 
 import asyncio
 import logging
@@ -209,12 +210,16 @@ async def photo_handler(message: Message, state: FSMContext):
        - FACADE_DESIGN → LOADING_FACADE_SAMPLE
     
     CRITICAL FIX: [2025-12-29 23:24]
-    - получаем menu_message_id ИЗ FSM state (не тирем из БД)
+    - получаем menu_message_id ИЗ FSM state (не тиремы из БД)
     - теперь фото будет обработано корректно
     
     FIX: [2025-12-29 23:35]
     - УДАЛЕН вызов db.save_photo() - этого метода нет
-    - фото сохраняется в FSM через state.update_data()
+    - фото сохраняется через FSM state
+    
+    FIX: [2025-12-29 23:40]
+    - добавляем автоматическое удаление сообщений об ошибке через 3 сек
+    - улучшена обработка исключений при редактировании меню
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -241,10 +246,14 @@ async def photo_handler(message: Message, state: FSMContext):
                     new_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
                     await state.update_data(menu_message_id=new_msg.message_id)
                     await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
+                    # ✅ НОВОЕ: Удаляем сообщение об ошибке через 3 сек
+                    asyncio.create_task(self._delete_message_after_delay(message.bot, chat_id, new_msg.message_id, 3))
             else:
                 new_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
                 await state.update_data(menu_message_id=new_msg.message_id)
                 await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
+                # ✅ НОВОЕ: Удаляем сообщение об ошибке через 3 сек
+                asyncio.create_task(self._delete_message_after_delay(message.bot, chat_id, new_msg.message_id, 3))
             
             try:
                 await message.delete()
@@ -252,7 +261,7 @@ async def photo_handler(message: Message, state: FSMContext):
                 pass
             return
         
-        # Удаляем сообщение пользователя
+        # Удаляем сообщение пользователя с фото
         try:
             await message.delete()
         except Exception as e:
@@ -264,6 +273,7 @@ async def photo_handler(message: Message, state: FSMContext):
         # Исключение для EDIT_DESIGN: может работать БЕЗ баланса
         if balance <= 0 and work_mode != WorkMode.EDIT_DESIGN.value:
             error_text = ERROR_INSUFFICIENT_BALANCE
+            error_msg = None
             
             if menu_message_id:
                 try:
@@ -276,21 +286,25 @@ async def photo_handler(message: Message, state: FSMContext):
                     )
                 except Exception as e:
                     logger.warning(f"⚠️ Не удалось отредактировать меню: {e}")
-                    new_msg = await message.answer(error_text)
-                    await state.update_data(menu_message_id=new_msg.message_id)
-                    await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
+                    error_msg = await message.answer(error_text)
+                    await state.update_data(menu_message_id=error_msg.message_id)
+                    await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
             else:
-                new_msg = await message.answer(error_text)
-                await state.update_data(menu_message_id=new_msg.message_id)
-                await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
+                error_msg = await message.answer(error_text)
+                await state.update_data(menu_message_id=error_msg.message_id)
+                await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
+            
+            # ✅ НОВОЕ: Удаляем сообщение об ошибке через 3 сек
+            if error_msg:
+                asyncio.create_task(self._delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
             
             return
         
         # ===== 3. СОХРАНЕНИЕ ФОТО =====
         photo_id = message.photo[-1].file_id
         
-        # ✅ ИСПРАВЛЕНО: Убрана строка await db.save_photo(user_id, photo_id)
-        # Такого метода не существует. Фото сохраняется через FSM state.
+        # ✅ ИСПРАВЛЕНО: Удалена строка await db.save_photo(user_id, photo_id)
+        # Такого метода нет. Фото сохраняется через FSM state:
         
         await state.update_data(
             photo_id=photo_id,
@@ -370,9 +384,21 @@ async def photo_handler(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"[ERROR] PHOTO_HANDLER failed for user {user_id}: {e}", exc_info=True)
         try:
-            await message.answer("❌ Ошибка при обработке фото. Попробуйте еще раз.")
+            error_msg = await message.answer("❌ Ошибка при обработке фото. Попробуйте еще раз.")
+            # ✅ НОВОЕ: Удаляем сообщение об ошибке через 3 сек
+            asyncio.create_task(self._delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
         except:
             pass
+    
+    @staticmethod
+    async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int):
+        """Удалить сообщение через N секунд"""
+        try:
+            await asyncio.sleep(delay)
+            await bot.delete_message(chat_id=chat_id, message_id=message_id)
+            logger.debug(f"✅ Удалено сообщение об ошибке {message_id} в чате {chat_id}")
+        except Exception as e:
+            logger.debug(f"⚠️ Не удалось удалить сообщение {message_id}: {e}")
 
 
 # ===== OLD SYSTEM: CREATE_DESIGN (для обратной совместимости) =====
