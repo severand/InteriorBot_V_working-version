@@ -7,6 +7,7 @@
 # [2025-12-29 22:30] HOTFIX: Исправлена функция select_mode() - передан параметр current_mode_is_pro
 # [2025-12-29 22:50] FIX: Исправлена ошибка AttributeError - get_pro_mode_data → get_user_pro_settings
 # [2025-12-29 22:55] FIX: Исправлена логика главного меню - select_mode теперь показывает 5 режимов работы
+# [2025-12-29 23:10] FIX: Убрано дублирование footer на экране select_mode - MODE_SELECTION_TEXT уже содержит полный текст
 
 import asyncio
 import logging
@@ -74,8 +75,9 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
     - 🛋️ Расставить мебель (ARRANGE_FURNITURE)
     - 🏠 Дизайн фасада дома (FACADE_DESIGN)
     
-    Log: "[V3] SELECT_MODE - user_id={user_id}"
-    FIX: [2025-12-29 22:55] - Используется get_work_mode_selection_keyboard (5 режимов)
+    FIX: [2025-12-29 23:10] - Убрано дублирование footer
+         MODE_SELECTION_TEXT уже содержит полный текст описания всех 5 режимов
+         Не нужно добавлять footer через add_balance_and_mode_to_text()
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -84,18 +86,17 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
         # Устанавливаем состояние
         await state.set_state(CreationStates.selecting_mode)
 
-        # Формируем текст
-        text = "🎨 **Выберите режим работы**\n\n5 способов создать дизайн:"
-
-        # Добавляем footer с балансом
-        text = await add_balance_and_mode_to_text(text=text, user_id=user_id)
-
-        # Редактируем меню с клавиатурой 5 режимов работы ✅
+        # Берем готовый текст из utils/texts.py
+        # MODE_SELECTION_TEXT уже содержит ПОЛНОЕ описание всех 5 режимов
+        text = MODE_SELECTION_TEXT
+        
+        # ✅ НЕ добавляем footer - текст уже готов!
+        # Просто редактируем меню с 5 кнопками
         await edit_menu(
             callback=callback,
             state=state,
             text=text,
-            keyboard=get_work_mode_selection_keyboard(),  # ✅ ИСПРАВЛЕНО!
+            keyboard=get_work_mode_selection_keyboard(),  # 5 кнопок режимов
             screen_code='select_mode'
         )
         
@@ -111,7 +112,7 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
-    SCREEN 1⊒2: Обработчик выбора режима работы
+    SCREEN 1→2: Обработчик выбора режима работы
     
     Режимы:
     - select_mode_new_design → NEW_DESIGN
@@ -154,7 +155,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         # Динамический текст в зависимости от режима
         text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📸 Загрузите фото")
         
-        # Добавляем footer (теперь без work_mode - автоматически детектируется)
+        # Добавляем footer (автоматически детектируется)
         text = await add_balance_and_mode_to_text(
             text=text,
             user_id=user_id
