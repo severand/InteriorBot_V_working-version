@@ -25,6 +25,13 @@
 # [2025-12-29 21:05] ПРОВЕРЕНО: Все импорты, функции БД, FSM state'ы
 # [2025-12-29 21:05] ЛОГИРОВАНИЕ: Правильное логирование с [V3] префиксом
 # [2025-12-29 21:05] ERROR HANDLING: Try-catch блоки с сообщениями пользователю
+# --- ФАЗА 1.4.3: 2025-12-29 22:00 - V3 SCREEN 2: PHOTO_HANDLER ---
+# [2025-12-29 22:00] ДОБАВЛЕНО: photo_handler() для SCREEN 2 - UPLOADING_PHOTO
+# [2025-12-29 22:00] ВАЛИДАЦИЯ: Проверка фото, проверка баланса (EDIT_DESIGN исключение)
+# [2025-12-29 22:00] 5-ВЕТВЕВОЙ ПЕРЕХОД: Для каждого режима свой экран
+# [2025-12-29 22:00] SINGLE MENU PATTERN: Редактирование меню, не новые сообщения
+# [2025-12-29 22:00] ЛОГИРОВАНИЕ: [V3] {MODE}+UPLOADING_PHOTO
+# [2025-12-29 22:00] ERROR HANDLING: Production-ready try-catch блоки
 
 import asyncio
 import logging
@@ -46,6 +53,13 @@ from keyboards.inline import (
     get_upload_photo_keyboard,
     get_what_is_in_photo_keyboard,  # ✅ ФАЗА 1.4: Для выбора типа сцены (интерьер/экстерьер)
     get_mode_selection_keyboard,  # ✅ ФАЗА 1.4: Новая клавиатура для выбора режима (NEW_DESIGN/REDESIGN/CONSULTATION)
+    get_room_choice_keyboard,  # ✅ ФАЗА 1.4.3: SCREEN 3
+    get_choose_style_1_keyboard,  # ✅ ФАЗА 1.4.3: SCREEN 4
+    get_choose_style_2_keyboard,  # ✅ ФАЗА 1.4.3: SCREEN 5
+    get_edit_design_keyboard,  # ✅ ФАЗА 1.4.3: SCREEN 8
+    get_download_sample_keyboard,  # ✅ ФАЗА 1.4.3: SCREEN 10
+    get_uploading_furniture_keyboard,  # ✅ ФАЗА 1.4.3: SCREEN 13
+    get_loading_facade_sample_keyboard,  # ✅ ФАЗА 1.4.3: SCREEN 16
 )
 
 # ОБНОВЛЕНО: 2025-12-23 - Использование Smart Fallback системы
@@ -69,6 +83,13 @@ from utils.texts import (
     ROOM_DESCRIPTION_PROMPT_TEXT,
     MODE_SELECTION_TEXT,  # ✅ ФАЗА 1.4.2: Текст экрана выбора режима
     UPLOADING_PHOTO_TEMPLATES,  # ✅ ФАЗА 1.4.2: Динамические шаблоны текста для режимов
+    ROOM_CHOICE_TEXT,  # ✅ ФАЗА 1.4.3: SCREEN 3
+    CHOOSE_STYLE_TEXT,  # ✅ ФАЗА 1.4.3: SCREEN 4-5
+    EDIT_DESIGN_TEXT,  # ✅ ФАЗА 1.4.3: SCREEN 8
+    DOWNLOAD_SAMPLE_TEXT,  # ✅ ФАЗА 1.4.3: SCREEN 10
+    UPLOADING_FURNITURE_TEXT,  # ✅ ФАЗА 1.4.3: SCREEN 13
+    LOADING_FACADE_SAMPLE_TEXT,  # ✅ ФАЗА 1.4.3: SCREEN 16
+    ERROR_INSUFFICIENT_BALANCE,  # ✅ ФАЗА 1.4.3: Ошибка недостатка баланса
 )
 
 # ОБНОВЛЕНО: 2025-12-24 21:00 - Импорт обновленной функции для header с режимом
@@ -239,6 +260,189 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"[ERROR] SET_WORK_MODE failed: {e}", exc_info=True)
         await callback.answer("❌ Ошибка при выборе режима", show_alert=True)
+
+
+# ===== ФАЗА 1.4.3: SCREEN 2 - PHOTO_HANDLER (Загрузка фото для всех режимов) =====
+# ✅ ОБНОВЛЕНО 2025-12-29 22:00: Production-ready код
+# Время выполнения: 1 час
+
+@router.message(F.photo, F.state(CreationStates.uploading_photo))
+async def photo_handler(message: Message, state: FSMContext):
+    """
+    SCREEN 2: Загрузка фото (UPLOADING_PHOTO)
+    
+    Логика:
+    1. Валидация: проверяем, что это фото
+    2. Проверка баланса (баланс > 0, кроме режима EDIT_DESIGN который может работать без баланса)
+    3. Сохраняем file_id в FSM и БД
+    4. Переходим на экран в зависимости от режима:
+       - NEW_DESIGN → ROOM_CHOICE (SCREEN 3)
+       - EDIT_DESIGN → EDIT_DESIGN (SCREEN 8)
+       - SAMPLE_DESIGN → DOWNLOAD_SAMPLE (SCREEN 10)
+       - ARRANGE_FURNITURE → UPLOADING_FURNITURE (SCREEN 13)
+       - FACADE_DESIGN → LOADING_FACADE_SAMPLE (SCREEN 16)
+
+    Log: "[V3] NEW_DESIGN+UPLOADING_PHOTO - photo saved, user_id={user_id}"
+    Время выполнения: 1 час
+    """
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    data = await state.get_data()
+    work_mode = data.get('work_mode')
+
+    # КРИТИЧНО: Получаем menu_message_id (для редактирования существующего меню!)
+    menu_info = await db.get_chat_menu(chat_id)
+    menu_message_id = menu_info.get('menu_message_id') if menu_info else None
+
+    try:
+        # ===== 1. ВАЛИДАЦИЯ =====
+        # Проверка: отправлено ли фото?
+        if not message.photo:
+            # ❌ НЕПРАВИЛЬНО: message.answer("❌ Пожалуйста, отправьте фото")
+            # ✅ ПРАВИЛЬНО: Редактируем меню (Single Menu Pattern!)
+            
+            if menu_message_id:
+                # Редактируем существующее меню
+                await message.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=menu_message_id,
+                    text="❌ **ОШИБКА**\n\nПожалуйста, отправьте фото помещения:",
+                    reply_markup=get_upload_photo_keyboard(),
+                    parse_mode="Markdown"
+                )
+            else:
+                # Fallback: создаем новое сообщение (редко)
+                new_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
+                await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
+            
+            # Удаляем сообщение пользователя
+            try:
+                await message.delete()
+            except:
+                pass
+            
+            return
+        
+        # Удаляем сообщение пользователя ПОСЛЕ валидации
+        try:
+            await message.delete()
+        except Exception as e:
+            logger.debug(f"⚠️ Не удалось удалить сообщение пользователя: {e}")
+        
+        # ===== 2. ПРОВЕРКА БАЛАНСА =====
+        balance = await db.get_balance(user_id)
+        
+        # Проверка баланса (для большинства режимов нужен баланс)
+        # Исключение: EDIT_DESIGN может работать без баланса (редактирование существующего)
+        if balance <= 0 and work_mode != WorkMode.EDIT_DESIGN.value:
+            error_text = ERROR_INSUFFICIENT_BALANCE
+            
+            if menu_message_id:
+                await message.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=menu_message_id,
+                    text=error_text,
+                    reply_markup=get_payment_keyboard(),
+                    parse_mode="Markdown"
+                )
+            else:
+                new_msg = await message.answer(error_text)
+                await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
+            
+            return
+        
+        # ===== 3. СОХРАНЕНИЕ ФОТО =====
+        photo_id = message.photo[-1].file_id
+        
+        # Сохраняем в БД
+        await db.save_photo(user_id, photo_id)
+        
+        # Сохраняем в FSM
+        await state.update_data(
+            photo_id=photo_id,
+            new_photo=True,
+            menu_message_id=menu_message_id  # Сохраняем menu_message_id в FSM!
+        )
+        
+        # ===== 4. ПЕРЕХОД НА СЛЕДУЮЩИЙ ЭКРАН (зависит от режима) =====
+        
+        if work_mode == WorkMode.NEW_DESIGN.value:
+            # NEW_DESIGN → ROOM_CHOICE (SCREEN 3)
+            await state.set_state(CreationStates.room_choice)
+            text = ROOM_CHOICE_TEXT.format(balance=balance)
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+            keyboard = get_room_choice_keyboard()
+            screen = 'room_choice'
+            
+        elif work_mode == WorkMode.EDIT_DESIGN.value:
+            # EDIT_DESIGN → EDIT_DESIGN (SCREEN 8)
+            await state.set_state(CreationStates.edit_design)
+            text = EDIT_DESIGN_TEXT.format(balance=balance)
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+            keyboard = get_edit_design_keyboard()
+            screen = 'edit_design'
+            
+        elif work_mode == WorkMode.SAMPLE_DESIGN.value:
+            # SAMPLE_DESIGN → DOWNLOAD_SAMPLE (SCREEN 10)
+            await state.set_state(CreationStates.download_sample)
+            text = DOWNLOAD_SAMPLE_TEXT.format(balance=balance)
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+            keyboard = get_download_sample_keyboard()
+            screen = 'download_sample'
+            
+        elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
+            # ARRANGE_FURNITURE → UPLOADING_FURNITURE (SCREEN 13)
+            await state.set_state(CreationStates.uploading_furniture)
+            text = UPLOADING_FURNITURE_TEXT.format(balance=balance)
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+            keyboard = get_uploading_furniture_keyboard()
+            screen = 'uploading_furniture'
+            
+        elif work_mode == WorkMode.FACADE_DESIGN.value:
+            # FACADE_DESIGN → LOADING_FACADE_SAMPLE (SCREEN 16)
+            await state.set_state(CreationStates.loading_facade_sample)
+            text = LOADING_FACADE_SAMPLE_TEXT.format(balance=balance)
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+            keyboard = get_loading_facade_sample_keyboard()
+            screen = 'loading_facade_sample'
+        else:
+            # Fallback (не должно быть)
+            await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
+            return
+        
+        # Редактируем меню
+        if menu_message_id:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=menu_message_id,
+                    text=text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось отредактировать меню: {e}. Создаем новое.")
+                # Fallback: создаем новое сообщение
+                new_msg = await message.answer(text=text, reply_markup=keyboard, parse_mode="Markdown")
+                await state.update_data(menu_message_id=new_msg.message_id)
+                await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
+        else:
+            # Fallback: создаем новое сообщение
+            new_msg = await message.answer(text=text, reply_markup=keyboard, parse_mode="Markdown")
+            await state.update_data(menu_message_id=new_msg.message_id)
+            await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
+        
+        # Сохраняем в БД
+        await db.save_chat_menu(chat_id, user_id, menu_message_id or 0, screen)
+        
+        logger.info(f"[V3] {work_mode.upper()}+UPLOADING_PHOTO - photo saved, user_id={user_id}, mode={work_mode}")
+        
+    except Exception as e:
+        logger.error(f"[ERROR] PHOTO_HANDLER failed for user {user_id}: {e}", exc_info=True)
+        try:
+            await message.answer("❌ Ошибка при обработке фото. Попробуйте еще раз.")
+        except:
+            pass
 
 
 # ===== ФАЗА 1.4: PHOTO_HANDLER - ОБРАБОТКА ЗАГРУЖЕННОГО ФОТО =====
