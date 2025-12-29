@@ -4,10 +4,13 @@
 # Содержит: room_choice (SCREEN 3), choose_style_1/2 (SCREEN 4-5), style_choice_handler (SCREEN 6 + генерация)
 # + post_generation_menu (SCREEN 6), change_style_after_gen
 # [2025-12-30 01:29] ✅ FIX: Возвращен work_mode в вызовы add_balance_and_mode_to_text() - функция теперь принимает 3 аргумента!
+# [2025-12-30 01:47] 🔍 CRITICAL DIAGNOSTICS: Добавить подробное логирование для расследования двойной отправки
 
 import asyncio
 import logging
 import html
+import uuid
+from datetime import datetime
 
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
@@ -43,6 +46,45 @@ from aiogram.types import BufferedInputFile
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+# ===== ДИАГНОСТИКА: Глобальный трекер отправок фото =====
+# [2025-12-30 01:47] 🔍 DIAGNOSTICS
+PHOTO_SEND_LOG = {}  # Глобальный трекер: user_id -> [(timestamp, method, message_id)]
+
+def log_photo_send(user_id: int, method: str, message_id: int, request_id: str = None):
+    """
+    🔍 ДИАГНОСТИКА: Логируем каждые отправки фото
+    
+    Методы: answer_photo, send_photo, edit_message_media
+    """
+    if user_id not in PHOTO_SEND_LOG:
+        PHOTO_SEND_LOG[user_id] = []
+    
+    timestamp = datetime.now().isoformat()
+    rid = request_id or str(uuid.uuid4())[:8]
+    
+    entry = {
+        'timestamp': timestamp,
+        'method': method,
+        'message_id': message_id,
+        'request_id': rid
+    }
+    
+    PHOTO_SEND_LOG[user_id].append(entry)
+    
+    # Необыкновенное нижнее логирование
+    logger.warning(
+        f"\ud83d\udcc8 [PHOTO_LOG] user_id={user_id}, method={method}, msg_id={message_id}, "
+        f"request_id={rid}, timestamp={timestamp}"
+    )
+    
+    # Оверфлов диагностики
+    if len(PHOTO_SEND_LOG[user_id]) > 1:
+        logger.error(
+            f"\ud83d\udd25 [PHOTO_DOUBLE_SEND] user_id={user_id}, "
+            f"count={len(PHOTO_SEND_LOG[user_id])}, "
+            f"all={PHOTO_SEND_LOG[user_id]}"
+        )
 
 
 # ===== SCREEN 3: ROOM_CHOICE (NEW_DESIGN только) =====
@@ -220,6 +262,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 # ===== SCREEN 4-5 to 6: STYLE_CHOICE_HANDLER (Выбор стиля + генерация) =====
 # [2025-12-29] ОБНОВЛЕНО (V3) - Добавлена установка state.post_generation
 # [2025-12-30 01:20] 🔥 BUGFIX #2: Убрать answer_photo() в fallback - редактировать меню, не отправлять новое
+# [2025-12-30 01:47] 🔍 CRITICAL DIAGNOSTICS: Добавить логирование для трекинга двойной отправки
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -233,12 +276,20 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     - ТЕПЕРЬ: edit_message_media() → ОДНО ФОТО в ОДНОМ сообщении
     - Fallback: edit_message_text() вместо answer()
     
+    🔍 DIAGNOSTICS [2025-12-30 01:47]:
+    - Каждые answer_photo/send_photo/edit_message_media логируются
+    - request_id для отслеживания цепочки
+    - Обнаружение нескольких отправок для одного request_id
+    
     Log: "[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}"
     """
     style = callback.data.split("_")[-1]
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     menu_message_id = callback.message.message_id
+    request_id = str(uuid.uuid4())[:8]  # ✅ DIAGNOSTICS: request_id для трекинга
+
+    logger.warning(f"\ud83d\udd0d [DIAG_START] request_id={request_id}, user_id={user_id}, style={style}")
 
     await db.log_activity(user_id, f'style_{style}')
 
@@ -329,7 +380,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
         # ===== ПОПЫТКА 1: edit_message_media для ОДНОГО сообщения =====
         try:
-            logger.info(f"📸 [STYLE_CHOICE] CALLING edit_message_media - menu_id={menu_message_id}, style={style}")
+            logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_1: edit_message_media, menu_id={menu_message_id}")
             
             await callback.message.bot.edit_message_media(
                 chat_id=chat_id,
@@ -343,14 +394,15 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             )
             
             photo_sent = True
-            logger.info(f"✅ [STYLE_CHOICE] SUCCESS edit_message_media - Photo + menu in ONE message, menu_id={menu_message_id}")
+            logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_1: edit_message_media")
+            log_photo_send(user_id, "edit_message_media", menu_message_id, request_id)
 
         except Exception as media_error:
-            logger.warning(f"⚠️ [STYLE_CHOICE] FAILED edit_message_media: {media_error}")
+            logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} FAILED_ATTEMPT_1: {media_error}")
 
             # ===== ПОПЫТКА 2: Отправка фото + редактирование текста (БЕЗ дублирования!) =====
             try:
-                logger.info(f"🔄 [STYLE_CHOICE] FALLBACK - Sending photo separately")
+                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_2: answer_photo + edit_text")
                 
                 # Отправляем фото
                 photo_msg = await callback.message.answer_photo(
@@ -358,6 +410,9 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                     caption=caption,
                     parse_mode="HTML"
                 )
+                
+                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_2_PHOTO_SENT: new_msg_id={photo_msg.message_id}")
+                log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id)
                 
                 # ✅ БЕЗ дублирования! Редактируем СТАРОЕ меню (не создаем новое)
                 try:
@@ -368,19 +423,19 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                         reply_markup=get_post_generation_keyboard(),
                         parse_mode="Markdown"
                     )
-                    logger.info(f"✅ [STYLE_CHOICE] FALLBACK: Old menu edited with post_generation text")
+                    logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_2_TEXT_EDITED: menu_id={menu_message_id}")
                 except Exception as e:
-                    logger.debug(f"⚠️ Не удалось отредактировать старое меню: {e}")
+                    logger.debug(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_2_TEXT_EDIT_FAILED: {e}")
                 
                 photo_sent = True
-                logger.info(f"✅ [STYLE_CHOICE] FALLBACK SUCCESS - Photo sent via URL")
+                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_2: answer_photo")
 
             except Exception as url_error:
-                logger.warning(f"⚠️ [STYLE_CHOICE] FALLBACK 1 FAILED: {url_error}")
+                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} FAILED_ATTEMPT_2: {url_error}")
 
                 # ===== ПОПЫТКА 3: FALLBACK через BufferedInputFile (БЕЗ дублирования!) =====
                 try:
-                    logger.info(f"🔄 [STYLE_CHOICE] FALLBACK 2 - BufferedInputFile")
+                    logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_3: BufferedInputFile")
 
                     async with aiohttp.ClientSession() as session:
                         async with session.get(result_image_url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
@@ -393,6 +448,9 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                                     parse_mode="HTML"
                                 )
                                 
+                                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_3_PHOTO_SENT: new_msg_id={photo_msg.message_id}")
+                                log_photo_send(user_id, "answer_photo_buffered", photo_msg.message_id, request_id)
+                                
                                 # ✅ Редактируем СТАРОЕ меню
                                 try:
                                     await callback.message.bot.edit_message_text(
@@ -402,23 +460,25 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                                         reply_markup=get_post_generation_keyboard(),
                                         parse_mode="Markdown"
                                     )
-                                    logger.info(f"✅ [STYLE_CHOICE] FALLBACK 2: Old menu edited")
+                                    logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_3_TEXT_EDITED: menu_id={menu_message_id}")
                                 except Exception as e:
-                                    logger.debug(f"⚠️ Не удалось отредактировать меню: {e}")
+                                    logger.debug(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_3_TEXT_EDIT_FAILED: {e}")
                                 
                                 photo_sent = True
-                                logger.info(f"✅ [STYLE_CHOICE] FALLBACK 2 SUCCESS - Photo via BufferedInputFile")
+                                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_3: answer_photo_buffered")
                             else:
-                                logger.error(f"❌ [STYLE_CHOICE] HTTP {resp.status}")
+                                logger.error(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_3 HTTP {resp.status}")
 
                 except Exception as buffer_error:
-                    logger.error(f"❌ [STYLE_CHOICE] FALLBACK 2 FAILED: {buffer_error}")
+                    logger.error(f"\ud83d\udcc8 [DIAG] request_id={request_id} FAILED_ATTEMPT_3: {buffer_error}")
 
         # Если все три попытки не сработали
         if not photo_sent:
             # Возвращаем баланс
             if not is_admin:
                 await db.increase_balance(user_id, 1)
+            
+            logger.error(f"\ud83d\udcc8 [DIAG] request_id={request_id} ALL_ATTEMPTS_FAILED for user_id={user_id}")
             
             await edit_menu(
                 callback=callback,
@@ -434,6 +494,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         await state.update_data(menu_message_id=menu_message_id)
         await db.save_chat_menu(chat_id, user_id, menu_message_id, 'post_generation')
 
+        logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} SUCCESS_END for user_id={user_id}")
         logger.info(f"[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}")
         logger.info(f"[V3] NEW_DESIGN+POST_GENERATION - ready, user_id={user_id}")
 
@@ -441,6 +502,8 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         # Ошибка генерации - возвращаем баланс
         if not is_admin:
             await db.increase_balance(user_id, 1)
+        
+        logger.error(f"\ud83d\udcc8 [DIAG] request_id={request_id} GENERATION_FAILED for user_id={user_id}")
         
         await edit_menu(
             callback=callback,
