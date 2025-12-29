@@ -8,7 +8,8 @@
 # [2025-12-29 22:50] FIX: Исправлена ошибка AttributeError - get_pro_mode_data → get_user_pro_settings
 # [2025-12-29 22:55] FIX: Исправлена логика главного меню - select_mode теперь показывает 5 режимов работы
 # [2025-12-29 23:10] FIX: Убрано дублирование footer на экране выбора режима работы
-# [2025-12-29 23:14] FIX: Убрано дублирование footer на экране загрузки фото - НЕ добавляем footer для UPLOADING_PHOTO
+# [2025-12-29 23:14] FIX: Убрано дублирование footer на экране загружки фото - НЕ добавляем footer для UPLOADING_PHOTO
+# [2025-12-29 23:24] CRITICAL FIX: сохраняем menu_message_id в FSM state не только в БД - теперь photo_handler сможет получить menu_message_id из FSM
 
 import asyncio
 import logging
@@ -122,12 +123,14 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     - select_mode_arrange_furniture → ARRANGE_FURNITURE
     - select_mode_facade_design → FACADE_DESIGN
     
-    FIX: [2025-12-29 23:14] - НЕ добавляем footer на экран UPLOADING_PHOTO
-         UPLOADING_PHOTO_TEMPLATES содержит только краткий текст про загрузку
-         Footer не нужен на этом экране
+    CRITICAL FIX: [2025-12-29 23:24]
+    - сохраняем menu_message_id В FSM state (помимо БД)
+    - тогда photo_handler сможет получить menu_message_id из FSM
+    - а не тирать это делать через БД
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
+    menu_message_id = callback.message.message_id  # Получаем ID меню
 
     try:
         # Извлекаем режим из callback_data
@@ -148,20 +151,18 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Неизвестный режим", show_alert=True)
             return
         
-        # Сохраняем режим в FSM
-        await state.update_data(work_mode=work_mode.value)
+        # Сохраняем режим и menu_message_id В FSM ✅
+        await state.update_data(
+            work_mode=work_mode.value,
+            menu_message_id=menu_message_id  # КОРИТНО! сохраняем в FSM
+        )
         await state.set_state(CreationStates.uploading_photo)
         
         # Получаем баланс
         balance = await db.get_balance(user_id)
         
         # Динамический текст в зависимости от режима
-        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📸 Загрузите фото")
-        
-        # ✅ НЕ добавляем footer на экран UPLOADING_PHOTO!
-        # UPLOADING_PHOTO_TEMPLATES содержит только краткий текст про загрузку
-        # Footer здесь не нужен, нужно просто чистый экран с кнопкой загрузки
-        # text НЕ обрабатываем через add_balance_and_mode_to_text()
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📸 Загружите фото")
         
         # Редактируем меню
         await edit_menu(
@@ -172,15 +173,15 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             screen_code='uploading_photo'
         )
         
-        # Сохраняем menu_message_id в БД
+        # Сохраняем в БД также (backup)
         await db.save_chat_menu(
             chat_id,
             user_id,
-            callback.message.message_id,
+            menu_message_id,
             'uploading_photo'
         )
         
-        logger.info(f"[V3] {work_mode.value.upper()}+UPLOADING_PHOTO - mode selected, user_id={user_id}")
+        logger.info(f"[V3] {work_mode.value.upper()}+UPLOADING_PHOTO - mode selected, user_id={user_id}, menu_id={menu_message_id}")
         await callback.answer()
         
     except Exception as e:
@@ -193,7 +194,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
-    SCREEN 2: Загрузка фото (UPLOADING_PHOTO)
+    SCREEN 2: Загружка фото (UPLOADING_PHOTO)
     
     Логика:
     1. Валидация фото
@@ -206,19 +207,20 @@ async def photo_handler(message: Message, state: FSMContext):
        - ARRANGE_FURNITURE → UPLOADING_FURNITURE
        - FACADE_DESIGN → LOADING_FACADE_SAMPLE
     
-    Log: "[V3] {MODE}+UPLOADING_PHOTO - photo saved, user_id={user_id}"
+    CRITICAL FIX: [2025-12-29 23:24]
+    - получаем menu_message_id ИЗ FSM state (не тираем из БД)
+    - теперь фото будет обработано корректно
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
     data = await state.get_data()
     work_mode = data.get('work_mode')
+    menu_message_id = data.get('menu_message_id')  # ПОЛУЧАЕМ ИЗ FSM ✅
+
+    logger.info(f"[V3] PHOTO_HANDLER START - user_id={user_id}, work_mode={work_mode}, menu_id={menu_message_id}")
 
     try:
-        # ===== 1. ПОЛУЧЕНИЕ MENU_MESSAGE_ID =====
-        menu_info = await db.get_chat_menu(chat_id)
-        menu_message_id = menu_info.get('menu_message_id') if menu_info else None
-
-        # ===== 2. ВАЛИДАЦИЯ =====
+        # ===== 1. ВАЛИДАЦИЯ =====
         if not message.photo:
             if menu_message_id:
                 try:
@@ -232,9 +234,11 @@ async def photo_handler(message: Message, state: FSMContext):
                 except Exception as e:
                     logger.warning(f"⚠️ Не удалось отредактировать меню: {e}")
                     new_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
+                    await state.update_data(menu_message_id=new_msg.message_id)
                     await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
             else:
                 new_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
+                await state.update_data(menu_message_id=new_msg.message_id)
                 await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
             
             try:
@@ -249,7 +253,7 @@ async def photo_handler(message: Message, state: FSMContext):
         except Exception as e:
             logger.debug(f"⚠️ Не удалось удалить сообщение пользователя: {e}")
         
-        # ===== 3. ПРОВЕРКА БАЛАНСА =====
+        # ===== 2. ПРОВЕРКА БАЛАНСА =====
         balance = await db.get_balance(user_id)
         
         # Исключение для EDIT_DESIGN: может работать БЕЗ баланса
@@ -268,29 +272,30 @@ async def photo_handler(message: Message, state: FSMContext):
                 except Exception as e:
                     logger.warning(f"⚠️ Не удалось отредактировать меню: {e}")
                     new_msg = await message.answer(error_text)
+                    await state.update_data(menu_message_id=new_msg.message_id)
                     await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
             else:
                 new_msg = await message.answer(error_text)
+                await state.update_data(menu_message_id=new_msg.message_id)
                 await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'uploading_photo')
             
             return
         
-        # ===== 4. СОХРАНЕНИЕ ФОТО =====
+        # ===== 3. СОХРАНЕНИЕ ФОТО =====
         photo_id = message.photo[-1].file_id
         await db.save_photo(user_id, photo_id)
         
         await state.update_data(
             photo_id=photo_id,
-            new_photo=True,
-            menu_message_id=menu_message_id
+            new_photo=True
         )
         
-        # ===== 5. ПЕРЕХОД НА СЛЕДУЮЩИЙ ЭКРАН (зависит от режима) =====
+        # ===== 4. ПЕРЕХОД НА СЛЕДУЮЩИЙ ЭКРАН (зависит от режима) =====
         
         if work_mode == WorkMode.NEW_DESIGN.value:
             # NEW_DESIGN → ROOM_CHOICE (SCREEN 3)
             await state.set_state(CreationStates.room_choice)
-            text = f"🏠 **Выберите комнату** \n\nБаланс: {balance}"
+            text = f"🏠 **Выберите комнату**"
             text = await add_balance_and_mode_to_text(text, user_id)
             keyboard = get_room_choice_keyboard()
             screen = 'room_choice'
@@ -298,7 +303,7 @@ async def photo_handler(message: Message, state: FSMContext):
         elif work_mode == WorkMode.EDIT_DESIGN.value:
             # EDIT_DESIGN → EDIT_DESIGN (SCREEN 8)
             await state.set_state(CreationStates.edit_design)
-            text = f"✏️ **Редактируем дизайн** \n\nБаланс: {balance}"
+            text = f"✏️ **Редактируем дизайн**"
             text = await add_balance_and_mode_to_text(text, user_id)
             keyboard = get_edit_design_keyboard()
             screen = 'edit_design'
@@ -306,7 +311,7 @@ async def photo_handler(message: Message, state: FSMContext):
         elif work_mode == WorkMode.SAMPLE_DESIGN.value:
             # SAMPLE_DESIGN → DOWNLOAD_SAMPLE (SCREEN 10)
             await state.set_state(CreationStates.download_sample)
-            text = f"📥 **Скачать примеры** \n\nБаланс: {balance}"
+            text = f"📥 **Скачать примеры**"
             text = await add_balance_and_mode_to_text(text, user_id)
             keyboard = get_download_sample_keyboard()
             screen = 'download_sample'
@@ -314,7 +319,7 @@ async def photo_handler(message: Message, state: FSMContext):
         elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
             # ARRANGE_FURNITURE → UPLOADING_FURNITURE (SCREEN 13)
             await state.set_state(CreationStates.uploading_furniture)
-            text = f"🛋️ **Расстановка мебели** \n\nБаланс: {balance}"
+            text = f"🛋️ **Расстановка мебели**"
             text = await add_balance_and_mode_to_text(text, user_id)
             keyboard = get_uploading_furniture_keyboard()
             screen = 'uploading_furniture'
@@ -322,7 +327,7 @@ async def photo_handler(message: Message, state: FSMContext):
         elif work_mode == WorkMode.FACADE_DESIGN.value:
             # FACADE_DESIGN → LOADING_FACADE_SAMPLE (SCREEN 16)
             await state.set_state(CreationStates.loading_facade_sample)
-            text = f"🏢 **Дизайн фасада** \n\nБаланс: {balance}"
+            text = f"🏢 **Дизайн фасада**"
             text = await add_balance_and_mode_to_text(text, user_id)
             keyboard = get_loading_facade_sample_keyboard()
             screen = 'loading_facade_sample'
@@ -331,7 +336,7 @@ async def photo_handler(message: Message, state: FSMContext):
             await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
             return
         
-        # ===== 6. РЕДАКТИРОВАНИЕ МЕНЮ =====
+        # ===== 5. РЕДАКТИРОВАНИЕ МЕНЮ =====
         if menu_message_id:
             try:
                 await message.bot.edit_message_text(
@@ -341,20 +346,19 @@ async def photo_handler(message: Message, state: FSMContext):
                     reply_markup=keyboard,
                     parse_mode="Markdown"
                 )
+                logger.info(f"[V3] Successfully edited menu - transitioning to {screen}")
             except Exception as e:
                 logger.warning(f"⚠️ Не удалось отредактировать меню: {e}. Создаем новое.")
                 new_msg = await message.answer(text=text, reply_markup=keyboard, parse_mode="Markdown")
                 await state.update_data(menu_message_id=new_msg.message_id)
                 await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
         else:
+            logger.warning(f"[WARNING] No menu_message_id found - creating new message")
             new_msg = await message.answer(text=text, reply_markup=keyboard, parse_mode="Markdown")
             await state.update_data(menu_message_id=new_msg.message_id)
             await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
         
-        # Сохраняем в БД
-        await db.save_chat_menu(chat_id, user_id, menu_message_id or 0, screen)
-        
-        logger.info(f"[V3] {work_mode.upper()}+UPLOADING_PHOTO - photo saved, user_id={user_id}")
+        logger.info(f"[V3] {work_mode.upper()}+UPLOADING_PHOTO - photo saved and transitioned to {screen}, user_id={user_id}")
         
     except Exception as e:
         logger.error(f"[ERROR] PHOTO_HANDLER failed for user {user_id}: {e}", exc_info=True)
