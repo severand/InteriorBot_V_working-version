@@ -1,7 +1,6 @@
 # bot/handlers/user_start.py
-# --- ОБНОВЛЕН: 2025-12-29 21:07 - Исправлены ошибки FSM и главного меню ---
-# [2025-12-29 21:07] PHASE 1.8: Замена waiting_for_photo на uploading_photo
-# [2025-12-29 21:07] Исправлены кнопки главного меню - должны отображать MODE_SELECTION_TEXT
+# --- ОБНОВЛЕН: 2025-12-29 21:11 - Главное меню теперь использует правильную клавиатуру ---
+# [2025-12-29 21:11] HOTFIX: Замена get_main_menu_keyboard() на get_work_mode_selection_keyboard()
 
 import logging
 from aiogram import Router, F
@@ -11,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from database.db import db
 from config import config
 from states.fsm import CreationStates
-from keyboards.inline import get_main_menu_keyboard, get_profile_keyboard, get_upload_photo_keyboard
+from keyboards.inline import get_work_mode_selection_keyboard, get_profile_keyboard, get_uploading_photo_keyboard
 from utils.texts import START_TEXT, UPLOAD_PHOTO_TEXT, MODE_SELECTION_TEXT
 from utils.navigation import edit_menu, show_main_menu
 from utils.helpers import add_balance_to_text
@@ -74,7 +73,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     # ===== 4️⃣ ОЧИЩАЕМ FSM STATE =====
     await state.clear()
 
-    # ===== 5️⃣ ПРОВЕРЯЕМ - НОВЫЙ ПОЛЬЗОВАТЕЛЬ? =====
+    # ===== 5️⃣ ПРОВЕРЯЕМ - НОВЫЙ ПОЛьзОВАТЕЛЬ? =====
     user_data = await db.get_user_data(user_id)
     is_new_user = user_data is None
 
@@ -114,11 +113,11 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     except:
         pass
 
-    # ===== 7️⃣ ОТПРАВЛЯЕМ ГЛАВНОЕ МЕНЮ =====
+    # ===== 7️⃣ ОТПРАВЛЯЕМ ОТКРОЫТЮЕ МЕНЮ С ПОПОЛНЕНИЕМ БАлАНСА =====
     text = await add_balance_to_text(MODE_SELECTION_TEXT, user_id)
     menu_msg = await message.answer(
         text,
-        reply_markup=get_main_menu_keyboard(is_admin=user_id in admins),
+        reply_markup=get_work_mode_selection_keyboard(),
         parse_mode="Markdown"
     )
 
@@ -210,7 +209,7 @@ async def start_creation(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
 
-    # ВОССТАНАВЛИВАЕМ menu_message_id
+    # ВОСсТАНАВЛИВАЕМ menu_message_id
     if menu_message_id:
         await state.update_data(menu_message_id=menu_message_id)
 
@@ -220,7 +219,7 @@ async def start_creation(callback: CallbackQuery, state: FSMContext):
         callback=callback,
         state=state,
         text=UPLOAD_PHOTO_TEXT,
-        keyboard=get_upload_photo_keyboard(),
+        keyboard=get_uploading_photo_keyboard(),
         screen_code='uploading_photo'  # ← ОБНОВЛЕНО screen_code
     )
     await callback.answer()
