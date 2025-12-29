@@ -3,6 +3,7 @@
 # [2025-12-29] НОВЫЙ ФАЙЛ: Часть 1 рефакторинга creation.py
 # Содержит: select_mode (SCREEN 1), set_work_mode, photo_handler (SCREEN 2)
 # + старые handlers для обратной совместимости (what_is_in_photo)
+# [2025-12-29 21:18] Исправлены вызовы add_balance_and_mode_to_text - удален work_mode
 
 import asyncio
 import logging
@@ -88,7 +89,7 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
         text = MODE_SELECTION_TEXT
 
         # Добавляем footer с балансом
-        text = await add_balance_and_mode_to_text(text=text, user_id=user_id, work_mode=None)
+        text = await add_balance_and_mode_to_text(text=text, user_id=user_id)
 
         # Редактируем меню
         await edit_menu(
@@ -111,7 +112,7 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
-    SCREEN 1→2: Обработчик выбора режима работы
+    SCREEN 1⊒2: Обработчик выбора режима работы
     
     Режимы:
     - select_mode_new_design → NEW_DESIGN
@@ -154,11 +155,10 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         # Динамический текст в зависимости от режима
         text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📸 Загрузите фото")
         
-        # Добавляем footer
+        # Добавляем footer (теперь без work_mode - автоматически детектируется)
         text = await add_balance_and_mode_to_text(
             text=text,
-            user_id=user_id,
-            work_mode=work_mode.value
+            user_id=user_id
         )
         
         # Редактируем меню
@@ -289,7 +289,7 @@ async def photo_handler(message: Message, state: FSMContext):
             # NEW_DESIGN → ROOM_CHOICE (SCREEN 3)
             await state.set_state(CreationStates.room_choice)
             text = f"🏠 **Выберите комнату** \n\nБаланс: {balance}"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+            text = await add_balance_and_mode_to_text(text, user_id)
             keyboard = get_room_choice_keyboard()
             screen = 'room_choice'
             
@@ -297,7 +297,7 @@ async def photo_handler(message: Message, state: FSMContext):
             # EDIT_DESIGN → EDIT_DESIGN (SCREEN 8)
             await state.set_state(CreationStates.edit_design)
             text = f"✏️ **Редактируем дизайн** \n\nБаланс: {balance}"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+            text = await add_balance_and_mode_to_text(text, user_id)
             keyboard = get_edit_design_keyboard()
             screen = 'edit_design'
             
@@ -305,7 +305,7 @@ async def photo_handler(message: Message, state: FSMContext):
             # SAMPLE_DESIGN → DOWNLOAD_SAMPLE (SCREEN 10)
             await state.set_state(CreationStates.download_sample)
             text = f"📥 **Скачать примеры** \n\nБаланс: {balance}"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+            text = await add_balance_and_mode_to_text(text, user_id)
             keyboard = get_download_sample_keyboard()
             screen = 'download_sample'
             
@@ -313,7 +313,7 @@ async def photo_handler(message: Message, state: FSMContext):
             # ARRANGE_FURNITURE → UPLOADING_FURNITURE (SCREEN 13)
             await state.set_state(CreationStates.uploading_furniture)
             text = f"🛋️ **Расстановка мебели** \n\nБаланс: {balance}"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+            text = await add_balance_and_mode_to_text(text, user_id)
             keyboard = get_uploading_furniture_keyboard()
             screen = 'uploading_furniture'
             
@@ -321,7 +321,7 @@ async def photo_handler(message: Message, state: FSMContext):
             # FACADE_DESIGN → LOADING_FACADE_SAMPLE (SCREEN 16)
             await state.set_state(CreationStates.loading_facade_sample)
             text = f"🏢 **Дизайн фасада** \n\nБаланс: {balance}"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+            text = await add_balance_and_mode_to_text(text, user_id)
             keyboard = get_loading_facade_sample_keyboard()
             screen = 'loading_facade_sample'
         else:
