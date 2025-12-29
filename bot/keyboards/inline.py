@@ -3,8 +3,8 @@
 # --- ОБНОВЛЕН: 2025-12-24 13:12 ---
 # [2025-12-08 13:50] Добавлена новая клавиатура get_what_is_in_photo_keyboard() - 10 кнопок (интерьер+экстерьер)
 # [2025-12-08 13:50] УДАЛЕНА кнопка "Очистить пространство" из get_room_keyboard() согласно ТЗ
-# [2025-12-08 13:50] Функция get_clear_space_confirm_keyboard() СОХРАНЕНА для будущего использования
-# [2025-12-24 13:12] ОКОНЧАТЕЛЬНАЯ РЕАЛИЗАЦИЯ: 4 кнопки СООТНОШЕНИЯ В ОДНОМ РЯДУ (по 25% каждая)
+# [2025-12-24 13:12] ОКОНЧАТЕЛЬНАЕ РЕАЛИЗАЦИЕ: 4 кнопки СООТНОШЕНИЯ В ОДНОМ РЯДУ (по 25% каждая)
+# [2025-12-29 15:20] PHASE 1.3.1: Добавлена новая функция get_work_mode_selection_keyboard() для SCREEN 1
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -40,8 +40,8 @@ STYLE_TYPES = [
     ("japandi", "Джапанди"),
     ("boho", "Бохо / Эклектика"),
     #("mediterranean", "Средиземноморский"),
-    ("midcentury", "Mid‑century / винтаж"),
-    ("artdeco", "Арт‑деко"),
+    ("midcentury", "Mid‭‑century / винтаж"),
+    ("artdeco", "Арт‭деко"),
     #("hitech", "Хай-тек"),
     #("classic", "Классический"),
     #("contemporary", "Контемпорари"),
@@ -69,9 +69,9 @@ def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-# Экран загрузки фото
+# Экран загружения фото
 def get_upload_photo_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура для экрана загрузки фото с кнопкой назад"""
+    """Клавиатура для экрана загружения фото с кнопкой назад"""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     builder.adjust(1)
@@ -101,7 +101,7 @@ def get_what_is_in_photo_keyboard() -> InlineKeyboardMarkup:
     # Ряд 2: ИНТЕРЬЕР - Гостиная и Кухня
     builder.row(
         InlineKeyboardButton(text="🛋 Гостиная", callback_data="room_living_room"),
-        InlineKeyboardButton(text="🍽 Кухня", callback_data="room_kitchen")
+        InlineKeyboardButton(text="🝽 Кухня", callback_data="room_kitchen")
     )
 
     # Ряд 3: ИНТЕРЬЕР - Спальня и Детская
@@ -113,12 +113,12 @@ def get_what_is_in_photo_keyboard() -> InlineKeyboardMarkup:
     # Ряд 4: ИНТЕРЬЕР - Ванная и Кабинет
     builder.row(
         InlineKeyboardButton(text="🚿 Ванная / санузел", callback_data="room_bathroom_full"),
-        InlineKeyboardButton(text="💼 Кабинет", callback_data="room_home_office")
+        InlineKeyboardButton(text="ud83d\udcbc Кабинет", callback_data="room_home_office")
     )
 
     builder.row(
         InlineKeyboardButton(text="🛋 Прихожая", callback_data="Entryway"),
-        InlineKeyboardButton(text="🍽 Гардеробная", callback_data="wardrobe")
+        InlineKeyboardButton(text="🝽 Гардеробная", callback_data="wardrobe")
     )
 
     # Ряд 5: ИНТЕРЬЕР - Другое помещение и Комната целиком
@@ -140,7 +140,7 @@ def get_room_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     # ЗАКОММЕНТИРОВАНО 2025-12-08 согласно ТЗ:
-    #builder.row(InlineKeyboardButton(text="🧽 Очистить пространство", callback_data="clear_space_confirm"))
+    #builder.row(InlineKeyboardButton(text="🧭 Очистить пространство", callback_data="clear_space_confirm"))
 
     # Комнаты
     for key, text in ROOM_TYPES.items():
@@ -163,7 +163,7 @@ def get_style_keyboard() -> InlineKeyboardMarkup:
         builder.row(*buttons)
     # Кнопка "К выбору комнаты" и "Главное меню" — отдельно
     builder.row(
-        InlineKeyboardButton(text="🧽 Очистить пространство", callback_data="clear_space_confirm"),
+        InlineKeyboardButton(text="🧭 Очистить пространство", callback_data="clear_space_confirm"),
         InlineKeyboardButton(text="⬅️ Выбрать комнату", callback_data="back_to_room"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     )
@@ -212,7 +212,7 @@ def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
     Клавиатура подтверждения очистки пространства
 
     ПРИМЕЧАНИЕ: Функция СОХРАНЕНА для будущего использования.
-    Кнопка будет перенесена на другой экран в следующей версии.
+    Кнопка будет переносится на другой экран в следующей версии.
     """
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="✅ Очистить", callback_data="clear_space_execute"))
@@ -243,7 +243,7 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
     # Ряд 2: Настройки режима | Поддержка
     builder.row(
         InlineKeyboardButton(text="⚙️ НАСТРОЙКИ РЕЖИМА", callback_data="profile_settings"),
-        InlineKeyboardButton(text="💬 Поддержка", callback_data="show_support")
+        InlineKeyboardButton(text="ud83d\udcac Поддержка", callback_data="show_support")
     )
 
     # Ряд 3: Главное меню (широкая кнопка)
@@ -266,11 +266,68 @@ def get_payment_keyboard() -> InlineKeyboardMarkup:
 # Экран перейти к оплате
 def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="💰 Перейти к оплате", url=url))
+    builder.row(InlineKeyboardButton(text="ud83d\udcb0 Перейти к оплате", url=url))
     # builder.row(InlineKeyboardButton(text="🔄 Я оплатил! (Проверить)", callback_data="check_payment"))
     builder.row(InlineKeyboardButton(text="⬅️ Назад ", callback_data="show_profile"))
     # builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     builder.adjust(1)
+    return builder.as_markup()
+
+
+# ========================================
+# PHASE 1.3.1: SCREEN 1 - MODE SELECTION KEYBOARD
+# ОБНОВЛЕНО: 2025-12-29 15:20
+# ========================================
+
+def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
+    """
+    Клавиатура выбора режима работы (ЭКРАН 1: MAIN_MENU)
+    
+    Структура (по 1 кнопке в ряд):
+    ├─ 📋 Создать новый дизайн
+    ├─ ✏️ Редактировать дизайн
+    ├─ 🎁 Примерить дизайн
+    ├─ 🛋️ Расставить мебель
+    ├─ 🏠 Дизайн фасада дома
+    ├─ ───────── (разделитель)
+    ├─ 👤 Личный кабинет и ⚙️ Админ (если существуют)
+    └─ ❌ Закрыть меню
+    """
+    builder = InlineKeyboardBuilder()
+
+    # 5 новых моделей работы (каждый в отдельном ряду)
+    builder.row(InlineKeyboardButton(
+        text="📋 Создать новый дизайн",
+        callback_data="select_mode_new_design"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="✏️ Редактировать дизайн",
+        callback_data="select_mode_edit_design"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="🎁 Примерить дизайн",
+        callback_data="select_mode_sample_design"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="🛋️ Расставить мебель",
+        callback_data="select_mode_arrange_furniture"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="🏠 Дизайн фасада дома",
+        callback_data="select_mode_facade_design"
+    ))
+
+    # Разделитель (неактивная кнопка)
+    builder.row(InlineKeyboardButton(
+        text="─────────",
+        callback_data="dummy_separator"
+    ))
+
+    # Примечание: Кнопки профиля и админа остаются в старом коде
+    # get_main_menu_keyboard() отвечает за главное меню
+    # НЕ трогаем!
+
+    builder.adjust(1)  # По 1 кнопке в ряд
     return builder.as_markup()
 
 
@@ -284,7 +341,7 @@ def get_mode_selection_keyboard(current_mode_is_pro: bool) -> InlineKeyboardMark
     """
     Клавиатура экрана выбора режима СТАНДАРТ vs PRO.
     
-    ФИНАЛЬНАЯ ВЕРСИЯ: 2025-12-24 13:12
+    ФИНАЛЬНАЯ ВЕРСИЕ: 2025-12-24 13:12
     
     Структура:
     - Ряд 1: [СТАНДАРТ 50%] [✅ PRO 50%]  (по 50% каждая в одном ряду)
@@ -333,7 +390,7 @@ def get_pro_params_keyboard(
     """
     Клавиатура для выбора параметров PRO режима.
     
-    ФИНАЛЬНАЯ ВЕРСИЯ: 2025-12-24 13:12
+    ФИНАЛЬНАЯ ВЕРСИЕ: 2025-12-24 13:12
     БЕЗ ПУСТЫХ РЯДОВ!
     
     Структура:
@@ -353,7 +410,7 @@ def get_pro_params_keyboard(
     """
     builder = InlineKeyboardBuilder()
     
-    # ===== РЫД 1: СООТНОШЕНИЕ СТОРОН (4 кнопки В ОДНОМ РЯДУ!) =====
+    # ===== РЫД 1: СООТНОШЕНИЕ СТОРОН (ф кнопки В ОДНОМ РЯДУ!) =====
     aspect_buttons = []
     for ratio in ASPECT_RATIOS:
         mark = "✅" if ratio == current_ratio else ""
