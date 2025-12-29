@@ -119,7 +119,7 @@ def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
 def get_upload_photo_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для экрана загружения фото с кнопкой назад"""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode"))
     builder.adjust(1)
     return builder.as_markup()
 
@@ -174,7 +174,7 @@ def get_what_is_in_photo_keyboard() -> InlineKeyboardMarkup:
     )
 
     # Ряд 6: Главное меню
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode"))
 
     builder.adjust(2, 2, 2, 2, 2, 1)
     return builder.as_markup()
@@ -191,7 +191,7 @@ def get_room_keyboard() -> InlineKeyboardMarkup:
     # Комнаты
     for key, text in ROOM_TYPES.items():
         builder.row(InlineKeyboardButton(text=text, callback_data=f"room_{key}"))
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode"))
     builder.adjust(2)
     return builder.as_markup()
 
@@ -211,7 +211,7 @@ def get_style_keyboard() -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="🧭 Очистить пространство", callback_data="clear_space_confirm"),
         InlineKeyboardButton(text="⬅️ Выбрать комнату", callback_data="back_to_room"),
-        InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode"),
     )
     return builder.as_markup()
 
@@ -248,7 +248,7 @@ def get_post_generation_keyboard(show_continue_editing: bool = False) -> InlineK
         )
 
     # Ряд 2: Главное меню (широкая)
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню    ", callback_data="main_menu"))
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню    ", callback_data="select_mode"))
 
     return builder.as_markup()
 
@@ -287,7 +287,7 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
     )
 
     # Ряд 3: Главное меню
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode"))
 
     builder.adjust(1, 2, 1)
     return builder.as_markup()
@@ -345,8 +345,8 @@ def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
 
     # Разделитель
     builder.row(InlineKeyboardButton(
-        text="─────────",
-        callback_data="dummy_separator"
+        text="👤 Личный кабинет",
+        callback_data="show_profile"
     ))
 
     builder.adjust(1)
