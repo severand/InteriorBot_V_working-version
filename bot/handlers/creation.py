@@ -19,6 +19,11 @@
 # [2025-12-29 20:45] ДОБАВЛЕНЫ: Импорты для SELECT_MODE и PHOTO handlers
 # [2025-12-29 20:45] СТРУКТУРА: Выбор режима создания → Загрузка фото → Определение типа сцены
 # [2025-12-29 20:45] ДУБЛИКАТЫ УДАЛЕНЫ: Обработчики не дублируют существующую логику
+# --- ФАЗА 1.4.2: 2025-12-29 21:00 - V3 SET_WORK_MODE (SCREEN 1) ---
+# [2025-12-29 21:00] ДОБАВЛЕН: set_work_mode() handler для обработки выбора режима
+# [2025-12-29 21:00] ЛОГИКА: Извлечение режима → FSM сохранение → Переход на UPLOADING_PHOTO
+# [2025-12-29 21:00] РЕЖИМЫ: NEW_DESIGN, EDIT_DESIGN, SAMPLE_DESIGN, ARRANGE_FURNITURE, FACADE_DESIGN
+# [2025-12-29 21:00] ДУБЛИКАТЫ: Нет дублирования с choose_new_photo() - отдельные функции
 
 import asyncio
 import logging
@@ -62,6 +67,7 @@ from utils.texts import (
     EXTERIOR_PLOT_PROMPT_TEXT,
     ROOM_DESCRIPTION_PROMPT_TEXT,
     MODE_SELECTION_TEXT,  # ✅ ФАЗА 1.4: Текст экрана выбора режима
+    UPLOADING_PHOTO_TEMPLATES,  # ✅ ФАЗА 1.4.2: Динамические шаблоны текста для режимов
 )
 
 # ОБНОВЛЕНО: 2025-12-24 21:00 - Импорт обновленной функции для header с режимом
@@ -117,6 +123,97 @@ async def select_mode_handler(callback: CallbackQuery, state: FSMContext):
         screen_code='select_mode'  # ✅ ФАЗА 1.4: Уникальный screen_code
     )
     await callback.answer()
+
+
+# ===== ФАЗА 1.4.2: SET_WORK_MODE - ОБРАБОТКА ВЫБОРА РЕЖИМА =====
+# ✅ НОВЫЙ ОБРАБОТЧИК: Обработка нажатия кнопки режима
+# Дата добавления: 2025-12-29 21:00
+# Извлекает режим из callback_data, сохраняет в FSM, переходит на UPLOADING_PHOTO
+
+@router.callback_query(F.data.startswith("select_mode_"))
+async def set_work_mode(callback: CallbackQuery, state: FSMContext):
+    """
+    ✅ ФАЗА 1.4.2: SET_WORK_MODE
+    
+    Обработчик выбора режима работы
+    
+    Извлекает режим из callback_data и сохраняет в FSM
+    Затем переходит на экран загрузки фото
+
+    Режимы:
+    - select_mode_new_design → NEW_DESIGN
+    - select_mode_edit_design → EDIT_DESIGN
+    - select_mode_sample_design → SAMPLE_DESIGN
+    - select_mode_arrange_furniture → ARRANGE_FURNITURE
+    - select_mode_facade_design → FACADE_DESIGN
+
+    Дата добавления: 2025-12-29 21:00
+    Логирование: [V3] MODE+STATE - mode selected
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+
+    try:
+        # Извлекаем режим из callback_data
+        mode_str = callback.data.replace("select_mode_", "")
+        
+        # Преобразуем строку в WorkMode enum
+        mode_map = {
+            "new_design": WorkMode.NEW_DESIGN,
+            "edit_design": WorkMode.EDIT_DESIGN,
+            "sample_design": WorkMode.SAMPLE_DESIGN,
+            "arrange_furniture": WorkMode.ARRANGE_FURNITURE,
+            "facade_design": WorkMode.FACADE_DESIGN,
+        }
+        
+        work_mode = mode_map.get(mode_str)
+        if not work_mode:
+            await callback.answer("❌ Неизвестный режим", show_alert=True)
+            return
+        
+        # Сохраняем режим в FSM
+        await state.update_data(work_mode=work_mode.value)
+        await state.set_state(CreationStates.uploading_photo)
+        
+        # Получаем баланс
+        balance = await db.get_balance(user_id)
+        
+        # Динамический текст в зависимости от режима
+        text = UPLOADING_PHOTO_TEMPLATES.get(
+            work_mode.value,
+            "📸 Загрузите фото"
+        )
+        text += f"\n\n📊 Баланс: {balance}"
+        
+        # Добавляем footer
+        text = await add_balance_and_mode_to_text(
+            text=text,
+            user_id=user_id,
+            work_mode=work_mode.value
+        )
+        
+        # Редактируем меню
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_upload_photo_keyboard(),
+            screen_code='uploading_photo'
+        )
+        
+        # Сохраняем menu_message_id в БД
+        await db.save_chat_menu(
+            chat_id,
+            user_id,
+            callback.message.message_id,
+            'uploading_photo'
+        )
+        
+        logger.info(f"[V3] {work_mode.value.upper()}+UPLOADING_PHOTO - mode selected, user_id={user_id}")
+        
+    except Exception as e:
+        logger.error(f"[ERROR] SET_WORK_MODE failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при выборе режима", show_alert=True)
 
 
 # ===== ФАЗА 1.4: PHOTO_HANDLER - ОБРАБОТКА ЗАГРУЖЕННОГО ФОТО =====
