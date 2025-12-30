@@ -106,6 +106,7 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
 # ===== HANDLER: SET_WORK_MODE (Handle mode selection) =====
 # [2025-12-29] NEW (V3)
 # [2025-12-30 15:52] 🔧 FINAL FIX: Восстановлена edit_menu() - НО ТОЛЬКО ТЕКСТ!
+# [2025-12-30 22:18] 🔥 CRITICAL BUG FIX #2: Removed add_balance_and_mode_to_text() - footer added TWICE!
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
@@ -135,6 +136,16 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     - edit_menu() отредактивает ТЕКУЩЕЕ меню на SCREEN 1
     - Кнопки оно также меняет ✅
     - Не создает слишком много сообщений ✅
+    
+    CRITICAL BUG FIX #2: [2025-12-30 22:18]
+    ❌ OLD: add_balance_and_mode_to_text() called here (adds footer with 3 params)
+    ✅ NEW: Removed! Footer will be added in photo_handler() ONCE!
+    
+    Why it was buggy:
+    - set_work_mode() added footer
+    - photo_handler() added footer again
+    - Result: DUPLICATE footer with different strings
+    - Now: Only photo_handler() adds footer with work_mode param!
     
     CRITICAL FIX: [2025-12-29 23:24]
     - Save menu_message_id IN FSM state
@@ -170,9 +181,9 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         await state.set_state(CreationStates.uploading_photo)
         
         # ✅ RESTORED [2025-12-30 15:52]: Обновить SCREEN для пользователя
-        # edit_menu() редактирует ТОЛЬКО ТЕКСТ - photo_handler() добавит фото!
+        # ❌ REMOVED [2025-12-30 22:18]: add_balance_and_mode_to_text() - will add footer twice!
         text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загрузите фото")
-        text = await add_balance_and_mode_to_text(text, user_id)
+        # ✅ FOOTER WILL BE ADDED IN photo_handler() AFTER PHOTO UPLOAD!
         
         await edit_menu(
             callback=callback,
@@ -203,6 +214,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 # [2025-12-29] UPDATED (V3)
 # [2025-12-30 22:10] 🔴 CRITICAL FIX: Remove edit_message_media() that was creating DOUBLE photo!
 #                     Now just send menu text with buttons BELOW user's uploaded photo
+# [2025-12-30 22:18] 🔥 CRITICAL BUG FIX #1: DELETE OLD MENU MESSAGE BEFORE SENDING NEW ONE!
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
@@ -212,9 +224,10 @@ async def photo_handler(message: Message, state: FSMContext):
     1. Photo validation
     2. Balance check (except EDIT_DESIGN)
     3. Save file_id in FSM
-    4. Send NEW message with text + buttons BELOW the photo user uploaded
+    4. DELETE OLD MENU MESSAGE (the one from SCREEN uploading_photo)
+    5. Send NEW message with text + buttons BELOW the photo user uploaded
        (Do NOT reattach photo to existing message - this creates duplicates!)
-    5. Transition to NEXT screen (depends on mode):
+    6. Transition to NEXT screen (depends on mode):
        - NEW_DESIGN → ROOM_CHOICE
        - EDIT_DESIGN → EDIT_DESIGN
        - SAMPLE_DESIGN → DOWNLOAD_SAMPLE
@@ -229,6 +242,24 @@ async def photo_handler(message: Message, state: FSMContext):
                   User's photo stays clean
                   Menu buttons appear as separate message
                   NO DUPLICATES!
+    
+    CRITICAL BUG FIX #1: [2025-12-30 22:18]
+    ❌ OLD: Sent new menu message but DIDN'T delete old menu from uploading_photo screen
+            User saw: [Old message "Загрузите фото"] + [New message with buttons] = MESSY!
+    
+    ✅ NEW: Before sending new message, DELETE old menu message (menu_message_id)
+            Then send clean new message with buttons
+            Result: Clean UI, no old messages hanging around!
+    
+    How it works:
+    1. message.photo received from user
+    2. Validate photo + balance
+    3. Save photo_id to FSM
+    4. 🔥 DELETE old menu message (from uploading_photo screen)
+    5. Prepare text with footer (work_mode param ensures correct footer)
+    6. Send NEW menu message with buttons (replaces deleted one)
+    7. Save new menu_message_id to FSM and DB
+    8. Transition to next screen
     
     CRITICAL FIX: [2025-12-29 23:24]
     - Save menu_message_id IN FSM state for future reference
@@ -245,6 +276,7 @@ async def photo_handler(message: Message, state: FSMContext):
     chat_id = message.chat.id
     data = await state.get_data()
     work_mode = data.get('work_mode')
+    old_menu_message_id = data.get('menu_message_id')  # 🔥 GET OLD MENU ID TO DELETE IT!
 
     logger.info(f"🎞️ [PHOTO_HANDLER] START - user_id={user_id}, work_mode={work_mode}, photo received")
 
@@ -277,40 +309,49 @@ async def photo_handler(message: Message, state: FSMContext):
             new_photo=True
         )
         
-        # ===== 4. DETERMINE NEXT SCREEN (depends on mode) =====
+        # ===== 4. DELETE OLD MENU MESSAGE (BUG FIX #1) =====
+        # 🔥 [2025-12-30 22:18] CRITICAL FIX: Remove old menu before sending new one!
+        if old_menu_message_id:
+            try:
+                await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
+                logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu message {old_menu_message_id}")
+            except Exception as e:
+                logger.warning(f"⚠️ [PHOTO_HANDLER] Could not delete old menu {old_menu_message_id}: {e}")
+        
+        # ===== 5. DETERMINE NEXT SCREEN (depends on mode) =====
         
         if work_mode == WorkMode.NEW_DESIGN.value:
             await state.set_state(CreationStates.room_choice)
             text = f"🏠 **Выберите комнату**"
-            text = await add_balance_and_mode_to_text(text, user_id)
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode='new_design')  # ✅ FOOTER WITH work_mode!
             keyboard = get_room_choice_keyboard()
             screen = 'room_choice'
             
         elif work_mode == WorkMode.EDIT_DESIGN.value:
             await state.set_state(CreationStates.edit_design)
             text = f"✏️ **Редактируем дизайн**"
-            text = await add_balance_and_mode_to_text(text, user_id)
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode='edit_design')  # ✅ FOOTER WITH work_mode!
             keyboard = get_edit_design_keyboard()
             screen = 'edit_design'
             
         elif work_mode == WorkMode.SAMPLE_DESIGN.value:
             await state.set_state(CreationStates.download_sample)
             text = f"📥 **Скачать примеры**"
-            text = await add_balance_and_mode_to_text(text, user_id)
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')  # ✅ FOOTER WITH work_mode!
             keyboard = get_download_sample_keyboard()
             screen = 'download_sample'
             
         elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
             await state.set_state(CreationStates.uploading_furniture)
             text = f"🛋️ **Расстановка мебели**"
-            text = await add_balance_and_mode_to_text(text, user_id)
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode='arrange_furniture')  # ✅ FOOTER WITH work_mode!
             keyboard = get_uploading_furniture_keyboard()
             screen = 'uploading_furniture'
             
         elif work_mode == WorkMode.FACADE_DESIGN.value:
             await state.set_state(CreationStates.loading_facade_sample)
             text = f"🏘️ **Дизайн фасада**"
-            text = await add_balance_and_mode_to_text(text, user_id)
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')  # ✅ FOOTER WITH work_mode!
             keyboard = get_loading_facade_sample_keyboard()
             screen = 'loading_facade_sample'
         else:
@@ -318,7 +359,7 @@ async def photo_handler(message: Message, state: FSMContext):
             await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
             return
         
-        # ===== 5. SEND MENU BELOW PHOTO (NO PHOTO REATTACHMENT!) =====
+        # ===== 6. SEND MENU BELOW PHOTO (NO PHOTO REATTACHMENT!) =====
         # ✅ [2025-12-30 22:10] FIX: Just send text message with buttons
         # Do NOT use edit_message_media() - it causes duplicate photos!
         
