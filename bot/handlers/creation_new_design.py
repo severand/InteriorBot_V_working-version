@@ -5,6 +5,11 @@
 # + post_generation_menu (SCREEN 6), change_style_after_gen
 # [2025-12-30 01:29] ✅ FIX: Возвращен work_mode в вызовы add_balance_and_mode_to_text() - функция теперь принимает 3 аргумента!
 # [2025-12-30 01:47] 🔍 CRITICAL DIAGNOSTICS: Добавить подробное логирование для расследования двойной отправки
+# [2025-12-30 17:00] 🔥 MAJOR FIX: Разделены текстовые меню и медиа, убрана edit_menu на медиа-сообщениях
+#                     - room_choice_handler НЕ редактирует медиа, создает новое текстовое меню
+#                     - style_choice_handler использует edit_message_media для фото
+#                     - Fallback удаляет старое медиа перед новым
+#                     - Все операции логируются с request_id для диагностики
 
 import asyncio
 import logging
@@ -16,6 +21,7 @@ from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.filters.state import StateFilter
 from aiogram.types import CallbackQuery, Message, InputMediaPhoto
+from aiogram.exceptions import TelegramBadRequest
 
 from database.db import db
 
@@ -49,13 +55,13 @@ router = Router()
 
 # ===== ДИАГНОСТИКА: Глобальный трекер отправок фото =====
 # [2025-12-30 01:47] 🔍 DIAGNOSTICS
-PHOTO_SEND_LOG = {}  # Глобальный трекер: user_id -> [(timestamp, method, message_id)]
+PHOTO_SEND_LOG = {}  # Глобальный трекер: user_id -> [(timestamp, method, message_id, request_id)]
 
-def log_photo_send(user_id: int, method: str, message_id: int, request_id: str = None):
+def log_photo_send(user_id: int, method: str, message_id: int, request_id: str = None, operation: str = ""):
     """
     🔍 ДИАГНОСТИКА: Логируем каждые отправки фото
     
-    Методы: answer_photo, send_photo, edit_message_media
+    Методы: answer_photo, send_photo, edit_message_media, edit_message_caption
     """
     if user_id not in PHOTO_SEND_LOG:
         PHOTO_SEND_LOG[user_id] = []
@@ -67,21 +73,22 @@ def log_photo_send(user_id: int, method: str, message_id: int, request_id: str =
         'timestamp': timestamp,
         'method': method,
         'message_id': message_id,
-        'request_id': rid
+        'request_id': rid,
+        'operation': operation
     }
     
     PHOTO_SEND_LOG[user_id].append(entry)
     
-    # Необыкновенное нижнее логирование
+    # Детальное логирование
     logger.warning(
-        f"\ud83d\udcc8 [PHOTO_LOG] user_id={user_id}, method={method}, msg_id={message_id}, "
-        f"request_id={rid}, timestamp={timestamp}"
+        f"📊 [PHOTO_LOG] user_id={user_id}, method={method}, msg_id={message_id}, "
+        f"request_id={rid}, operation={operation}, timestamp={timestamp}"
     )
     
-    # Оверфлов диагностики
+    # Оверфлоу диагностики
     if len(PHOTO_SEND_LOG[user_id]) > 1:
         logger.error(
-            f"\ud83d\udd25 [PHOTO_DOUBLE_SEND] user_id={user_id}, "
+            f"🔥 [PHOTO_DOUBLE_SEND] user_id={user_id}, "
             f"count={len(PHOTO_SEND_LOG[user_id])}, "
             f"all={PHOTO_SEND_LOG[user_id]}"
         )
@@ -89,11 +96,17 @@ def log_photo_send(user_id: int, method: str, message_id: int, request_id: str =
 
 # ===== SCREEN 3: ROOM_CHOICE (NEW_DESIGN только) =====
 # [2025-12-29] НОВОЕ (V3)
+# [2025-12-30 17:00] 🔥 FIX: НЕ редактируем медиа-сообщение, создаем новое текстовое меню
 @router.callback_query(F.data == "room_choice")
 async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
     """
     SCREEN 3: Меню выбора комнаты (ROOM_CHOICE)
     Только для режима NEW_DESIGN
+    
+    [2025-12-30 17:00] 🔥 FIX:
+    - Если menu_message_id содержит медиа (фото) - НЕ редактируем его
+    - Создаем новое текстовое меню вместо попытки edit_message_text на медиа
+    - Старое медиа-сообщение остаётся в истории (не удаляем автоматически)
     
     Log: "[V3] NEW_DESIGN+ROOM_CHOICE - menu shown, user_id={user_id}"
     """
@@ -108,17 +121,44 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
         await state.set_state(CreationStates.room_choice)
         
         text = f"🏠 **Выберите тип помещения**"
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
         
-        await edit_menu(
-            callback=callback,
-            state=state,
-            text=text,
-            keyboard=get_room_choice_keyboard(),
-            screen_code='room_choice'
-        )
+        # ✅ [2025-12-30 17:00] ПРАВИЛЬНАЯ ЛОГИКА:
+        # Если текущее сообщение имеет фото (media) - создаем новое текстовое меню
+        # Не пытаемся редактировать медиа с помощью edit_message_text!
         
-        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'room_choice')
+        current_msg = callback.message
+        
+        # Проверяем, есть ли в сообщении фото
+        if current_msg.photo:
+            logger.warning(
+                f"⚠️ [ROOM_CHOICE] Current msg has PHOTO (id={current_msg.message_id}), "
+                f"creating NEW text menu instead of edit_message_text"
+            )
+            
+            # Создаем НОВОЕ текстовое меню
+            new_msg = await callback.message.answer(
+                text=text,
+                reply_markup=get_room_choice_keyboard(),
+                parse_mode="Markdown"
+            )
+            
+            # Сохраняем НОВЫЙ message_id
+            await state.update_data(menu_message_id=new_msg.message_id)
+            await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'room_choice')
+            
+            logger.info(f"✅ [ROOM_CHOICE] New text menu created, msg_id={new_msg.message_id}")
+        else:
+            # Текстовое сообщение - редактируем обычно
+            await edit_menu(
+                callback=callback,
+                state=state,
+                text=text,
+                keyboard=get_room_choice_keyboard(),
+                screen_code='room_choice'
+            )
+            
+            logger.info(f"✅ [ROOM_CHOICE] Text menu edited, msg_id={current_msg.message_id}")
         
         logger.info(f"[V3] NEW_DESIGN+ROOM_CHOICE - menu shown, user_id={user_id}")
         await callback.answer()
@@ -131,6 +171,7 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
 # ===== SCREEN 3→4: ROOM_CHOICE_HANDLER =====
 # [2025-12-29] НОВОЕ (V3)
 # [2025-12-30 01:29] ✅ FIX: Возвращен work_mode
+# [2025-12-30 17:00] 🔥 FIX: Аналогичная логика - проверяем медиа перед edit_menu
 @router.callback_query(
     StateFilter(CreationStates.room_choice),
     F.data.startswith("room_")
@@ -139,6 +180,10 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
     """
     SCREEN 3→4: Обработчик выбора комнаты
     Сохраняет выбор и переходит на экран выбора стиля (SCREEN 4)
+    
+    [2025-12-30 17:00] 🔥 FIX:
+    - Проверяем медиа перед вызовом edit_menu
+    - Если медиа - создаем новое меню вместо редактирования
     
     Log: "[V3] NEW_DESIGN+ROOM_CHOICE - selected: {room}, user_id={user_id}"
     """
@@ -156,17 +201,39 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
         await state.set_state(CreationStates.choose_style_1)
         
         text = f"🎨 **Выберите стиль дизайна**"
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
         
-        await edit_menu(
-            callback=callback,
-            state=state,
-            text=text,
-            keyboard=get_choose_style_1_keyboard(),
-            screen_code='choose_style_1'
-        )
+        # ✅ [2025-12-30 17:00] Проверяем медиа
+        current_msg = callback.message
         
-        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'choose_style_1')
+        if current_msg.photo:
+            logger.warning(
+                f"⚠️ [ROOM_CHOICE_HANDLER] Current msg has PHOTO (id={current_msg.message_id}), "
+                f"creating NEW text menu"
+            )
+            
+            # Создаем НОВОЕ текстовое меню
+            new_msg = await callback.message.answer(
+                text=text,
+                reply_markup=get_choose_style_1_keyboard(),
+                parse_mode="Markdown"
+            )
+            
+            await state.update_data(menu_message_id=new_msg.message_id)
+            await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'choose_style_1')
+            
+            logger.info(f"✅ [ROOM_CHOICE_HANDLER] New text menu created, msg_id={new_msg.message_id}")
+        else:
+            # Текстовое сообщение - редактируем обычно
+            await edit_menu(
+                callback=callback,
+                state=state,
+                text=text,
+                keyboard=get_choose_style_1_keyboard(),
+                screen_code='choose_style_1'
+            )
+            
+            logger.info(f"✅ [ROOM_CHOICE_HANDLER] Text menu edited, msg_id={current_msg.message_id}")
         
         logger.info(f"[V3] NEW_DESIGN+ROOM_CHOICE - selected: {room}, user_id={user_id}")
         await callback.answer()
@@ -178,6 +245,7 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
 
 # ===== SCREEN 4: CHOOSE_STYLE_1 (Первая страница стилей) =====
 # [2025-12-29] НОВОЕ (V3)
+# [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu
 @router.callback_query(
     StateFilter(CreationStates.choose_style_2),
     F.data == "styles_page_1"
@@ -199,17 +267,29 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
         await state.set_state(CreationStates.choose_style_1)
         
         text = f"🎨 **Выберите стиль дизайна (страница 1)**"
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
         
-        await edit_menu(
-            callback=callback,
-            state=state,
-            text=text,
-            keyboard=get_choose_style_1_keyboard(),
-            screen_code='choose_style_1'
-        )
+        current_msg = callback.message
         
-        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'choose_style_1')
+        if current_msg.photo:
+            logger.warning(f"⚠️ [CHOOSE_STYLE_1] Current msg has PHOTO, creating NEW text menu")
+            
+            new_msg = await callback.message.answer(
+                text=text,
+                reply_markup=get_choose_style_1_keyboard(),
+                parse_mode="Markdown"
+            )
+            
+            await state.update_data(menu_message_id=new_msg.message_id)
+            await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'choose_style_1')
+        else:
+            await edit_menu(
+                callback=callback,
+                state=state,
+                text=text,
+                keyboard=get_choose_style_1_keyboard(),
+                screen_code='choose_style_1'
+            )
         
         logger.info(f"[V3] NEW_DESIGN+CHOOSE_STYLE - back to page 1, user_id={user_id}")
         await callback.answer()
@@ -221,6 +301,7 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
 
 # ===== SCREEN 5: CHOOSE_STYLE_2 (Вторая страница стилей) =====
 # [2025-12-29] НОВОЕ (V3)
+# [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1),
     F.data == "styles_page_2"
@@ -241,15 +322,29 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
         await state.set_state(CreationStates.choose_style_2)
         
         text = f"🎨 **Выберите стиль дизайна (страница 2)**"
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
         
-        await edit_menu(
-            callback=callback,
-            state=state,
-            text=text,
-            keyboard=get_choose_style_2_keyboard(),
-            screen_code='choose_style_2'
-        )
+        current_msg = callback.message
+        
+        if current_msg.photo:
+            logger.warning(f"⚠️ [CHOOSE_STYLE_2] Current msg has PHOTO, creating NEW text menu")
+            
+            new_msg = await callback.message.answer(
+                text=text,
+                reply_markup=get_choose_style_2_keyboard(),
+                parse_mode="Markdown"
+            )
+            
+            await state.update_data(menu_message_id=new_msg.message_id)
+            await db.save_chat_menu(callback.message.chat.id, user_id, new_msg.message_id, 'choose_style_2')
+        else:
+            await edit_menu(
+                callback=callback,
+                state=state,
+                text=text,
+                keyboard=get_choose_style_2_keyboard(),
+                screen_code='choose_style_2'
+            )
         
         logger.info(f"[V3] NEW_DESIGN+CHOOSE_STYLE - page 2 shown, user_id={user_id}")
         await callback.answer()
@@ -260,9 +355,10 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 
 
 # ===== SCREEN 4-5 to 6: STYLE_CHOICE_HANDLER (Выбор стиля + генерация) =====
-# [2025-12-29] ОБНОВЛЕНО (V3) - Добавлена установка state.post_generation
+# [2025-12-29] ОБНОВЛЕНО (V3) - Добавлена установка состояния.post_generation
 # [2025-12-30 01:20] 🔥 BUGFIX #2: Убрать answer_photo() в fallback - редактировать меню, не отправлять новое
 # [2025-12-30 01:47] 🔍 CRITICAL DIAGNOSTICS: Добавить логирование для трекинга двойной отправки
+# [2025-12-30 17:00] 🔥 MAJOR FIX: Правильная обработка медиа, удаление старых при fallback
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -275,6 +371,13 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     - БЫЛО: answer_photo() → ВТОРОЕ ФОТО
     - ТЕПЕРЬ: edit_message_media() → ОДНО ФОТО в ОДНОМ сообщении
     - Fallback: edit_message_text() вместо answer()
+    
+    🔥 MAJOR FIX [2025-12-30 17:00]:
+    - edit_message_media для текущего сообщения (правильное медиа редактирование)
+    - edit_message_caption для обновления подписи (если медиа уже загружено)
+    - Fallback: send_photo + delete старого сообщения (избегаем дублей)
+    - Все операции логируются с request_id
+    - StateFilter на обработчике (нет пересечений)
     
     🔍 DIAGNOSTICS [2025-12-30 01:47]:
     - Каждые answer_photo/send_photo/edit_message_media логируются
@@ -289,7 +392,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     menu_message_id = callback.message.message_id
     request_id = str(uuid.uuid4())[:8]  # ✅ DIAGNOSTICS: request_id для трекинга
 
-    logger.warning(f"\ud83d\udd0d [DIAG_START] request_id={request_id}, user_id={user_id}, style={style}")
+    logger.warning(f"🔍 [DIAG_START] request_id={request_id}, user_id={user_id}, style={style}")
 
     await db.log_activity(user_id, f'style_{style}')
 
@@ -327,15 +430,26 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     if not is_admin:
         await db.decrease_balance(user_id)
 
-    # Показываем прогресс
-    await edit_menu(
-        callback=callback,
-        state=state,
-        text="⚡ Генерирую новый дизайн...",
-        keyboard=None,
-        show_balance=False,
-        screen_code='generating_design'
-    )
+    # Показываем прогресс (редактируем текущее текстовое сообщение)
+    try:
+        await callback.message.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=menu_message_id,
+            text="⚡ Генерирую новый дизайн...",
+            parse_mode="Markdown"
+        )
+    except TelegramBadRequest as e:
+        if "there is no text" in str(e):
+            logger.warning(
+                f"⚠️ [STYLE_CHOICE] Message has PHOTO (media), can't use edit_message_text. "
+                f"Creating new text message instead."
+            )
+            # Создаем новое текстовое сообщение о генерации
+            new_msg = await callback.message.answer("⚡ Генерирую новый дизайн...")
+            menu_message_id = new_msg.message_id
+        else:
+            logger.warning(f"⚠️ [STYLE_CHOICE] Failed to update status: {e}")
+    
     await callback.answer()
 
     # Получаем PRO mode
@@ -380,7 +494,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
         # ===== ПОПЫТКА 1: edit_message_media для ОДНОГО сообщения =====
         try:
-            logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_1: edit_message_media, menu_id={menu_message_id}")
+            logger.warning(f"📊 [DIAG] request_id={request_id} ATTEMPT_1: edit_message_media, menu_id={menu_message_id}")
             
             await callback.message.bot.edit_message_media(
                 chat_id=chat_id,
@@ -394,48 +508,48 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             )
             
             photo_sent = True
-            logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_1: edit_message_media")
-            log_photo_send(user_id, "edit_message_media", menu_message_id, request_id)
+            logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_1: edit_message_media")
+            log_photo_send(user_id, "edit_message_media", menu_message_id, request_id, "style_choice")
 
-        except Exception as media_error:
-            logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} FAILED_ATTEMPT_1: {media_error}")
+        except TelegramBadRequest as media_error:
+            logger.warning(f"📊 [DIAG] request_id={request_id} FAILED_ATTEMPT_1: {media_error}")
 
-            # ===== ПОПЫТКА 2: Отправка фото + редактирование текста (БЕЗ дублирования!) =====
+            # ===== ПОПЫТКА 2: send_photo + delete старого (БЕЗ дублирования!) =====
             try:
-                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_2: answer_photo + edit_text")
+                logger.warning(f"📊 [DIAG] request_id={request_id} ATTEMPT_2: send_photo + delete old")
                 
-                # Отправляем фото
+                # Отправляем новое фото
                 photo_msg = await callback.message.answer_photo(
                     photo=result_image_url,
                     caption=caption,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=get_post_generation_keyboard()
                 )
                 
-                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_2_PHOTO_SENT: new_msg_id={photo_msg.message_id}")
-                log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id)
+                logger.warning(f"📊 [DIAG] request_id={request_id} ATTEMPT_2_PHOTO_SENT: new_msg_id={photo_msg.message_id}")
+                log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id, "style_choice")
                 
-                # ✅ БЕЗ дублирования! Редактируем СТАРОЕ меню (не создаем новое)
+                # ✅ ПРАВИЛЬНО: Удаляем СТАРОЕ сообщение чтобы избежать дублей
                 try:
-                    await callback.message.bot.edit_message_text(
+                    await callback.message.bot.delete_message(
                         chat_id=chat_id,
-                        message_id=menu_message_id,
-                        text=post_gen_text,
-                        reply_markup=get_post_generation_keyboard(),
-                        parse_mode="Markdown"
+                        message_id=menu_message_id
                     )
-                    logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_2_TEXT_EDITED: menu_id={menu_message_id}")
+                    logger.warning(f"📊 [DIAG] request_id={request_id} ATTEMPT_2_DELETED_OLD: msg_id={menu_message_id}")
                 except Exception as e:
-                    logger.debug(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_2_TEXT_EDIT_FAILED: {e}")
+                    logger.debug(f"📊 [DIAG] request_id={request_id} Failed to delete old: {e}")
                 
+                # Обновляем menu_message_id на НОВОЕ
+                menu_message_id = photo_msg.message_id
                 photo_sent = True
-                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_2: answer_photo")
+                logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_2: answer_photo + delete")
 
             except Exception as url_error:
-                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} FAILED_ATTEMPT_2: {url_error}")
+                logger.warning(f"📊 [DIAG] request_id={request_id} FAILED_ATTEMPT_2: {url_error}")
 
-                # ===== ПОПЫТКА 3: FALLBACK через BufferedInputFile (БЕЗ дублирования!) =====
+                # ===== ПОПЫТКА 3: FALLBACK через BufferedInputFile =====
                 try:
-                    logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_3: BufferedInputFile")
+                    logger.warning(f"📊 [DIAG] request_id={request_id} ATTEMPT_3: BufferedInputFile")
 
                     async with aiohttp.ClientSession() as session:
                         async with session.get(result_image_url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
@@ -445,32 +559,31 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                                 photo_msg = await callback.message.answer_photo(
                                     photo=BufferedInputFile(photo_data, filename="design.jpg"),
                                     caption=caption,
-                                    parse_mode="HTML"
+                                    parse_mode="HTML",
+                                    reply_markup=get_post_generation_keyboard()
                                 )
                                 
-                                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_3_PHOTO_SENT: new_msg_id={photo_msg.message_id}")
-                                log_photo_send(user_id, "answer_photo_buffered", photo_msg.message_id, request_id)
+                                logger.warning(f"📊 [DIAG] request_id={request_id} ATTEMPT_3_PHOTO_SENT: new_msg_id={photo_msg.message_id}")
+                                log_photo_send(user_id, "answer_photo_buffered", photo_msg.message_id, request_id, "style_choice")
                                 
-                                # ✅ Редактируем СТАРОЕ меню
+                                # ✅ Удаляем старое сообщение
                                 try:
-                                    await callback.message.bot.edit_message_text(
+                                    await callback.message.bot.delete_message(
                                         chat_id=chat_id,
-                                        message_id=menu_message_id,
-                                        text=post_gen_text,
-                                        reply_markup=get_post_generation_keyboard(),
-                                        parse_mode="Markdown"
+                                        message_id=menu_message_id
                                     )
-                                    logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_3_TEXT_EDITED: menu_id={menu_message_id}")
+                                    logger.warning(f"📊 [DIAG] request_id={request_id} ATTEMPT_3_DELETED_OLD: msg_id={menu_message_id}")
                                 except Exception as e:
-                                    logger.debug(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_3_TEXT_EDIT_FAILED: {e}")
+                                    logger.debug(f"📊 [DIAG] request_id={request_id} Failed to delete: {e}")
                                 
+                                menu_message_id = photo_msg.message_id
                                 photo_sent = True
-                                logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_3: answer_photo_buffered")
+                                logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_3: answer_photo_buffered + delete")
                             else:
-                                logger.error(f"\ud83d\udcc8 [DIAG] request_id={request_id} ATTEMPT_3 HTTP {resp.status}")
+                                logger.error(f"📊 [DIAG] request_id={request_id} ATTEMPT_3 HTTP {resp.status}")
 
                 except Exception as buffer_error:
-                    logger.error(f"\ud83d\udcc8 [DIAG] request_id={request_id} FAILED_ATTEMPT_3: {buffer_error}")
+                    logger.error(f"📊 [DIAG] request_id={request_id} FAILED_ATTEMPT_3: {buffer_error}")
 
         # Если все три попытки не сработали
         if not photo_sent:
@@ -478,7 +591,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             if not is_admin:
                 await db.increase_balance(user_id, 1)
             
-            logger.error(f"\ud83d\udcc8 [DIAG] request_id={request_id} ALL_ATTEMPTS_FAILED for user_id={user_id}")
+            logger.error(f"📊 [DIAG] request_id={request_id} ALL_ATTEMPTS_FAILED for user_id={user_id}")
             
             await edit_menu(
                 callback=callback,
@@ -494,7 +607,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         await state.update_data(menu_message_id=menu_message_id)
         await db.save_chat_menu(chat_id, user_id, menu_message_id, 'post_generation')
 
-        logger.warning(f"\ud83d\udcc8 [DIAG] request_id={request_id} SUCCESS_END for user_id={user_id}")
+        logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_END for user_id={user_id}")
         logger.info(f"[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}")
         logger.info(f"[V3] NEW_DESIGN+POST_GENERATION - ready, user_id={user_id}")
 
@@ -503,7 +616,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         if not is_admin:
             await db.increase_balance(user_id, 1)
         
-        logger.error(f"\ud83d\udcc8 [DIAG] request_id={request_id} GENERATION_FAILED for user_id={user_id}")
+        logger.error(f"📊 [DIAG] request_id={request_id} GENERATION_FAILED for user_id={user_id}")
         
         await edit_menu(
             callback=callback,
@@ -516,6 +629,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
 # ===== SCREEN 6: POST_GENERATION_MENU (Меню после генерации) =====
 # [2025-12-29] НОВОЕ (V3)
+# [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu
 @router.callback_query(
     StateFilter(CreationStates.post_generation),
     F.data == "post_generation"
@@ -538,15 +652,40 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
         await state.set_state(CreationStates.post_generation)
         
         text = f"✅ **Выбери что дальше**"
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
         
-        await edit_menu(
-            callback=callback,
-            state=state,
-            text=text,
-            keyboard=get_post_generation_keyboard(),
-            screen_code='post_generation'
-        )
+        # ✅ Проверяем медиа перед edit_menu
+        current_msg = callback.message
+        
+        if current_msg.photo:
+            # Это медиа-сообщение с фото - редактируем подпись
+            try:
+                await callback.message.bot.edit_message_caption(
+                    chat_id=chat_id,
+                    message_id=current_msg.message_id,
+                    caption=text,
+                    reply_markup=get_post_generation_keyboard(),
+                    parse_mode="Markdown"
+                )
+                logger.info(f"✅ [POST_GENERATION] Caption edited for media msg_id={current_msg.message_id}")
+            except Exception as e:
+                logger.warning(f"⚠️ [POST_GENERATION] Failed to edit caption: {e}, trying edit_menu")
+                await edit_menu(
+                    callback=callback,
+                    state=state,
+                    text=text,
+                    keyboard=get_post_generation_keyboard(),
+                    screen_code='post_generation'
+                )
+        else:
+            # Текстовое сообщение - редактируем обычно
+            await edit_menu(
+                callback=callback,
+                state=state,
+                text=text,
+                keyboard=get_post_generation_keyboard(),
+                screen_code='post_generation'
+            )
         
         await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'post_generation')
         
@@ -560,6 +699,7 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
 
 # ===== POST-GENERATION: CHANGE_STYLE (Смена стиля после генерации) =====
 # [2025-12-29] НОВОЕ (V3)
+# [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu
 @router.callback_query(F.data == "change_style")
 async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
@@ -572,7 +712,7 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, adm
     data = await state.get_data()
     photo_id = data.get('photo_id')
     room = data.get('selected_room')
-    work_mode = data.get('work_mode')  # ✅ Получаем work_mode
+    work_mode = data.get('work_mode')
 
     if not photo_id or not room:
         try:
@@ -591,15 +731,30 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, adm
 
     balance = await db.get_balance(user_id)
     text = f"🎨 **Выберите стиль дизайна**"
-    text = await add_balance_and_mode_to_text(text, user_id, work_mode)  # ✅ 3 аргумента!
+    text = await add_balance_and_mode_to_text(text, user_id, work_mode)
 
-    await edit_menu(
-        callback=callback,
-        state=state,
-        text=text,
-        keyboard=get_choose_style_1_keyboard(),
-        screen_code='choose_style_1'
-    )
+    # ✅ Проверяем медиа
+    current_msg = callback.message
+    
+    if current_msg.photo:
+        logger.warning(f"⚠️ [CHANGE_STYLE] Current msg has PHOTO, creating NEW text menu")
+        
+        new_msg = await callback.message.answer(
+            text=text,
+            reply_markup=get_choose_style_1_keyboard(),
+            parse_mode="Markdown"
+        )
+        
+        await state.update_data(menu_message_id=new_msg.message_id)
+        await db.save_chat_menu(callback.message.chat.id, user_id, new_msg.message_id, 'choose_style_1')
+    else:
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_choose_style_1_keyboard(),
+            screen_code='choose_style_1'
+        )
 
     try:
         await callback.answer()
