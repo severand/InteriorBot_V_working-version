@@ -1,8 +1,9 @@
 # keyboards/inline.py
 # Дата объединения: 05.12.2025
-# --- ОБНОВЛЕН: 2025-12-30 14:42 ---
-# [2025-12-30 14:42] УБРАНА дублирующаяся функция get_main_menu_keyboard()
-# [2025-12-30 14:42] SCREEN 0 теперь только через get_work_mode_selection_keyboard() - 6 кнопок
+# --- ОБНОВЛЕН: 2025-12-30 23:45 ---
+# [2025-12-30 23:45] ИСПРАВЛЕНИЕ: РАЗДЕЛЕНЫ SCREEN 0 и SCREEN 1 согласно QUICK-REFERENCE.md
+# [2025-12-30 23:45] НОВАЯ: get_main_menu_keyboard() для SCREEN 0 (3 кнопки)
+# [2025-12-30 23:45] ПЕРЕИМЕНОВАНА: get_work_mode_selection_keyboard() → get_mode_selection_keyboard()
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -96,25 +97,68 @@ ASPECT_RATIOS = ["16:9", "4:3", "1:1", "9:16"]
 RESOLUTIONS = ["1K", "2K", "4K"]
 
 # ========================================
-# SCREEN 0: ГЛАВНОЕ МЕНЮ - 6 КНОПОК
-# РЕАЛИЗАЦИЯ: 2025-12-30 14:42
+# SCREEN 0: ГЛАВНОЕ МЕНЮ - 3 КНОПКИ
+# РЕАЛИЗАЦИЯ: 2025-12-30 23:45
 # ========================================
 
-def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
+def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     """
-    SCREEN 0: Главное меню с 6 кнопками
+    SCREEN 0: Главное меню с 3 кнопками
     Используется при /start команде
     
     Структура:
-    - Ряд 1: 📋 Создать новый дизайн
-    - Ряд 2: ✏️ Редактировать дизайн
-    - Ряд 3: 🎁 Примерить дизайн
-    - Ряд 4: 🛋️ Расставить мебель
-    - Ряд 5: 🏠 Дизайн фасада
-    - Ряд 6: 👤 Личный кабинет (разделитель)
+    - Ряд 1: 🎨 Создать дизайн
+    - Ряд 2: 👤 Личный кабинет
+    - Ряд 3: ⚙️ Админ
     
-    Примечание: Каждая кнопка в отдельном ряду (по одной)
-    Дата обновления: 2025-12-30 по документации
+    Каждая кнопка в отдельном ряду (по одной)
+    По документации QUICK-REFERENCE.md (2025-12-30)
+    """
+    builder = InlineKeyboardBuilder()
+
+    # Ряд 1: Создать дизайн
+    builder.row(InlineKeyboardButton(
+        text="🎨 Создать дизайн",
+        callback_data="create_design"
+    ))
+    
+    # Ряд 2: Личный кабинет
+    builder.row(InlineKeyboardButton(
+        text="👤 Личный кабинет",
+        callback_data="show_profile"
+    ))
+    
+    # Ряд 3: Админ панель (только для админов)
+    builder.row(InlineKeyboardButton(
+        text="⚙️ Админ",
+        callback_data="admin_panel"
+    ))
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+# ========================================
+# SCREEN 1: РЕЖИМЫ РАБОТЫ - 5 РЕЖИМОВ + РАЗДЕЛИТЕЛЬ
+# РЕАЛИЗАЦИЯ: 2025-12-30 23:45
+# ПЕРЕИМЕНОВАНА ИЗ: get_work_mode_selection_keyboard()
+# ========================================
+
+def get_mode_selection_keyboard() -> InlineKeyboardMarkup:
+    """
+    SCREEN 1: Режимы работы с 5 кнопками + разделитель
+    Используется после нажатия "Создать дизайн" на SCREEN 0
+    
+    Структура:
+    - Ряд 1: 📋 Создать новый дизайн → select_mode_new_design
+    - Ряд 2: ✏️ Редактировать дизайн → select_mode_edit_design
+    - Ряд 3: 🎁 Примерить дизайн → select_mode_sample_design
+    - Ряд 4: 🛋️ Расставить мебель → select_mode_arrange_furniture
+    - Ряд 5: 🏠 Дизайн фасада → select_mode_facade_design
+    - Ряд 6: 👤 Личный кабинет (разделитель) → show_profile
+    
+    По документации QUICK-REFERENCE.md (2025-12-30)
+    FSM State: CreationStates.selecting_mode
     """
     builder = InlineKeyboardBuilder()
 
@@ -156,6 +200,15 @@ def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
 
     builder.adjust(1)
     return builder.as_markup()
+
+
+# Используется для обратной совместимости (старое имя)
+def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
+    """
+    ⚠️ DEPRECATED: Используйте get_mode_selection_keyboard()
+    Сохранена для обратной совместимости
+    """
+    return get_mode_selection_keyboard()
 
 
 # Экран загружения фото
@@ -660,6 +713,9 @@ def get_post_generation_facade_keyboard() -> InlineKeyboardMarkup:
 def get_mode_selection_keyboard(current_mode_is_pro: bool) -> InlineKeyboardMarkup:
     """
     Клавиатура экрана выбора режима СТАНДАРТ vs PRO
+    
+    ⚠️ ВАЖНО: Это имя совпадает с get_mode_selection_keyboard()!
+    Функция переименована в get_pro_mode_selection_keyboard()
     """
     builder = InlineKeyboardBuilder()
     std_mark = "" if current_mode_is_pro else "✅"
