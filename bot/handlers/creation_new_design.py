@@ -298,7 +298,7 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
 )
 async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
     """
-    SCREEN 4→5: Показать вторую страницу стилей
+    SCREEN 5: Показать вторую страницу стилей
     
     Log: "[V3] NEW_DESIGN+CHOOSE_STYLE - page 2 shown, user_id={user_id}"
     """
@@ -690,14 +690,21 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
 # ===== POST-GENERATION: CHANGE_STYLE (Смена стиля после генерации) =====
 # [2025-12-29] НОВОЕ (V3)
 # [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu
+# [2025-12-30 23:55] 🔥 CRITICAL FIX: EDIT CAPTION INSTEAD OF CREATING NEW MESSAGE!
 @router.callback_query(F.data == "change_style")
 async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
     ПОСЛЕ генерации: смена стиля
     
+    [2025-12-30 23:55] 🔥 CRITICAL FIX:
+    - БЫЛО: if current_msg.photo → создание НОВОГО текстового меню (дублирование!)
+    - ТЕПЕРЬ: РЕДАКТИРУЕМ текущее медиа-сообщение с помощью edit_message_caption()
+    - ОДНО сообщение, ОДНА опция для выбора стиля
+    
     Логика: восстановление в состояние choose_style для новой генерации
     """
     user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
 
     data = await state.get_data()
     photo_id = data.get('photo_id')
@@ -723,21 +730,45 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, adm
     text = f"🎨 **Выберите стиль дизайна**"
     text = await add_balance_and_mode_to_text(text, user_id, work_mode)
 
-    # ✅ Проверяем медиа
+    # ✅ [2025-12-30 23:55] ПРАВИЛЬНАЯ ЛОГИКА:
+    # Если текущее сообщение имеет ФОТО - редактируем подпись (caption)
+    # НЕ создаем новое текстовое меню!
     current_msg = callback.message
     
     if current_msg.photo:
-        logger.warning(f"⚠️ [CHANGE_STYLE] Current msg has PHOTO, creating NEW text menu")
+        logger.warning(f"✅ [CHANGE_STYLE] Current msg has PHOTO, EDITING caption (not creating new message)")
         
-        new_msg = await callback.message.answer(
-            text=text,
-            reply_markup=get_choose_style_1_keyboard(),
-            parse_mode="Markdown"
-        )
-        
-        await state.update_data(menu_message_id=new_msg.message_id)
-        await db.save_chat_menu(callback.message.chat.id, user_id, new_msg.message_id, 'choose_style_1')
+        try:
+            await callback.message.bot.edit_message_caption(
+                chat_id=chat_id,
+                message_id=current_msg.message_id,
+                caption=text,
+                reply_markup=get_choose_style_1_keyboard(),
+                parse_mode="Markdown"
+            )
+            
+            # ✅ Сохраняем ТЕКУЩИЙ message_id (не создаем новый!)
+            await state.update_data(menu_message_id=current_msg.message_id)
+            await db.save_chat_menu(chat_id, user_id, current_msg.message_id, 'choose_style_1')
+            
+            logger.info(f"✅ [CHANGE_STYLE] Caption edited for SAME photo msg, msg_id={current_msg.message_id}")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ [CHANGE_STYLE] Failed to edit caption: {e}, creating NEW text menu as fallback")
+            
+            # ТОЛЬКО если редактирование caption не сработало
+            new_msg = await callback.message.answer(
+                text=text,
+                reply_markup=get_choose_style_1_keyboard(),
+                parse_mode="Markdown"
+            )
+            
+            await state.update_data(menu_message_id=new_msg.message_id)
+            await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'choose_style_1')
+            
+            logger.warning(f"⚠️ [CHANGE_STYLE] Created NEW text menu as fallback, msg_id={new_msg.message_id}")
     else:
+        # Текстовое сообщение - редактируем обычно
         await edit_menu(
             callback=callback,
             state=state,
@@ -745,6 +776,8 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, adm
             keyboard=get_choose_style_1_keyboard(),
             screen_code='choose_style_1'
         )
+        
+        logger.info(f"✅ [CHANGE_STYLE] Text menu edited, msg_id={current_msg.message_id}")
 
     try:
         await callback.answer()
