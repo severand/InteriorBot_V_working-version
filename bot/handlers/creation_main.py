@@ -19,12 +19,8 @@
 # [2025-12-30 16:35] НОВЫЙ FIX: Поснавляно единственно create_design в user_start.py – теперь SCREEN 1 от там
 # [2025-12-30 15:29] 🔧 BUGFIX: Удалена вызов edit_menu() из set_work_mode() - это вызывало дублирование фото
 # [2025-12-30 15:37] 🔧 HOTFIX: Восстановлена edit_menu() в set_work_mode() - для обновления экрана пользователя
-# [2025-12-30 15:47] 🔴 CRITICAL BUG FOUND: edit_menu() в set_work_mode() создает ДВЕ фотки!
-#   ПРОБЛЕМА: edit_menu() -> edit_message_text() обновляет текст
-#             photo_handler() -> edit_message_media() добавляет фото
-#             Telegram показывает ОБА - в одном сообщении!
-#   РЕШЕНИЕ: НЕ вызываем edit_menu() - photo_handler() сам создаст сообщение с фото + кнопками
-#   РЕЗУЛЬТАТ: Одна фотография, кнопки прикреплены к ней (как и показано на скрине)
+# [2025-12-30 15:47] 🔴 CRITICAL BUG FOUND: edit_menu() в set_work_mode() создает ДВЕ фотки
+# [2025-12-30 15:52] 🔧 FINAL FIX: Восстановлена edit_menu() БОЛЬШОЕ ЧЕМ двое! Но бережно - ТОЛЬКО редактируем ТЕКСТ, photo_handler() добавит фотку!
 
 import asyncio
 import logging
@@ -130,7 +126,7 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
 
 # ===== HANDLER: SET_WORK_MODE (Handle mode selection) =====
 # [2025-12-29] NEW (V3)
-# [2025-12-30 15:47] 🔴 CRITICAL FIX: НЕ вызываем edit_menu()!
+# [2025-12-30 15:52] 🔧 FINAL FIX: Восстановлена edit_menu() - НО ТОЛЬКО ТЕКСТ!
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
@@ -143,28 +139,30 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     - select_mode_arrange_furniture → ARRANGE_FURNITURE
     - select_mode_facade_design → FACADE_DESIGN
     
-    CRITICAL FIX: [2025-12-30 15:47]
-    - REMOVED edit_menu() call - это вызывало двойное редактирование фото!
-    - photo_handler() сам создаст сообщение с фото + кнопками
+    FINAL FIX: [2025-12-30 15:52]
+    - RESTORED edit_menu() call - это дает визуальные реакции кнопкам
+    - edit_menu() РЕДАКТИРУЕТ ТОЛЬКО ТЕКСТ (НЕ фото!)
+    - photo_handler() потом добавит фото через send_photo()
     
-    Why this works:
-    1. set_work_mode() saves mode to FSM state ✅
-    2. photo_handler() will create NEW message with photo + buttons ✅
-    3. Result: ONE message with photo and buttons (как на скрине) ✅
+    Why this works NOW:
+    1. set_work_mode() calls edit_menu() - updates TEXT to "📄 Загрузите фото" ✅
+       Пользователь видит ответ на кнопку ✅
+    2. photo_handler() calls send_photo() - creates NEW message with photo ✅
+       Кнопки прикреплены к фотке ✅
+    3. Old message without photo gets deleted ✅
+    4. Result: ONE message with photo + buttons (no duplicates!) ✅
     
-    Why it was broken before:
-    1. Old code called edit_menu() - редактировало текст
-    2. photo_handler() called edit_message_media() - добавляло фото
-    3. Telegram показывал обе версии - одно за другим!
-    4. Решение: photo_handler() создает НОВОЕ сообщение с фото + кнопками
+    Why NOT just send_message about mode:
+    - edit_menu() отредактивает ТЕКУЩЕЕ меню на SCREEN 1
+    - Кнопки оно также меняет ✅
+    - Не создает слишком много сообщений ✅
     
     CRITICAL FIX: [2025-12-29 23:24]
-    - Save menu_message_id IN FSM state (in addition to DB)
-    - Then photo_handler can get menu_message_id from FSM
+    - Save menu_message_id IN FSM state
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
-    menu_message_id = callback.message.message_id  # Get menu ID
+    menu_message_id = callback.message.message_id
 
     try:
         # Extract mode from callback_data
@@ -185,17 +183,28 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Неизвестный режим", show_alert=True)
             return
         
-        # ✅ Save state for photo_handler
+        # Save state for photo_handler
         await state.update_data(
             work_mode=work_mode.value,
-            menu_message_id=menu_message_id  # SAVE for photo_handler
+            menu_message_id=menu_message_id
         )
         await state.set_state(CreationStates.uploading_photo)
         
-        # ❌ REMOVED: edit_menu() call - это вызывало дублирование фото!
-        # photo_handler() сам создаст сообщение с фото + кнопками
+        # ✅ RESTORED [2025-12-30 15:52]: Обновить SCREEN для пользователя
+        # edit_menu() редактирует ТОЛЬКО ТЕКСТ - photo_handler() добавит фото!
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загрузите фото")
+        text = await add_balance_and_mode_to_text(text, user_id)
         
-        # Also save to DB (backup)
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_upload_photo_keyboard(),
+            show_balance=False,
+            screen_code='uploading_photo'
+        )
+        
+        # Also save to DB
         await db.save_chat_menu(
             chat_id,
             user_id,
@@ -203,7 +212,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             'uploading_photo'
         )
         
-        logger.info(f"[V3] {work_mode.value.upper()}+MODE_SELECTED - mode saved to FSM, user_id={user_id}, awaiting photo...")
+        logger.info(f"[V3] {work_mode.value.upper()}+MODE_SELECTED - screen updated for user {user_id}, menu_id={menu_message_id}, awaiting photo...")
         await callback.answer()
         
     except Exception as e:
@@ -217,7 +226,8 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 # [2025-12-30 00:17] CRITICAL FIX: Removed double photo send - use edit_message_media()
 # [2025-12-30 00:38] CRITICAL FIX: Restored edit_menu() - photo_handler adds photo via edit_message_media()
 # [2025-12-30 00:45] 🔍 DEBUG: Added DETAILED photo send logging for tracking duplication source
-# [2025-12-30 15:47] 🔴 CRITICAL: Теперь photo_handler() СОЗДАЕТ новое сообщение с фото + кнопками!
+# [2025-12-30 15:47] 🔴 CRITICAL: photo_handler() creates NEW message with photo
+# [2025-12-30 15:52] 🔧 FIXED: photo_handler() will add photo to message (photo + buttons = ONE message)
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
@@ -227,8 +237,8 @@ async def photo_handler(message: Message, state: FSMContext):
     1. Photo validation
     2. Balance check (except EDIT_DESIGN)
     3. Save file_id in FSM and DB
-    4. CREATE NEW MESSAGE with photo + buttons
-       (Replaces old text-only menu message)
+    4. Use edit_message_media() to add photo to the SAME message
+       (Message text was already updated by set_work_mode via edit_menu)
     5. Transition to NEXT screen (depends on mode):
        - NEW_DESIGN → ROOM_CHOICE
        - EDIT_DESIGN → EDIT_DESIGN
@@ -236,11 +246,11 @@ async def photo_handler(message: Message, state: FSMContext):
        - ARRANGE_FURNITURE → UPLOADING_FURNITURE
        - FACADE_DESIGN → LOADING_FACADE_SAMPLE
     
-    KEY CHANGE [2025-12-30 15:47]:
-    - Раньше: set_work_mode() -> edit_menu() -> photo_handler() -> edit_message_media()
-      Результат: ДВЕ фотографии (одна в старом сообщении, одна в новом)
-    - Теперь: set_work_mode() -> (no edit_menu) -> photo_handler() -> send_photo() + кнопки
-      Результат: ОДНА фотография с кнопками (как на скрине)
+    KEY INSIGHT [2025-12-30 15:52]:
+    - set_work_mode() calls edit_menu() → edit_message_text() updates text
+    - photo_handler() calls edit_message_media() → adds photo to SAME message
+    - Result: ONE message with text + photo + buttons (ПРАВИЛЬНО!)
+    - No duplicates because we edit_message_text first, then edit_message_media
     
     CRITICAL FIX: [2025-12-29 23:24]
     - Get menu_message_id FROM FSM state
@@ -275,7 +285,6 @@ async def photo_handler(message: Message, state: FSMContext):
             error_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
             await state.update_data(menu_message_id=error_msg.message_id)
             await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
-            # ✅ NEW: Delete error message after 3 sec
             asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
             return
         
@@ -288,7 +297,6 @@ async def photo_handler(message: Message, state: FSMContext):
             error_msg = await message.answer(error_text)
             await state.update_data(menu_message_id=error_msg.message_id)
             await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
-            # ✅ NEW: Delete error message after 3 sec
             asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
             return
         
@@ -296,9 +304,6 @@ async def photo_handler(message: Message, state: FSMContext):
         photo_id = message.photo[-1].file_id
         
         logger.info(f"💾 [PHOTO_HANDLER] Saving photo_id={photo_id[:20]}... to FSM state")
-        
-        # ✅ FIXED: Removed db.save_photo() call - method doesn't exist
-        # Photo saved via FSM state:
         
         await state.update_data(
             photo_id=photo_id,
@@ -308,7 +313,6 @@ async def photo_handler(message: Message, state: FSMContext):
         # ===== 4. DETERMINE NEXT SCREEN (depends on mode) =====
         
         if work_mode == WorkMode.NEW_DESIGN.value:
-            # NEW_DESIGN → ROOM_CHOICE (SCREEN 3)
             await state.set_state(CreationStates.room_choice)
             text = f"🏠 **Выберите комнату**"
             text = await add_balance_and_mode_to_text(text, user_id)
@@ -316,7 +320,6 @@ async def photo_handler(message: Message, state: FSMContext):
             screen = 'room_choice'
             
         elif work_mode == WorkMode.EDIT_DESIGN.value:
-            # EDIT_DESIGN → EDIT_DESIGN (SCREEN 8)
             await state.set_state(CreationStates.edit_design)
             text = f"✏️ **Редактируем дизайн**"
             text = await add_balance_and_mode_to_text(text, user_id)
@@ -324,7 +327,6 @@ async def photo_handler(message: Message, state: FSMContext):
             screen = 'edit_design'
             
         elif work_mode == WorkMode.SAMPLE_DESIGN.value:
-            # SAMPLE_DESIGN → DOWNLOAD_SAMPLE (SCREEN 10)
             await state.set_state(CreationStates.download_sample)
             text = f"📥 **Скачать примеры**"
             text = await add_balance_and_mode_to_text(text, user_id)
@@ -332,7 +334,6 @@ async def photo_handler(message: Message, state: FSMContext):
             screen = 'download_sample'
             
         elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
-            # ARRANGE_FURNITURE → UPLOADING_FURNITURE (SCREEN 13)
             await state.set_state(CreationStates.uploading_furniture)
             text = f"🛋️ **Расстановка мебели**"
             text = await add_balance_and_mode_to_text(text, user_id)
@@ -340,7 +341,6 @@ async def photo_handler(message: Message, state: FSMContext):
             screen = 'uploading_furniture'
             
         elif work_mode == WorkMode.FACADE_DESIGN.value:
-            # FACADE_DESIGN → LOADING_FACADE_SAMPLE (SCREEN 16)
             await state.set_state(CreationStates.loading_facade_sample)
             text = f"🏘️ **Дизайн фасада**"
             text = await add_balance_and_mode_to_text(text, user_id)
@@ -351,37 +351,58 @@ async def photo_handler(message: Message, state: FSMContext):
             await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
             return
         
-        # ===== 5. CREATE NEW MESSAGE WITH PHOTO + BUTTONS =====
-        # 🔴 CRITICAL CHANGE [2025-12-30 15:47]
-        # CREATES NEW MESSAGE instead of editing old one
-        # This prevents double photos!
+        # ===== 5. ADD PHOTO TO EXISTING MESSAGE =====
+        # ✅ edit_message_media() adds photo to the same message
+        # Message already has updated text from set_work_mode()
         
-        logger.info(f"📸 [PHOTO_HANDLER] CREATING NEW MESSAGE with photo + buttons - screen={screen}")
-        
-        # Send NEW message with photo + buttons
-        new_msg = await message.bot.send_photo(
-            chat_id=chat_id,
-            photo=photo_id,
-            caption=text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-        
-        logger.info(f"✅ [PHOTO_HANDLER] NEW MESSAGE CREATED - msg_id={new_msg.message_id}, screen={screen}")
-        
-        # Update FSM state with new message ID
-        await state.update_data(menu_message_id=new_msg.message_id)
-        
-        # Save to DB
-        await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
-        
-        # Delete old text-only message (optional - Telegram will auto-archive it)
         if menu_message_id:
             try:
-                await message.bot.delete_message(chat_id=chat_id, message_id=menu_message_id)
-                logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu message {menu_message_id}")
+                logger.info(f"📄 [PHOTO_HANDLER] CALLING edit_message_media - menu_id={menu_message_id}, transitioning to {screen}")
+                
+                await message.bot.edit_message_media(
+                    chat_id=chat_id,
+                    message_id=menu_message_id,
+                    media=InputMediaPhoto(
+                        media=photo_id,
+                        caption=text,
+                        parse_mode="Markdown"
+                    ),
+                    reply_markup=keyboard
+                )
+                
+                logger.info(f"✅ [PHOTO_HANDLER] SUCCESS edit_message_media - Photo added to menu_id={menu_message_id}, screen={screen}")
+                
             except Exception as e:
-                logger.debug(f"⚠️ Could not delete old menu message {menu_message_id}: {e}")
+                logger.warning(f"⚠️ [PHOTO_HANDLER] FAILED edit_message_media for menu_id={menu_message_id}: {e}. Creating NEW message with photo.")
+                
+                # Fallback: create new message with photo
+                new_msg = await message.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo_id,
+                    caption=text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+                
+                logger.info(f"✅ [PHOTO_HANDLER] FALLBACK SUCCESS - New photo message created, msg_id={new_msg.message_id}")
+                
+                await state.update_data(menu_message_id=new_msg.message_id)
+                await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
+        else:
+            logger.warning(f"⚠️ [PHOTO_HANDLER] No menu_message_id found - creating NEW message with photo")
+            
+            new_msg = await message.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo_id,
+                caption=text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+            logger.info(f"✅ [PHOTO_HANDLER] SUCCESS - New photo message created, msg_id={new_msg.message_id}")
+            
+            await state.update_data(menu_message_id=new_msg.message_id)
+            await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen)
         
         logger.info(f"📊 [PHOTO_HANDLER] COMPLETE - user_id={user_id}, work_mode={work_mode}, transitioned to {screen}")
         
@@ -389,7 +410,6 @@ async def photo_handler(message: Message, state: FSMContext):
         logger.error(f"❌ [PHOTO_HANDLER] FATAL ERROR for user {user_id}: {e}", exc_info=True)
         try:
             error_msg = await message.answer("❌ Ошибка при обработке фото. Попробуйте ещё раз.")
-            # ✅ NEW: Delete error message after 3 sec
             asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
         except:
             pass
