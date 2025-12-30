@@ -1,15 +1,8 @@
 # keyboards/inline.py
 # Дата объединения: 05.12.2025
-# --- ОБНОВЛЕН: 2025-12-24 13:12 ---
-# [2025-12-08 13:50] Добавлена новая клавиатура get_what_is_in_photo_keyboard() - 10 кнопок (интерьер+экстерьер)
-# [2025-12-08 13:50] УДАЛЕНА кнопка "Очистить пространство" из get_room_keyboard() согласно ТЗ
-# [2025-12-24 13:12] ОКОНЧАТЕЛЬНАЕ РЕАЛИЗАЦИЕ: 4 кнопки СООТНОШЕНИЯ В ОДНОМ РЯДУ (по 25% каждая)
-# [2025-12-29 15:20] PHASE 1.3.1: Добавлена новая функция get_work_mode_selection_keyboard() для SCREEN 1
-# [2025-12-29 16:21] PHASE 1.3.2: Добавлены клавиатуры для SCREEN 2-5
-# [2025-12-29 16:31] ФИКС: Оставлена старая get_clear_space_confirm_keyboard(), обновлены все связи
-# [2025-12-29 16:35] ФИКС: Удалена get_post_generation_keyboard_new(), оставлена только старая версия
-# [2025-12-29 16:38] PHASE 1.3.4: Добавлены 9 клавиатур для SCREEN 10-18 (без дубликатов)
-# [2025-12-29 21:26] HOTFIX: Исправлена get_uploading_photo_keyboard() - кнопка возврата теперь select_mode
+# --- ОБНОВЛЕН: 2025-12-30 14:42 ---
+# [2025-12-30 14:42] УБРАНА дублирующаяся функция get_main_menu_keyboard()
+# [2025-12-30 14:42] SCREEN 0 теперь только через get_work_mode_selection_keyboard() - 6 кнопок
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -102,18 +95,68 @@ ROOMS_WITH_EMOJI = [
 ASPECT_RATIOS = ["16:9", "4:3", "1:1", "9:16"]
 RESOLUTIONS = ["1K", "2K", "4K"]
 
-#  Экран главный
-def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
-    """Главное меню с кнопкой админ-панели для админов"""
+# ========================================
+# SCREEN 0: ГЛАВНОЕ МЕНЮ - 6 КНОПОК
+# РЕАЛИЗАЦИЯ: 2025-12-30 14:42
+# ========================================
+
+def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
+    """
+    SCREEN 0: Главное меню с 6 кнопками
+    Используется при /start команде
+    
+    Структура:
+    - Ряд 1: 📋 Создать новый дизайн
+    - Ряд 2: ✏️ Редактировать дизайн
+    - Ряд 3: 🎁 Примерить дизайн
+    - Ряд 4: 🛋️ Расставить мебель
+    - Ряд 5: 🏠 Дизайн фасада
+    - Ряд 6: 👤 Личный кабинет (разделитель)
+    
+    Примечание: Каждая кнопка в отдельном ряду (по одной)
+    Дата обновления: 2025-12-30 по документации
+    """
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="                   🎨 Создать дизайн       "
-                                          "                  ", callback_data="create_design"))
-    builder.row(InlineKeyboardButton(text="                   👤 Личный кабинет          "
-                                          "                    ", callback_data="show_profile"))
-    if is_admin:
-        builder.row(InlineKeyboardButton(text="         ⚙️ Админ-панель        ", callback_data="admin_panel"))
+
+    # Ряд 1: Создать новый дизайн
+    builder.row(InlineKeyboardButton(
+        text="📋 Создать новый дизайн",
+        callback_data="select_mode_new_design"
+    ))
+    
+    # Ряд 2: Редактировать дизайн
+    builder.row(InlineKeyboardButton(
+        text="✏️ Редактировать дизайн",
+        callback_data="select_mode_edit_design"
+    ))
+    
+    # Ряд 3: Примерить дизайн
+    builder.row(InlineKeyboardButton(
+        text="🎁 Примерить дизайн",
+        callback_data="select_mode_sample_design"
+    ))
+    
+    # Ряд 4: Расставить мебель
+    builder.row(InlineKeyboardButton(
+        text="🛋️ Расставить мебель",
+        callback_data="select_mode_arrange_furniture"
+    ))
+    
+    # Ряд 5: Дизайн фасада
+    builder.row(InlineKeyboardButton(
+        text="🏠 Дизайн фасада дома",
+        callback_data="select_mode_facade_design"
+    ))
+
+    # Ряд 6: Личный кабинет (разделитель)
+    builder.row(InlineKeyboardButton(
+        text="👤 Личный кабинет",
+        callback_data="show_profile"
+    ))
+
     builder.adjust(1)
     return builder.as_markup()
+
 
 # Экран загружения фото
 def get_upload_photo_keyboard() -> InlineKeyboardMarkup:
@@ -311,50 +354,7 @@ def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
 
 
 # ========================================
-# PHASE 1.3.1: SCREEN 1 - MODE SELECTION KEYBOARD
-# ОБНОВЛЕНО: 2025-12-29 15:20
-# ========================================
-
-def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура выбора режима работы (ЭКРАН 1: MAIN_MENU)
-    Все 5 режимов + разделитель
-    """
-    builder = InlineKeyboardBuilder()
-
-    builder.row(InlineKeyboardButton(
-        text="📋 Создать новый дизайн",
-        callback_data="select_mode_new_design"
-    ))
-    builder.row(InlineKeyboardButton(
-        text="✏️ Редактировать дизайн",
-        callback_data="select_mode_edit_design"
-    ))
-    builder.row(InlineKeyboardButton(
-        text="🎁 Примерить дизайн",
-        callback_data="select_mode_sample_design"
-    ))
-    builder.row(InlineKeyboardButton(
-        text="🛋️ Расставить мебель",
-        callback_data="select_mode_arrange_furniture"
-    ))
-    builder.row(InlineKeyboardButton(
-        text="🏠 Дизайн фасада дома",
-        callback_data="select_mode_facade_design"
-    ))
-
-    # Разделитель
-    builder.row(InlineKeyboardButton(
-        text="👤 Личный кабинет",
-        callback_data="show_profile"
-    ))
-
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-# ========================================
-# PHASE 1.3.2: SCREEN 2-5 - НОВЫЕ КЛАВИАТУРЫ
+# SCREEN 2-5 - ЗАГРУЗКА ФОТО И ВЫБОР СТИЛЕЙ
 # ОБНОВЛЕНО: 2025-12-29 16:21
 # ========================================
 
@@ -454,10 +454,8 @@ def get_choose_style_2_keyboard() -> InlineKeyboardMarkup:
 
 
 # ========================================
-# PHASE 1.3.3: SCREEN 7-8 - ТЕКСТОВЫЙ ВВОД И РЕДАКТИРОВАНИЕ
-# ОБНОВЛеНО: 2025-12-29 16:35
-# ФИКС: Удалена get_post_generation_keyboard_new()
-# СОХРАНЕНЫ: get_post_generation_keyboard() и get_clear_space_confirm_keyboard()
+# SCREEN 7-8 - ТЕКСТОВЫЙ ВВОД И РЕДАКТИРОВАНИЕ
+# ОБНОВЛЕНО: 2025-12-29 16:35
 # ========================================
 
 def get_text_input_keyboard() -> InlineKeyboardMarkup:
@@ -500,10 +498,8 @@ def get_edit_design_keyboard() -> InlineKeyboardMarkup:
 
 
 # ========================================
-# PHASE 1.3.4: SCREEN 10-18 - НОВЫЕ МОДЫ (УНИВЕРСАЛЬНЫЕ)
+# SCREEN 10-18 - НОВЫЕ МОДЫ (УНИВЕРСАЛЬНЫЕ)
 # ОБНОВЛЕНО: 2025-12-29 16:38
-# ПАТТЕРН: Generic utility keyboards с динамичным текстом
-# ПРАВИЛО: НЕ дублируем актионы - переиспользуем старые keyboard
 # ========================================
 
 def get_download_sample_keyboard() -> InlineKeyboardMarkup:
