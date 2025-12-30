@@ -6,6 +6,7 @@
 # [2025-12-30 23:00] 🔒 CRITICAL FIX: Добавлены StateFilter на ВСЕ обработчики!
 # [2025-12-30 23:05] 🐛 FIX: Исправлена ошибка Markdown разметки в сообщении об ошибке
 # [2025-12-30 23:10] 🔧 FIX: Детальное логирование удаления сообщений - трекинг жизненного цикла
+# [2025-12-30 23:18] 🔥 CRITICAL FIX: Исправлена отмена background task при удалении сообщений!
 
 import logging
 import asyncio
@@ -23,6 +24,9 @@ from states.fsm import CreationStates
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+# 🔥 CRITICAL: Store background tasks to prevent garbage collection
+_background_tasks = set()
 
 
 # ===== HELPER: Detailed logging formatter =====
@@ -193,16 +197,23 @@ async def handle_unexpected_files(message: Message, state: FSMContext):
             error_msg = await message.answer(error_message)
             log_with_context("INFO", f"[MSG_SENT] Отправлено msg_id={error_msg.message_id}")
             
-            # 🔧 [2025-12-30 23:10] УЛУЧШЕНО: Правильно передаем параметры в asyncio.create_task
-            # Основная разница: message.bot вместо bot
+            # 🔥 [2025-12-30 23:18] CRITICAL FIX: Правильно хранить ссылку на background task!
+            # Проблема была в том, что create_task создавал задачу, но она могла быть
+            # отменена garbage collector'ом если на неё нет ссылок!
             delete_task = asyncio.create_task(
                 _delete_message_after_delay(
-                    message.bot,  # ✅ От message, а не параметр
+                    message.bot,
                     chat_id,
                     error_msg.message_id,
                     delay=3
                 )
             )
+            
+            # 🔒 CRITICAL: Добавляем задачу в set чтобы она не была отменена
+            _background_tasks.add(delete_task)
+            # 🔒 Удаляем задачу из set когда она завершится
+            delete_task.add_done_callback(_background_tasks.discard)
+            
             log_with_context("INFO", f"[DELETE_SCHEDULED] От msg_id={error_msg.message_id} снесена делетная задача")
             
         except Exception as send_error:
