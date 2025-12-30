@@ -7,13 +7,13 @@
 # [2025-12-30 23:05] 🐛 FIX: Исправлена ошибка Markdown разметки в сообщении об ошибке
 # [2025-12-30 23:10] 🔧 FIX: Детальное логирование удаления сообщений - трекинг жизненного цикла
 # [2025-12-30 23:32] 🔥 CRITICAL FIX: Добавлен universal text cleanup handler + file cleanup для ALL states
-# [2025-12-30 23:34] 🔥 CRITICAL FIX: Добавлен media group (album) cleanup handler - удаляет пачки фото!
+# [2025-12-30 23:34] 🔥 CRITICAL FIX: Добавлен media group (album) cleanup handler
+# [2025-12-30 23:36] 🔥 CRITICAL FIX: Удалять групповые фото IMMEDIATELY без ожидания!
 
 import logging
 import asyncio
 import inspect
 import traceback
-from collections import defaultdict
 
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
@@ -29,9 +29,6 @@ router = Router()
 
 # 🔥 CRITICAL: Store background tasks to prevent garbage collection
 _background_tasks = set()
-
-# 🔥 NEW: Track media groups to delete entire albums
-_media_groups_to_delete = defaultdict(list)  # media_group_id -> [message_ids]
 
 
 # ===== HELPER: Detailed logging formatter =====
@@ -91,7 +88,7 @@ VALID_TEXT_INPUT_STATES = {
 
 
 # ===== HELPER: _delete_message_after_delay (WITH DETAILED LOGGING) =====
-# [2025-12-30 23:10] 🔧 IMPROVED: Добавлено ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
+# [2025-12-30 23:10] 🔧 IMPROVED: Добавлено ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКи
 async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int = 3):
     """
     Delete message after N seconds WITH DETAILED LOGGING
@@ -107,7 +104,7 @@ async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay:
         log_with_context("INFO", f"[DELETE_START] chat_id={chat_id}, msg_id={message_id}, delay={delay}s")
         
         await asyncio.sleep(delay)
-        log_with_context("INFO", f"[DELETE_WAITING_DONE] chat_id={chat_id}, msg_id={message_id} - снесение работает!")
+        log_with_context("INFO", f"[DELETE_WAITING_DONE] chat_id={chat_id}, msg_id={message_id}")
         
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
         log_with_context("INFO", f"[DELETE_SUCCESS] ✅ Message {message_id} successfully deleted from chat {chat_id}")
@@ -118,25 +115,6 @@ async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay:
         
     except Exception as e:
         log_with_context("ERROR", f"[DELETE_ERROR] Critical error deleting msg {message_id}", e)
-
-
-# ===== HELPER: _delete_media_group =====
-# [2025-12-30 23:34] 🔥 NEW: Удаляет ВСЕ сообщения из album/media_group
-async def _delete_media_group(bot, chat_id: int, message_ids: list):
-    """
-    Delete entire media group (album) of photos
-    Удаляет все фото из пачки одновременно
-    """
-    log_with_context("INFO", f"[ALBUM_DELETE_START] chat_id={chat_id}, count={len(message_ids)}")
-    
-    for msg_id in message_ids:
-        try:
-            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-            log_with_context("INFO", f"[ALBUM_DELETE_SUCCESS] Message {msg_id} from album deleted")
-        except TelegramBadRequest as e:
-            log_with_context("WARNING", f"[ALBUM_DELETE_BADREQUEST] Message {msg_id}", e)
-        except Exception as e:
-            log_with_context("ERROR", f"[ALBUM_DELETE_ERROR] Failed to delete {msg_id}", e)
 
 
 # ===== CRITICAL FIX: 🔒 StateFilter for PHOTO uploads =====
@@ -177,8 +155,8 @@ async def handle_text_in_input_text_state(message: Message, state: FSMContext):
     pass
 
 
-# ===== 🔥 NEW HANDLER: MEDIA GROUP (ALBUM) CLEANUP =====
-# [2025-12-30 23:34] 🔥 CRITICAL: Удаляет ВСЕ фото из пачки если они в неправильном стейте!
+# ===== 🔥 CRITICAL: MEDIA GROUP (ALBUM) CLEANUP - DELETE IMMEDIATELY! =====
+# [2025-12-30 23:36] 🔥 CRITICAL: Удалять групповые фото МГНОВЕННО без ожидания!
 @router.message(
     ~StateFilter(CreationStates.uploading_photo),
     ~StateFilter(CreationStates.uploading_furniture),
@@ -190,59 +168,62 @@ async def handle_unexpected_media_group(message: Message, state: FSMContext):
     """
     UNIVERSAL MEDIA GROUP CLEANUP HANDLER
     
-    Когда user отправляет НЕСКОЛЬКО фото сразу (album):
-    1. Ловим первое фото из группы
-    2. Сохраняем его media_group_id
-    3. Ждём 1-2 сек пока придут остальные фото
-    4. Удаляем ВСЕ фото из этой группы
+    🔥 ЭТО САМЫЙ БЫСТРЫЙ Обработчик!
+    Когда user отправляет большие группы фото:
     
-    Логика:
-    - Если в неправильном стейте -> удалить ВСЕ
-    - Если в правильном стейте -> пусть обработчик занимается
+    1. Каждое фото из group приходит одним сообщением
+    2. Мы УДАЛЯЕМ ЕГО НЕМЕДЛЕННО КИГЕ ОНО ПОЙДЕТ
+    3. Пользователь видит ответ что НЕЛЬЗЯНА
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
-    media_group_id = message.media_group_id
+    user_message_id = message.message_id
     
     try:
         current_state = await state.get_state()
         
-        # Сохраняем message_id в группу
-        _media_groups_to_delete[media_group_id].append(message.message_id)
-        
         log_with_context(
             "WARNING",
-            f"Album photo - user_id={user_id}, media_group={media_group_id}, state={current_state}, count={len(_media_groups_to_delete[media_group_id])}"
+            f"[ALBUM_DELETE_NOW] Album photo from user_id={user_id}, state={current_state} - DELETE IMMEDIATELY!"
         )
         
-        # 🔥 Ждём 2 сек чтобы все фото из альбома пришли
-        async def delete_album_after_delay():
-            await asyncio.sleep(2)
-            
-            # Получаем все message_ids из этого album
-            message_ids = _media_groups_to_delete.pop(media_group_id, [])
-            
-            if message_ids:
-                log_with_context(
-                    "WARNING",
-                    f"[ALBUM_CLEANUP] Удаляем {len(message_ids)} фото из альбома {media_group_id}"
-                )
-                
-                # Удаляем ВСЕ фото из альбома
-                delete_task = asyncio.create_task(
-                    _delete_media_group(message.bot, chat_id, message_ids)
-                )
-                _background_tasks.add(delete_task)
-                delete_task.add_done_callback(_background_tasks.discard)
+        # 🔥 Отправить ошибку о нельзя
+        error_message = (
+            "⚠️ Сейчас нельзя отправлять файлы\n\n"
+            "Выберите действие в меню выше или отправьте /start"
+        )
         
-        # Запускаем удаление album в фоне
-        album_task = asyncio.create_task(delete_album_after_delay())
-        _background_tasks.add(album_task)
-        album_task.add_done_callback(_background_tasks.discard)
+        try:
+            error_msg = await message.answer(error_message)
+            log_with_context("INFO", f"[ALBUM_ERROR_SENT] msg_id={error_msg.message_id}")
+            
+            # 🔥 Удаляем ошибку через 3 сек
+            delete_error_task = asyncio.create_task(
+                _delete_message_after_delay(
+                    message.bot,
+                    chat_id,
+                    error_msg.message_id,
+                    delay=3
+                )
+            )
+            _background_tasks.add(delete_error_task)
+            delete_error_task.add_done_callback(_background_tasks.discard)
+            
+        except Exception as send_error:
+            log_with_context("ERROR", f"Failed to send error message", send_error)
+        
+        # 🔥 СРАЗУ УДАЛЯЕМ ФОТО (БЕЗ ОЖИДАНИЯ!)
+        try:
+            await message.delete()
+            log_with_context("INFO", f"[ALBUM_PHOTO_DELETED] Album photo {user_message_id} deleted IMMEDIATELY!")
+        except TelegramBadRequest as delete_error:
+            log_with_context("WARNING", f"Cannot delete album photo {user_message_id}", delete_error)
+        except Exception as delete_error:
+            log_with_context("ERROR", f"Error deleting album photo {user_message_id}", delete_error)
         
         # Логирование в БД
         try:
-            await db.log_activity(user_id, f'unexpected_media_group_{media_group_id}')
+            await db.log_activity(user_id, 'unexpected_media_group_album')
         except Exception as db_error:
             log_with_context("ERROR", f"Failed to log activity", db_error)
     
