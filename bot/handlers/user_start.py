@@ -1,7 +1,8 @@
 # bot/handlers/user_start.py
-# --- ОБНОВЛЕН: 2025-12-29 21:11 - Главное меню теперь использует правильную клавиатуру ---
-# [2025-12-29 21:11] HOTFIX: Замена get_main_menu_keyboard() на get_work_mode_selection_keyboard()
-# [2025-12-30 16:35] НОВЫЙ FIX: create_design теперь показывает SCREEN 1 (select_mode) вместо SCREEN 2
+# --- ОБНОВЛЕН: 2025-12-30 23:50 - ИСПРАВЛЕНИЕ SCREEN 0 и SCREEN 1 ---
+# [2025-12-30 23:50] ИСПРАВЛЕНИЕ: cmd_start теперь показывает SCREEN 0 (главное меню, 3 кнопки)
+# [2025-12-30 23:50] ИСПРАВЛЕНИЕ: create_design показывает SCREEN 1 (режимы, 5 кнопок)
+# [2025-12-30 23:50] Обновлены импорты: get_main_menu_keyboard + get_mode_selection_keyboard
 
 import logging
 from aiogram import Router, F
@@ -11,8 +12,8 @@ from aiogram.fsm.context import FSMContext
 from database.db import db
 from config import config
 from states.fsm import CreationStates
-from keyboards.inline import get_work_mode_selection_keyboard, get_profile_keyboard, get_uploading_photo_keyboard
-from utils.texts import START_TEXT, UPLOAD_PHOTO_TEXT, MODE_SELECTION_TEXT
+from keyboards.inline import get_main_menu_keyboard, get_mode_selection_keyboard, get_profile_keyboard
+from utils.texts import START_TEXT, MODE_SELECTION_TEXT, PROFILE_TEXT
 from utils.navigation import edit_menu, show_main_menu
 from utils.helpers import add_balance_to_text
 
@@ -26,7 +27,8 @@ router = Router()
 @router.message(F.text.startswith("/start"))
 async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     """
-      ВАЖНО: Безопасно удаляет старое меню, создаёт новое и сохраняет в БД.
+    SCREEN 0: ГЛАВНОЕ МЕНЮ с 3 кнопками
+    Безопасно удаляет старое меню, создаёт новое и сохраняет в БД.
     """
     chat_id = message.chat.id
     user_id = message.from_user.id
@@ -74,7 +76,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     # ===== 4️⃣ ОЧИЩАЕМ FSM STATE =====
     await state.clear()
 
-    # ===== 5️⃣ ПРОВЕРЯЕМ - НОВЫЙ ПОЛьзОВАТЕЛЬ? =====
+    # ===== 5️⃣ ПРОВЕРЯЕМ - НОВЫЙ ПОЛЬЗОВАТЕЛЬ? =====
     user_data = await db.get_user_data(user_id)
     is_new_user = user_data is None
 
@@ -114,26 +116,26 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     except:
         pass
 
-    # ===== 7️⃣ ОТПРАВЛЯЕМ ОТКРОЫТЮЕ МЕНЮ С ПОПОЛНЕНИЕМ БАлАНСА =====
-    text = await add_balance_to_text(MODE_SELECTION_TEXT, user_id)
+    # ===== 7️⃣ ОТПРАВЛЯЕМ SCREEN 0: ГЛАВНОЕ МЕНЮ С БАЛАНСОМ =====
+    text = await add_balance_to_text(START_TEXT, user_id)
     menu_msg = await message.answer(
         text,
-        reply_markup=get_work_mode_selection_keyboard(),
+        reply_markup=get_main_menu_keyboard(),
         parse_mode="Markdown"
     )
 
     # ===== 8️⃣ 💾 СОХРАНЯЕМ В FSM + БД =====
     await state.update_data(menu_message_id=menu_msg.message_id)
-    await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'selecting_mode')
+    await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'main_menu')
 
-    logger.info(f"✅ [START] User {user_id}: menu created, msg_id={menu_msg.message_id}, new={is_new_user}")
+    logger.info(f"✅ [START] User {user_id}: SCREEN 0 created, msg_id={menu_msg.message_id}, new={is_new_user}")
 
 
 # Возврат в главное меню из любого места.
 @router.callback_query(F.data == "main_menu")
 async def back_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
-    Возврат в главное меню из любого места.
+    Возврат в SCREEN 0 (главное меню) из любого места.
     ИСПОЛЬЗУЕТ state.set_state(None) вместо state.clear()!
     """
     await show_main_menu(callback, state, admins)
@@ -157,8 +159,6 @@ async def show_profile(callback: CallbackQuery, state: FSMContext):
         balance = user_data.get('balance', 0)
         reg_date = user_data.get('reg_date', 'неизвестно')
         username = user_data.get('username') or callback.from_user.username or 'не указан'
-
-        from utils.texts import PROFILE_TEXT
 
         profile_text = PROFILE_TEXT.format(
             user_id=user_id,
@@ -201,10 +201,10 @@ async def buy_generations_handler(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "create_design")
 async def start_creation(callback: CallbackQuery, state: FSMContext):
     """
-    НОВОЕ (2025-12-30): Показываем SCREEN 1 (select_mode) с 5 режимами работы
+    НОВОЕ (2025-12-30): Показываем SCREEN 1 (режимы работы с 5 кнопками)
     
     Flow:
-    create_design button (SCREEN 0)
+    create_design button (SCREEN 0 - главное меню)
             ↓
     show SCREEN 1 (select_mode с 5 кнопками режимов)
             ↓
@@ -222,7 +222,7 @@ async def start_creation(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
 
-    # ВОСсТАНАВЛИВАЕМ menu_message_id
+    # ВОССТАНАВЛИВАЕМ menu_message_id
     if menu_message_id:
         await state.update_data(menu_message_id=menu_message_id)
 
@@ -237,12 +237,12 @@ async def start_creation(callback: CallbackQuery, state: FSMContext):
         callback=callback,
         state=state,
         text=text,
-        keyboard=get_work_mode_selection_keyboard(),
+        keyboard=get_mode_selection_keyboard(),
         show_balance=False,  # Баланс уже добавлен выше
         screen_code='selecting_mode'
     )
     
-    logger.info(f"[CREATE_DESIGN] User {user_id}: showing SCREEN 1 (select_mode)")
+    logger.info(f"[CREATE_DESIGN] User {user_id}: showing SCREEN 1 (selecting_mode)")
     await callback.answer()
 
 
