@@ -3,6 +3,7 @@
 # Обрабатывает и удаляет любые файлы если они не находятся в нужном стейте
 # Поддерживает: фото, видео, документы, аудио, файлы и т.д.
 # [2025-12-30 22:04] УЛУЧШЕНО: Добавлено детальное логирование (файл, функция, строка, ошибка)
+# [2025-12-30 23:00] 🔒 CRITICAL FIX: Добавлены StateFilter на ВСЕ обработчики!
 
 import logging
 import asyncio
@@ -95,19 +96,73 @@ async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay:
         log_with_context("ERROR", f"Error deleting message {message_id}", e)
 
 
+# ===== CRITICAL FIX: 🔒 StateFilter for PHOTO uploads =====
+# [2025-12-30 23:00] ⚠️ ВАЖНО: Обработчик может быть вызван ТОЛЬКО в валидных стейтах!
+# Если пользователь отправит фото В ДРУГОМ стейте - обработчик НЕ сработает (упадет на обработчик ниже)
+@router.message(StateFilter(CreationStates.uploading_photo), F.photo)
+async def handle_photo_in_uploading_photo_state(message: Message, state: FSMContext):
+    """
+    VALID STATE: uploading_photo
+    
+    Правильное место для загрузки основной фотографии.
+    Если юзер здесь отправит фото - это ПРАВИЛЬНО, обработает creation_main.photo_handler()
+    
+    ⚠️ ВАЖНО: Этот обработчик НЕ должен ничего делать!
+    Он только убеждает aiogram что обработка фото валидна.
+    Реальная обработка происходит в creation_main.py::photo_handler()
+    """
+    # Обработка происходит в creation_main.py
+    pass
+
+
+# ===== CRITICAL FIX: 🔒 StateFilter for FURNITURE uploads =====
+# [2025-12-30 23:00] Только для режима ARRANGE_FURNITURE
+@router.message(StateFilter(CreationStates.uploading_furniture), F.photo)
+async def handle_photo_in_uploading_furniture_state(message: Message, state: FSMContext):
+    """
+    VALID STATE: uploading_furniture
+    
+    Правильное место для загрузки фото мебели.
+    Реальная обработка в creation_new_design.py или других обработчиках
+    """
+    # Обработка в других файлах
+    pass
+
+
+# ===== CRITICAL FIX: 🔒 StateFilter for FACADE uploads =====
+# [2025-12-30 23:00] Только для режима FACADE_DESIGN
+@router.message(StateFilter(CreationStates.loading_facade_sample), F.photo)
+async def handle_photo_in_loading_facade_sample_state(message: Message, state: FSMContext):
+    """
+    VALID STATE: loading_facade_sample
+    
+    Правильное место для загрузки фасада.
+    Реальная обработка в других обработчиках
+    """
+    # Обработка в других файлах
+    pass
+
+
 # ===== UNIVERSAL FILE CLEANUP HANDLER =====
-# Обрабатывает ВСЕ типы файлов в "неправильном" стейте
-@router.message(F.photo | F.document | F.video | F.video_note | F.audio | F.voice | F.animation)
+# 🔒 CRITICAL FIX [2025-12-30 23:00]: Добавлен NEGATIVE StateFilter
+# Обрабатывает ВСЕ типы файлов ТОЛЬКО если они НЕ в валидном стейте
+# Порядок регистрации: СНАЧАЛА specific (с StateFilter), ПОТОМ generic (этот обработчик)
+@router.message(
+    # 🔒 Важно: Добавляем ИНВЕРСИЮ - обрабатываем ТОЛЬКО если НЕ в валидных стейтах
+    ~StateFilter(CreationStates.uploading_photo),
+    ~StateFilter(CreationStates.uploading_furniture),
+    ~StateFilter(CreationStates.loading_facade_sample),
+    # Типы файлов
+    F.photo | F.document | F.video | F.video_note | F.audio | F.voice | F.animation
+)
 async def handle_unexpected_files(message: Message, state: FSMContext):
     """
     UNIVERSAL FILE CLEANUP HANDLER
     
     Логика:
-    1. Проверить текущий FSM стейт
-    2. Если файл прислан НЕ В нужном стейте:
-       - Отправить сообщение об ошибке
-       - Удалить сообщение об ошибке через 3 сек
-    3. Если стейт правильный - проигнорировать (другой обработчик перехватит)
+    1. Проверить текущий FSM стейт (ДОЛЖЕН быть НЕ в VALID_UPLOAD_STATES)
+    2. Отправить сообщение об ошибке
+    3. Удалить сообщение об ошибке через 3 сек
     
     Поддерживаемые типы:
     - 📷 photo (фото)
@@ -117,6 +172,9 @@ async def handle_unexpected_files(message: Message, state: FSMContext):
     - 🎵 audio (аудио)
     - 🎙️ voice (голос)
     - 🎬 animation (анимация, GIF)
+    
+    🔒 CRITICAL: StateFilter гарантирует что мы обрабатываем ТОЛЬКО файлы в НЕПРАВИЛЬНОМ стейте!
+    Если файл загружен в ПРАВИЛЬНОМ стейте - этот обработчик НЕ будет вызван.
     
     ЛОГИРОВАНИЕ:
     Все действия логируются с указанием:
@@ -132,14 +190,7 @@ async def handle_unexpected_files(message: Message, state: FSMContext):
     try:
         # Получить текущий стейт
         current_state = await state.get_state()
-        log_with_context("DEBUG", f"Handler triggered - user_id={user_id}, chat_id={chat_id}, state={current_state}")
-        
-        # КРИТИЧНО: Если стейт правильный - проигнорировать
-        if current_state in VALID_UPLOAD_STATES:
-            log_with_context("DEBUG", f"Valid state detected {current_state} - skipping (other handler will process)")
-            return
-        
-        # ===== НЕПРАВИЛЬНЫЙ СТЕЙТ - УДАЛИТЬ ФАЙЛ =====
+        log_with_context("DEBUG", f"Unexpected file - user_id={user_id}, chat_id={chat_id}, state={current_state}")
         
         # Определить тип файла для логирования
         file_type = "unknown_file"
@@ -202,7 +253,7 @@ async def handle_unexpected_files(message: Message, state: FSMContext):
 
 
 # ===== FUTURE HANDLERS TEMPLATE =====
-# Местo для добавления других обработчиков (например, text, commands, etc.)
+# Место для добавления других обработчиков (например, text, commands, etc.)
 # 
 # @router.message(F.text)
 # async def handle_text_in_wrong_state(message: Message, state: FSMContext):
