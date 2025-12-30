@@ -1,10 +1,3 @@
-# bot/utils/navigation.py
-# --- ОБНОВЛЕН: 2025-12-07 10:43 - Реализована гибридная система (FSM + БД) для единого меню ---
-# [2025-12-07 10:43] Переписан edit_menu() с приоритетом FSM и фоллбэком на БД
-# [2025-12-07 10:43] Добавлен параметр screen_code для отслеживания текущего экрана
-# [2025-12-07 10:43] Обновлён show_main_menu() с сохранением menu_message_id
-# [2025-12-07 10:43] Добавлены подробные логи для отладки
-# [2025-12-24 21:45] ИСПРАВЛЕНО: Заменена add_balance_to_text на add_balance_and_mode_to_text - теперь режим показывается НА ВСЕХ экранах
 """
 Утилиты для навигации с единым меню.
 Все переходы между экранами происходят через редактирование одного сообщения.
@@ -143,12 +136,14 @@ async def edit_menu(
 
 async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
-    Показать главное меню.
+    Показать главное меню (SCREEN 0).
     КРИТИЧНО: СОХРАНЯЕТ menu_message_id перед любыми операциями!
-    Просто сбрасывает состояние и редактирует уже существующее меню.
+    
+    ОБНОВЛЕНО: 2025-12-30 - Использует get_work_mode_selection_keyboard() с 6 кнопками
     """
-    from keyboards.inline import get_main_menu_keyboard
+    from keyboards.inline import get_work_mode_selection_keyboard
     from utils.texts import START_TEXT
+    from states.fsm import CreationStates
 
     user_id = callback.from_user.id
 
@@ -158,10 +153,13 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: lis
 
     logger.debug(f"🏠 [MAIN MENU] user={user_id}, menu_id={menu_message_id}")
 
-    # Сбрасываем ТОЛЬКО состояние FSM (НЕ state.clear()!)
-    await state.set_state(None)
+    # Очищаем FSM состояние
+    await state.clear()
 
-    # ✅ ВОСстаНАВЛИВАЕМ menu_message_id СРАЗУ ПОСЛЕ сброса состояния
+    # Устанавливаем новое состояние: selecting_mode (SCREEN 0)
+    await state.set_state(CreationStates.selecting_mode)
+
+    # ✅ ВОССТАНАВЛИВАЕМ menu_message_id СРАЗУ ПОСЛЕ инициализации состояния
     if menu_message_id:
         await state.update_data(menu_message_id=menu_message_id)
         logger.debug(f"✅ [MAIN MENU] Restored menu_id={menu_message_id}")
@@ -172,9 +170,9 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: lis
         callback=callback,
         state=state,
         text=START_TEXT,
-        keyboard=get_main_menu_keyboard(is_admin=user_id in admins),
+        keyboard=get_work_mode_selection_keyboard(),  # ✅ 6 кнопок SCREEN 0
         show_balance=True,  # [2025-12-24 21:45] ✅ НУЖНО! тогда режим покажется
-        screen_code='main_menu'
+        screen_code='selecting_mode'  # ✅ ОБНОВЛЕНО: screen_code = selecting_mode (SCREEN 0)
     )
 
     await callback.answer()
@@ -189,7 +187,7 @@ async def update_menu_after_photo(
 ) -> bool:
     """
     Обновление меню после загружения фото пользователем.
-    ОтБСОВАНЫ в message handlers, а не callback handlers.
+    ОТБСОВАНЫ в message handlers, а не callback handlers.
 
     Args:
         message: Message объект (сообщение с фото)
