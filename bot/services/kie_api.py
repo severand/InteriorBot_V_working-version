@@ -1,7 +1,7 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.5 (2025-12-24 08:18) - ДОБАВЛЕНА ПОДДЕРЖКА PRO РЕЖИМА
+# ВЕРСИЯ: 3.6 (2025-12-30 10:21) - HOTFIX SSL ошибка
 # АВТОР: Project Owner
 # https://docs.kie.ai/market/google/nano-banana
 # https://docs.kie.ai/market/google/nano-banana-edit
@@ -11,6 +11,7 @@
 # [2025-12-23 23:02] ДОБАВЛЕНО: generate_interior_with_text_nano_banana() для поддержки текстовых промптов
 # [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт translate_to_english в начало файла
 # [2025-12-24 08:18] ДОБАВЛЕНО: Поддержка KIE.AI PRO режима (nano-banana-pro)
+# [2025-12-30 10:21] 🔥 HOTFIX: Отключить SSL проверку при получении файла из Telegram (ConnectError on 127.0.0.1:10801)
 
 import os
 import logging
@@ -396,9 +397,15 @@ class NanoBananaClient(KieApiClient):
 # ========================================
 
 async def get_telegram_file_url(photo_file_id: str, bot_token: str) -> Optional[str]:
-    """Получить URL файла из Telegram."""
+    """
+    Получить URL файла из Telegram.
+    [2025-12-30 10:21] 🔥 HOTFIX: Отключить SSL проверку для работы через прокси на 127.0.0.1:10801
+    """
     try:
-        async with httpx.AsyncClient() as client:
+        # 🔥 HOTFIX: verify=False отключает SSL проверку
+        # Это необходимо для работы через локальный прокси (127.0.0.1:10801)
+        # которые не имеют валидного SSL сертификата
+        async with httpx.AsyncClient(verify=False) as client:
             response = await client.get(
                 f"https://api.telegram.org/bot{bot_token}/getFile",
                 params={"file_id": photo_file_id}
