@@ -105,8 +105,7 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
 
 # ===== HANDLER: SET_WORK_MODE (Handle mode selection) =====
 # [2025-12-29] NEW (V3)
-# [2025-12-30 15:52] 🔧 FINAL FIX: Восстановлена edit_menu() - НО ТОЛЬКО ТЕКСТ!
-# [2025-12-30 22:30] 🔥 CRITICAL REFIX: footer WITHOUT work_mode in set_work_mode!
+# [2025-12-30 22:30] 🔥 CRITICAL: menu_message_id теперь берется из БД!
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
@@ -137,12 +136,12 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     - Кнопки оно также меняет ✅
     - Не создает слишком много сообщений ✅
     
-    CRITICAL BUG FIX #2: [2025-12-30 22:30]
-    ❌ OLD: add_balance_and_mode_to_text() called here (adds footer WITHOUT work_mode!)
-    ✅ NEW: NO footer here - only in photo_handler()!
+    CRITICAL FIX: [2025-12-30 22:30]
+    ❌ OLD: Save menu_message_id в FSM (теряется при перезапуске)
+    ✅ NEW: menu_message_id автоматически сохраняется в БД через edit_menu()
     
     CRITICAL FIX: [2025-12-29 23:24]
-    - Save menu_message_id IN FSM state
+    - Save menu_message_id IN FSM state for work_mode reference only!
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -167,17 +166,16 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Неизвестный режим", show_alert=True)
             return
         
-        # Save state for photo_handler
+        # Save ONLY work_mode in FSM (NOT menu_message_id - it's in DB)
         await state.update_data(
-            work_mode=work_mode.value,
-            menu_message_id=menu_message_id
+            work_mode=work_mode.value
         )
         await state.set_state(CreationStates.uploading_photo)
         
         # ✅ RESTORED [2025-12-30 15:52]: Обновить SCREEN для пользователя
-        # ❌ NO footer here! [2025-12-30 22:30]
+        # ❌ NO footer here!
         text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загрузите фото")
-        # ✅ FOOTER WILL BE ADDED ONLY IN photo_handler() WITH CORRECT work_mode!
+        # ✅ FOOTER WILL BE ADDED IN photo_handler() AFTER PHOTO UPLOAD!
         
         await edit_menu(
             callback=callback,
@@ -185,18 +183,10 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             text=text,
             keyboard=get_upload_photo_keyboard(),
             show_balance=False,
-            screen_code='uploading_photo'
+            screen_code='uploading_photo'  # ✅ This saves menu_message_id to DB!
         )
         
-        # Also save to DB
-        await db.save_chat_menu(
-            chat_id,
-            user_id,
-            menu_message_id,
-            'uploading_photo'
-        )
-        
-        logger.info(f"[V3] {work_mode.value.upper()}+MODE_SELECTED - screen updated for user {user_id}, menu_id={menu_message_id}, awaiting photo...")
+        logger.info(f"[V3] {work_mode.value.upper()}+MODE_SELECTED - screen updated for user {user_id}, awaiting photo...")
         await callback.answer()
         
     except Exception as e:
@@ -206,9 +196,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 
 # ===== SCREEN 2: PHOTO_HANDLER (Photo upload for all modes) =====
 # [2025-12-29] UPDATED (V3)
-# [2025-12-30 22:10] 🔴 CRITICAL FIX: Remove edit_message_media() that was creating DOUBLE photo!
-#                     Now just send menu text with buttons BELOW user's uploaded photo
-# [2025-12-30 22:30] 🔥 CRITICAL REFIX: Actually DELETE the old message + pass work_mode correctly!
+# [2025-12-30 22:30] 🔥 CRITICAL: menu_message_id теперь берется из БД, не из FSM!
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
@@ -218,72 +206,50 @@ async def photo_handler(message: Message, state: FSMContext):
     1. Photo validation
     2. Balance check (except EDIT_DESIGN)
     3. Save file_id in FSM
-    4. DELETE OLD MENU MESSAGE (the one from SCREEN uploading_photo)
-    5. Send NEW message with text + buttons BELOW the photo user uploaded
-       (Do NOT reattach photo to existing message - this creates duplicates!)
-    6. Transition to NEXT screen (depends on mode):
+    4. GET old menu_message_id FROM DATABASE (NOT FSM!)
+    5. DELETE OLD MENU MESSAGE before sending new one
+    6. Send NEW message with text + buttons BELOW the photo user uploaded
+    7. Save new menu_message_id to DATABASE
+    8. Transition to NEXT screen (depends on mode):
        - NEW_DESIGN → ROOM_CHOICE
        - EDIT_DESIGN → EDIT_DESIGN
        - SAMPLE_DESIGN → DOWNLOAD_SAMPLE
        - ARRANGE_FURNITURE → UPLOADING_FURNITURE
        - FACADE_DESIGN → LOADING_FACADE_SAMPLE
     
-    KEY FIX [2025-12-30 22:10] - DOUBLE PHOTO BUG:
-    ❌ OLD LOGIC: edit_message_media() tried to attach photo to menu message
-                  This caused: photo1 (user) + photo2 (attached) = DOUBLE PHOTO!
+    KEY FIX [2025-12-30 22:30] - PERSISTENT menu_message_id:
+    ❌ OLD: menu_message_id was stored in FSM
+            Problem: FSM dies on bot restart, so we lose the ID
+            Result: Can't delete old message if bot crashes
     
-    ✅ NEW LOGIC: Just send a NEW text message with buttons BELOW the photo
-                  User's photo stays clean
-                  Menu buttons appear as separate message
-                  NO DUPLICATES!
-    
-    CRITICAL BUG FIX #1: [2025-12-30 22:30]
-    ❌ OLD: menu_message_id from FSM was not passed to photo_handler()
-            Therefore old menu was NOT deleted
-            User saw: [Old message from uploading_photo] + [New message with buttons]
-    
-    ✅ NEW: Get old_menu_message_id from data BEFORE any other logic
-            Delete it BEFORE sending new message
-            Result: Clean UI, no old messages!
-    
-    CRITICAL BUG FIX #2: [2025-12-30 22:30]
-    ❌ OLD: add_balance_and_mode_to_text() was called WITHOUT work_mode param
-            Logs showed: work_mode=None
-            Result: Footer with 2 params instead of 3
-    
-    ✅ NEW: Pass work_mode as KEYWORD ARGUMENT
-            add_balance_and_mode_to_text(text, user_id, work_mode='new_design')
-            Result: Footer with 3 params including work mode!
+    ✅ NEW: menu_message_id is stored in DATABASE (chat_menus table)
+            Problem solved: Even if FSM dies, we can get the ID from DB
+            Result: Always can delete old message correctly!
     
     How it works:
     1. message.photo received from user
-    2. Extract work_mode + old_menu_message_id from FSM state
+    2. Extract work_mode from FSM state
     3. Validate photo + balance
     4. Save photo_id to FSM
-    5. 🔥 DELETE old menu message using old_menu_message_id
-    6. Prepare text with footer (pass work_mode as keyword argument!)
-    7. Send NEW menu message with buttons (replaces deleted one)
-    8. Save new menu_message_id to FSM and DB
-    9. Transition to next screen
+    5. 🔥 GET old menu_message_id FROM DATABASE using chat_id
+    6. DELETE old menu message using ID from DB
+    7. Prepare text with footer (work_mode param ensures correct footer)
+    8. Send NEW menu message with buttons (replaces deleted one)
+    9. Save new menu_message_id to DATABASE (not FSM!)
+    10. Transition to next screen
     
-    CRITICAL FIX: [2025-12-29 23:24]
-    - Save menu_message_id IN FSM state for future reference
-    
-    FIX: [2025-12-29 23:35]
-    - REMOVED db.save_photo() call - method doesn't exist
-    - Photo saved via FSM state
-    
-    FIX: [2025-12-29 23:40]
-    - Auto-delete error messages after 3 sec
-    - Improved error handling
+    Why this is better:
+    - Database is persistent (survives bot restarts)
+    - FSM is volatile (dies on restart)
+    - We always know which message to delete
+    - Clean UI, no orphaned messages
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
     data = await state.get_data()
     work_mode = data.get('work_mode')
-    old_menu_message_id = data.get('menu_message_id')  # 🔥 GET OLD MENU ID FIRST!
 
-    logger.info(f"🎞️ [PHOTO_HANDLER] START - user_id={user_id}, work_mode={work_mode}, old_menu_msg={old_menu_message_id}")
+    logger.info(f"🎞️ [PHOTO_HANDLER] START - user_id={user_id}, work_mode={work_mode}, photo received")
 
     try:
         # ===== 1. VALIDATION =====
@@ -314,8 +280,15 @@ async def photo_handler(message: Message, state: FSMContext):
             new_photo=True
         )
         
-        # ===== 4. DELETE OLD MENU MESSAGE (BUG FIX #1) =====
-        # 🔥 [2025-12-30 22:30] CRITICAL FIX: This is KEY to preventing double messages!
+        # ===== 4. GET OLD MENU MESSAGE ID FROM DATABASE =====
+        # 🔥 [2025-12-30 22:30] CRITICAL FIX: Take menu_message_id FROM DATABASE!
+        old_menu_data = await db.get_chat_menu(chat_id)
+        old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
+        
+        logger.debug(f"[PHOTO_HANDLER] Got old_menu_message_id from DB: {old_menu_message_id}")
+        
+        # ===== 5. DELETE OLD MENU MESSAGE (BUG FIX #1) =====
+        # 🔥 [2025-12-30 22:30] DELETE old message BEFORE sending new one!
         if old_menu_message_id:
             try:
                 await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
@@ -323,9 +296,9 @@ async def photo_handler(message: Message, state: FSMContext):
             except Exception as e:
                 logger.warning(f"⚠️ [PHOTO_HANDLER] Could not delete old menu {old_menu_message_id}: {e}")
         else:
-            logger.warning(f"⚠️ [PHOTO_HANDLER] old_menu_message_id is None! User might see duplicate!")
+            logger.warning(f"⚠️ [PHOTO_HANDLER] old_menu_message_id is None! New message will appear below old one!")
         
-        # ===== 5. DETERMINE NEXT SCREEN (depends on mode) =====
+        # ===== 6. DETERMINE NEXT SCREEN (depends on mode) =====
         
         if work_mode == WorkMode.NEW_DESIGN.value:
             await state.set_state(CreationStates.room_choice)
@@ -371,7 +344,7 @@ async def photo_handler(message: Message, state: FSMContext):
             await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
             return
         
-        # ===== 6. SEND MENU BELOW PHOTO (NO PHOTO REATTACHMENT!) =====
+        # ===== 7. SEND MENU BELOW PHOTO (NO PHOTO REATTACHMENT!) =====
         # ✅ [2025-12-30 22:10] FIX: Just send text message with buttons
         # Do NOT use edit_message_media() - it causes duplicate photos!
         
@@ -385,9 +358,12 @@ async def photo_handler(message: Message, state: FSMContext):
         
         logger.info(f"✅ [PHOTO_HANDLER] SUCCESS - Menu sent, msg_id={menu_msg.message_id}")
         
-        # Save menu message ID to FSM and DB
-        await state.update_data(menu_message_id=menu_msg.message_id)
+        # ===== 8. SAVE new menu_message_id TO DATABASE (not FSM!) =====
+        # 🔥 [2025-12-30 22:30] CRITICAL: Save to DB so it survives bot restart!
         await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, screen)
+        
+        # Also save to FSM for current session reference
+        await state.update_data(menu_message_id=menu_msg.message_id)
         
         logger.info(f"📊 [PHOTO_HANDLER] COMPLETE - user_id={user_id}, work_mode={work_mode}, transitioned to {screen}")
         
