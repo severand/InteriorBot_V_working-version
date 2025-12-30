@@ -6,7 +6,7 @@
 # [2025-12-30 23:00] 🔒 CRITICAL FIX: Добавлены StateFilter на ВСЕ обработчики!
 # [2025-12-30 23:05] 🐛 FIX: Исправлена ошибка Markdown разметки в сообщении об ошибке
 # [2025-12-30 23:10] 🔧 FIX: Детальное логирование удаления сообщений - трекинг жизненного цикла
-# [2025-12-30 23:18] 🔥 CRITICAL FIX: Исправлена отмена background task при удалении сообщений!
+# [2025-12-30 23:32] 🔥 CRITICAL FIX: Добавлен UNIVERSAL TEXT CLEANUP HANDLER - удаляет текст в неправильных стейтах!
 
 import logging
 import asyncio
@@ -80,6 +80,10 @@ VALID_UPLOAD_STATES = {
     CreationStates.loading_facade_sample,  # Загружение фасада
 }
 
+VALID_TEXT_INPUT_STATES = {
+    CreationStates.input_text,  # Ввод текстового промпта
+}
+
 
 # ===== HELPER: _delete_message_after_delay (WITH DETAILED LOGGING) =====
 # [2025-12-30 23:10] 🔧 IMPROVED: Добавлено ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
@@ -139,8 +143,94 @@ async def handle_photo_in_loading_facade_sample_state(message: Message, state: F
     pass
 
 
-# ===== UNIVERSAL FILE CLEANUP HANDLER =====
-# 🔒 CRITICAL FIX [2025-12-30 23:00]: Добавлен NEGATIVE StateFilter
+# ===== CRITICAL FIX: 🔒 StateFilter for TEXT INPUT =====
+# [2025-12-30 23:32] 🔥 НОВОЕ: Разрешить текст ТОЛЬКО в стейте input_text
+@router.message(StateFilter(CreationStates.input_text), F.text)
+async def handle_text_in_input_text_state(message: Message, state: FSMContext):
+    """
+    VALID STATE: input_text - обработка текстового промпта в других хендлерах
+    """
+    pass
+
+
+# ===== 🔥 NEW HANDLER: UNIVERSAL TEXT CLEANUP =====
+# [2025-12-30 23:32] 🔥 CRITICAL: Удаляет ВСЕ текстовые сообщения кроме разрешённых стейтов
+@router.message(
+    ~StateFilter(CreationStates.input_text),  # НЕ в стейте ввода текста
+    F.text
+)
+async def handle_unexpected_text(message: Message, state: FSMContext):
+    """
+    UNIVERSAL TEXT CLEANUP HANDLER
+    
+    Удаляет текстовые сообщения которые пришли в неправильном стейте.
+    Разрешено только в стейте CreationStates.input_text
+    
+    Логика:
+    1. Получить текущий FSM стейт
+    2. Отправить сообщение об ошибке
+    3. Удалить своё сообщение через 3 сек
+    4. Удалить сообщение пользователя
+    """
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    user_message_id = message.message_id
+    
+    try:
+        current_state = await state.get_state()
+        log_with_context(
+            "WARNING",
+            f"Unexpected TEXT received - user_id={user_id}, state={current_state}, text={message.text[:50]}"
+        )
+        
+        # Отправить сообщение об ошибке
+        error_message = (
+            "⚠️ Сейчас нельзя отправлять текст\n\n"
+            "Выберите действие в меню выше или отправьте /start"
+        )
+        
+        try:
+            error_msg = await message.answer(error_message)
+            log_with_context("INFO", f"[MSG_SENT] Отправлено msg_id={error_msg.message_id}")
+            
+            # 🔥 [2025-12-30 23:32] ПРАВИЛЬНО: Сохраняем ссылки на background tasks
+            delete_error_task = asyncio.create_task(
+                _delete_message_after_delay(
+                    message.bot,
+                    chat_id,
+                    error_msg.message_id,
+                    delay=3
+                )
+            )
+            _background_tasks.add(delete_error_task)
+            delete_error_task.add_done_callback(_background_tasks.discard)
+            
+            log_with_context("INFO", f"[DELETE_SCHEDULED] Удаление ошибки через 3 сек")
+            
+            # 🔥 Также удаляем сообщение пользователя (кроме случаев когда это невозможно)
+            try:
+                await message.delete()
+                log_with_context("INFO", f"[USER_MSG_DELETED] Удалено сообщение пользователя {user_message_id}")
+            except TelegramBadRequest as delete_error:
+                log_with_context("WARNING", f"Cannot delete user message {user_message_id}", delete_error)
+            
+        except Exception as send_error:
+            log_with_context("ERROR", f"Failed to send error message", send_error)
+        
+        # Логировать в БД
+        try:
+            await db.log_activity(user_id, f'unexpected_text_{current_state}')
+            log_with_context("INFO", f"Activity logged - user_id={user_id}, state={current_state}")
+        except Exception as db_error:
+            log_with_context("ERROR", f"Failed to log activity", db_error)
+    
+    except Exception as e:
+        log_with_context("ERROR", f"Critical error in handle_unexpected_text", e)
+
+
+# ===== 🔥 UPDATED: UNIVERSAL FILE CLEANUP HANDLER =====
+# [2025-12-30 23:00] 🔒 CRITICAL FIX: Добавлен NEGATIVE StateFilter
+# [2025-12-30 23:32] 🔥 UPDATED: Теперь работает как надо - удаляет файлы во всех неправильных стейтах
 @router.message(
     ~StateFilter(CreationStates.uploading_photo),
     ~StateFilter(CreationStates.uploading_furniture),
@@ -151,13 +241,21 @@ async def handle_unexpected_files(message: Message, state: FSMContext):
     """
     UNIVERSAL FILE CLEANUP HANDLER
     
+    Удаляет файлы которые пришли в неправильном стейте.
+    Разрешено только в стейтах:
+    - uploading_photo
+    - uploading_furniture
+    - loading_facade_sample
+    
     Логика:
-    1. Проверить текущий FSM стейт
+    1. Получить текущий FSM стейт
     2. Отправить сообщение об ошибке
-    3. Удалить сообщение через 3 сек
+    3. Удалить свои сообщение через 3 сек
+    4. Удалить сообщение пользователя (если можно)
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
+    user_message_id = message.message_id
     
     try:
         current_state = await state.get_state()
@@ -197,10 +295,8 @@ async def handle_unexpected_files(message: Message, state: FSMContext):
             error_msg = await message.answer(error_message)
             log_with_context("INFO", f"[MSG_SENT] Отправлено msg_id={error_msg.message_id}")
             
-            # 🔥 [2025-12-30 23:18] CRITICAL FIX: Правильно хранить ссылку на background task!
-            # Проблема была в том, что create_task создавал задачу, но она могла быть
-            # отменена garbage collector'ом если на неё нет ссылок!
-            delete_task = asyncio.create_task(
+            # 🔥 [2025-12-30 23:32] ПРАВИЛЬНО: Сохраняем ссылку на background task
+            delete_error_task = asyncio.create_task(
                 _delete_message_after_delay(
                     message.bot,
                     chat_id,
@@ -208,13 +304,17 @@ async def handle_unexpected_files(message: Message, state: FSMContext):
                     delay=3
                 )
             )
+            _background_tasks.add(delete_error_task)
+            delete_error_task.add_done_callback(_background_tasks.discard)
             
-            # 🔒 CRITICAL: Добавляем задачу в set чтобы она не была отменена
-            _background_tasks.add(delete_task)
-            # 🔒 Удаляем задачу из set когда она завершится
-            delete_task.add_done_callback(_background_tasks.discard)
+            log_with_context("INFO", f"[DELETE_SCHEDULED] Удаление ошибки через 3 сек")
             
-            log_with_context("INFO", f"[DELETE_SCHEDULED] От msg_id={error_msg.message_id} снесена делетная задача")
+            # 🔥 Также удаляем сообщение пользователя (кроме случаев когда это невозможно)
+            try:
+                await message.delete()
+                log_with_context("INFO", f"[USER_MSG_DELETED] Удалено сообщение пользователя {user_message_id}")
+            except TelegramBadRequest as delete_error:
+                log_with_context("WARNING", f"Cannot delete user message {user_message_id}", delete_error)
             
         except Exception as send_error:
             log_with_context("ERROR", f"Failed to send error message", send_error)
