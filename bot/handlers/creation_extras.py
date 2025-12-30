@@ -9,6 +9,7 @@
 # [2025-12-30 23:32] 🔥 CRITICAL FIX: Добавлен universal text cleanup handler + file cleanup для ALL states
 # [2025-12-30 23:34] 🔥 CRITICAL FIX: Добавлен media group (album) cleanup handler
 # [2025-12-30 23:36] 🔥 CRITICAL FIX: Удалять групповые фото IMMEDIATELY без ожидания!
+# [2025-12-30 23:40] 🐛 FIX: input_text -> text_input (правильное имя стейта из FSM)
 
 import logging
 import asyncio
@@ -83,12 +84,12 @@ VALID_UPLOAD_STATES = {
 }
 
 VALID_TEXT_INPUT_STATES = {
-    CreationStates.input_text,  # Ввод текстового промпта
+    CreationStates.text_input,  # 🐛 FIX: Правильное имя - text_input, не input_text!
 }
 
 
 # ===== HELPER: _delete_message_after_delay (WITH DETAILED LOGGING) =====
-# [2025-12-30 23:10] 🔧 IMPROVED: Добавлено ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКи
+# [2025-12-30 23:10] 🔧 IMPROVED: Добавлено ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
 async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int = 3):
     """
     Delete message after N seconds WITH DETAILED LOGGING
@@ -146,11 +147,12 @@ async def handle_photo_in_loading_facade_sample_state(message: Message, state: F
 
 
 # ===== CRITICAL FIX: 🔒 StateFilter for TEXT INPUT =====
-# [2025-12-30 23:32] 🔥 НОВОЕ: Разрешить текст ТОЛЬКО в стейте input_text
-@router.message(StateFilter(CreationStates.input_text), F.text)
-async def handle_text_in_input_text_state(message: Message, state: FSMContext):
+# [2025-12-30 23:32] 🔥 НОВОЕ: Разрешить текст ТОЛЬКО в стейте text_input
+# [2025-12-30 23:40] 🐛 FIX: input_text -> text_input
+@router.message(StateFilter(CreationStates.text_input), F.text)
+async def handle_text_in_text_input_state(message: Message, state: FSMContext):
     """
-    VALID STATE: input_text - обработка текстового промпта в других хендлерах
+    VALID STATE: text_input - обработка текстового промпта в других хендлерах
     """
     pass
 
@@ -233,8 +235,9 @@ async def handle_unexpected_media_group(message: Message, state: FSMContext):
 
 # ===== 🔥 UPDATED: UNIVERSAL TEXT CLEANUP =====
 # [2025-12-30 23:32] 🔥 CRITICAL: Удаляет ВСЕ текстовые сообщения кроме разрешённых стейтов
+# [2025-12-30 23:40] 🐛 FIX: input_text -> text_input
 @router.message(
-    ~StateFilter(CreationStates.input_text),  # НЕ в стейте ввода текста
+    ~StateFilter(CreationStates.text_input),  # 🐛 FIX: НЕ в стейте text_input
     F.text
 )
 async def handle_unexpected_text(message: Message, state: FSMContext):
@@ -242,7 +245,7 @@ async def handle_unexpected_text(message: Message, state: FSMContext):
     UNIVERSAL TEXT CLEANUP HANDLER
     
     Удаляет текстовые сообщения которые пришли в неправильном стейте.
-    Разрешено только в стейте CreationStates.input_text
+    Разрешено только в стейте CreationStates.text_input
     
     Логика:
     1. Получить текущий FSM стейт
