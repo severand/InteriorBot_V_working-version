@@ -4,6 +4,9 @@
 # [2025-12-30 23:45] ИСПРАВЛЕНИЕ: РАЗДЕЛЕНЫ SCREEN 0 и SCREEN 1 согласно QUICK-REFERENCE.md
 # [2025-12-30 23:45] НОВАЯ: get_main_menu_keyboard() для SCREEN 0 (3 кнопки)
 # [2025-12-30 23:45] ПЕРЕИМЕНОВАНА: get_work_mode_selection_keyboard() → get_mode_selection_keyboard()
+# [2025-12-30 15:20] 🔧 CRITICAL FIX: get_mode_selection_keyboard(current_mode_is_pro) → get_pro_mode_selection_keyboard()
+#                    - Удален конфликт имён
+#                    - Теперь get_work_mode_selection_keyboard() вызывает правильную функцию
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -205,8 +208,9 @@ def get_mode_selection_keyboard() -> InlineKeyboardMarkup:
 # Используется для обратной совместимости (старое имя)
 def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
     """
-    ⚠️ DEPRECATED: Используйте get_mode_selection_keyboard()
+    ✅ ИСПРАВЛЕНО (2025-12-30 15:20)
     Сохранена для обратной совместимости
+    Вызывает get_mode_selection_keyboard() БЕЗ параметров
     """
     return get_mode_selection_keyboard()
 
@@ -707,15 +711,17 @@ def get_post_generation_facade_keyboard() -> InlineKeyboardMarkup:
 
 # ========================================
 # PRO MODE - ФИНАЛЬНЫЕ КЛАВИАТУРЫ
-# ОБНОВЛЕНО: 2025-12-24 13:12
+# ✅ ПЕРЕИМЕНОВАНА (2025-12-30 15:20)
+# get_mode_selection_keyboard(current_mode_is_pro) → get_pro_mode_selection_keyboard()
 # ========================================
 
-def get_mode_selection_keyboard(current_mode_is_pro: bool) -> InlineKeyboardMarkup:
+def get_pro_mode_selection_keyboard(current_mode_is_pro: bool) -> InlineKeyboardMarkup:
     """
+    ✅ ПЕРЕИМЕНОВАНА (2025-12-30 15:20)
     Клавиатура экрана выбора режима СТАНДАРТ vs PRO
     
-    ⚠️ ВАЖНО: Это имя совпадает с get_mode_selection_keyboard()!
-    Функция переименована в get_pro_mode_selection_keyboard()
+    Было: get_mode_selection_keyboard(current_mode_is_pro: bool) - конфликт имён
+    Теперь: get_pro_mode_selection_keyboard(current_mode_is_pro: bool) - уникальное имя
     """
     builder = InlineKeyboardBuilder()
     std_mark = "" if current_mode_is_pro else "✅"
