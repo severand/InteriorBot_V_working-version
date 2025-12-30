@@ -1,6 +1,7 @@
 # bot/handlers/user_start.py
 # --- ОБНОВЛЕН: 2025-12-29 21:11 - Главное меню теперь использует правильную клавиатуру ---
 # [2025-12-29 21:11] HOTFIX: Замена get_main_menu_keyboard() на get_work_mode_selection_keyboard()
+# [2025-12-30 16:35] НОВЫЙ FIX: create_design теперь показывает SCREEN 1 (select_mode) вместо SCREEN 2
 
 import logging
 from aiogram import Router, F
@@ -199,6 +200,18 @@ async def buy_generations_handler(callback: CallbackQuery, state: FSMContext):
 # """Начало создания дизайна"""
 @router.callback_query(F.data == "create_design")
 async def start_creation(callback: CallbackQuery, state: FSMContext):
+    """
+    НОВОЕ (2025-12-30): Показываем SCREEN 1 (select_mode) с 5 режимами работы
+    
+    Flow:
+    create_design button (SCREEN 0)
+            ↓
+    show SCREEN 1 (select_mode с 5 кнопками режимов)
+            ↓
+    пользователь выбирает режим
+            ↓
+    переход на SCREEN 2 (uploading_photo)
+    """
 
     user_id = callback.from_user.id
     await db.log_activity(user_id, 'create_design')
@@ -213,15 +226,23 @@ async def start_creation(callback: CallbackQuery, state: FSMContext):
     if menu_message_id:
         await state.update_data(menu_message_id=menu_message_id)
 
-    await state.set_state(CreationStates.uploading_photo)
+    # Устанавливаем состояние для выбора режима
+    await state.set_state(CreationStates.selecting_mode)
 
+    # Показываем SCREEN 1 с 5 режимами
+    text = MODE_SELECTION_TEXT
+    text = await add_balance_to_text(text, user_id)
+    
     await edit_menu(
         callback=callback,
         state=state,
-        text=UPLOAD_PHOTO_TEXT,
-        keyboard=get_uploading_photo_keyboard(),
-        screen_code='uploading_photo'  # ← ОБНОВЛЕНО screen_code
+        text=text,
+        keyboard=get_work_mode_selection_keyboard(),
+        show_balance=False,  # Баланс уже добавлен выше
+        screen_code='selecting_mode'
     )
+    
+    logger.info(f"[CREATE_DESIGN] User {user_id}: showing SCREEN 1 (select_mode)")
     await callback.answer()
 
 
