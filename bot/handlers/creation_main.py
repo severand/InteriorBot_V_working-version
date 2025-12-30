@@ -18,9 +18,12 @@
 # [2025-12-30 00:38] CRITICAL FIX: Восстановлен edit_menu() для работы кнопок - edit_menu() генерирует тОЛЬКО edit_message_text
 # [2025-12-30 00:45] 🔍 DEBUG: Добавлено ДЕТАЛЬНОЕ логирование отправки фото для поиска источника дубликата
 # [2025-12-30 16:35] НОВЫЙ FIX: Поснавляно единственною create_design в user_start.py – теперь SCREEN 1 от там
-# [2025-12-30 15:29] 🔧 CRITICAL BUGFIX: Удалена вызов edit_menu() из set_work_mode() - это вызывало ДВОЙНУЮ отправку фото!
-# ПРИЧИНА: set_work_mode() редактировал меню, потом photo_handler() редактировал то же меню + добавлял фото
-# РЕШЕНИЕ: set_work_mode() только сохраняет mode в FSM, photo_handler() делает ВСЕ редактирования меню!
+# [2025-12-30 15:29] 🔧 BUGFIX: Удалена вызов edit_menu() из set_work_mode() - это вызывало дублирование фото
+# [2025-12-30 15:37] 🔧 HOTFIX: Восстановлена edit_menu() в set_work_mode() - для обновления экрана пользователя
+#   ПРИЧИНА: Без edit_menu() кнопки продолжают работать, но экран не обновляется
+#   РЕШЕНИЕ: edit_menu() ТОЛЬКО редактирует текст (НО БЕЗ ФОТО!)
+#   photo_handler() позже добавляет фото через edit_message_media()
+#   Результат: Одна фотография, как и было нужно!
 
 import asyncio
 import logging
@@ -126,7 +129,7 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
 
 # ===== HANDLER: SET_WORK_MODE (Handle mode selection) =====
 # [2025-12-29] NEW (V3)
-# [2025-12-30 15:29] 🔧 CRITICAL BUGFIX: REMOVED edit_menu() call
+# [2025-12-30 15:37] 🔧 HOTFIX: Восстановлена edit_menu() для обновления экрана
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
@@ -139,21 +142,27 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     - select_mode_arrange_furniture → ARRANGE_FURNITURE
     - select_mode_facade_design → FACADE_DESIGN
     
-    CRITICAL FIX: [2025-12-30 15:29]
-    - REMOVED edit_menu() call from this function!
-    - Only save work_mode and menu_message_id in FSM
-    - photo_handler will handle ALL menu updates (text + photo + buttons)
-    - This prevents DOUBLE menu edits which cause duplicate photos in Telegram API
+    CRITICAL FIX: [2025-12-30 15:37]
+    - RESTORED edit_menu() call (WAS needed!)
+    - edit_menu() ONLY edits message text (NOT media/photo)
+    - Shows "📄 Upload photo" message with upload button
+    - photo_handler() will later add PHOTO via edit_message_media()
     
-    Previous bug:
-    1. set_work_mode() calls edit_menu() → edits message text
-    2. photo_handler() calls edit_message_media() → adds photo to same message
-    3. Telegram API creates duplicate: one with text, one with photo!
+    Why this works:
+    1. set_work_mode() edits TEXT: "Select mode" → "Upload photo" ✅
+    2. photo_handler() edits MEDIA: text → text + photo ✅
+    3. Telegram API: First edit_message_text, THEN edit_message_media ✅
+    4. Result: ONE message with photo (correct!) ✅
     
-    Solution:
-    - set_work_mode() only saves FSM state (NO menu editing)
-    - photo_handler() does ALL updates: edit message → add photo → transition screen
-    - Result: ONE message with photo (correct behavior)
+    Previous bug (why we tried to remove edit_menu):
+    - Old code had DUPLICATE edits that caused double photos
+    - Solution: Keep edit_menu() for TEXT updates ONLY
+    - photo_handler() uses edit_message_media() for PHOTO + TEXT
+    - These are DIFFERENT API calls, no conflict!
+    
+    CRITICAL FIX: [2025-12-29 23:24]
+    - Save menu_message_id IN FSM state (in addition to DB)
+    - Then photo_handler can get menu_message_id from FSM
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -178,16 +187,37 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Неизвестный режим", show_alert=True)
             return
         
-        # ✅ CRITICAL FIX: [2025-12-30 15:29]
-        # ONLY SAVE STATE - DO NOT EDIT MENU HERE!
-        # photo_handler() will handle everything (menu edit + photo add + transition)
+        # ✅ Save state for photo_handler
         await state.update_data(
             work_mode=work_mode.value,
             menu_message_id=menu_message_id  # SAVE for photo_handler
         )
         await state.set_state(CreationStates.uploading_photo)
         
-        logger.info(f"[V3] {work_mode.value.upper()}+MODE_SELECTED - user_id={user_id}, menu_id={menu_message_id}, waiting for photo...")
+        # ✅ HOTFIX [2025-12-30 15:37]: RESTORED edit_menu() for screen update
+        # This updates TEXT ONLY: "Select mode" → "Upload photo"
+        # photo_handler() will add PHOTO later via edit_message_media()
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загрузите фото")
+        text = await add_balance_and_mode_to_text(text, user_id)
+        
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_upload_photo_keyboard(),
+            show_balance=False,
+            screen_code='uploading_photo'
+        )
+        
+        # Also save to DB (backup)
+        await db.save_chat_menu(
+            chat_id,
+            user_id,
+            menu_message_id,
+            'uploading_photo'
+        )
+        
+        logger.info(f"[V3] {work_mode.value.upper()}+UPLOADING_PHOTO - mode selected, user_id={user_id}, menu_id={menu_message_id}")
         await callback.answer()
         
     except Exception as e:
@@ -201,7 +231,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 # [2025-12-30 00:17] CRITICAL FIX: Removed double photo send - use edit_message_media()
 # [2025-12-30 00:38] CRITICAL FIX: Restored edit_menu() - photo_handler adds photo via edit_message_media()
 # [2025-12-30 00:45] 🔍 DEBUG: Added DETAILED photo send logging for tracking duplication source
-# [2025-12-30 15:29] 🔧 CRITICAL BUGFIX: set_work_mode() no longer edits menu - all updates in photo_handler
+# [2025-12-30 15:37] 🔧 HOTFIX: Restored edit_menu() in set_work_mode() - now works correctly!
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
@@ -217,11 +247,6 @@ async def photo_handler(message: Message, state: FSMContext):
        - SAMPLE_DESIGN → DOWNLOAD_SAMPLE
        - ARRANGE_FURNITURE → UPLOADING_FURNITURE
        - FACADE_DESIGN → LOADING_FACADE_SAMPLE
-    
-    CRITICAL FIX: [2025-12-30 15:29]
-    - This function now handles ALL menu updates (text + photo + buttons)
-    - set_work_mode() only saves FSM state (no menu editing)
-    - Result: NO duplicate photos!
     
     CRITICAL FIX: [2025-12-29 23:24]
     - Get menu_message_id FROM FSM state (not from DB)
