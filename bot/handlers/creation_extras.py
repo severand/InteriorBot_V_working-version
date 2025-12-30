@@ -5,6 +5,7 @@
 # [2025-12-30 22:04] УЛУЧШЕНО: Добавлено детальное логирование (файл, функция, строка, ошибка)
 # [2025-12-30 23:00] 🔒 CRITICAL FIX: Добавлены StateFilter на ВСЕ обработчики!
 # [2025-12-30 23:05] 🐛 FIX: Исправлена ошибка Markdown разметки в сообщении об ошибке
+# [2025-12-30 23:10] 🔧 FIX: Детальное логирование удаления сообщений - трекинг жизненного цикла
 
 import logging
 import asyncio
@@ -76,81 +77,70 @@ VALID_UPLOAD_STATES = {
 }
 
 
-# ===== HELPER: _delete_message_after_delay =====
+# ===== HELPER: _delete_message_after_delay (WITH DETAILED LOGGING) =====
+# [2025-12-30 23:10] 🔧 IMPROVED: Добавлено ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
 async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int = 3):
     """
-    Delete message after N seconds
+    Delete message after N seconds WITH DETAILED LOGGING
     
-    Logs:
-    - ✅ Success: File:Function:Line - Message deleted
-    - ⚠️  Bad Request: File:Function:Line - Message not found
-    - 🔴 Error: File:Function:Line - Unexpected error
+    Жизненный цикл (для отладки):
+    1. 🔔 [START] Начало ждания
+    2. ⏳ [WAITING] Ожидание N секунд
+    3. 🔒 [DELETING] Начало делета
+    4. ✅ [SUCCESS] Мессаж удалён
+    5. ⚠️  [ERROR] Ошибка
     """
     try:
+        log_with_context("INFO", f"[DELETE_START] chat_id={chat_id}, msg_id={message_id}, delay={delay}s")
+        
         await asyncio.sleep(delay)
+        log_with_context("INFO", f"[DELETE_WAITING_DONE] chat_id={chat_id}, msg_id={message_id} - сн работает!")
+        
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
-        log_with_context("INFO", f"Message {message_id} deleted from chat {chat_id}")
+        log_with_context("INFO", f"[DELETE_SUCCESS] ✅ Message {message_id} successfully deleted from chat {chat_id}")
+        
     except TelegramBadRequest as e:
         # Message already deleted or not found - not a critical error
-        log_with_context("WARNING", f"Cannot delete message {message_id}", e)
+        log_with_context("WARNING", f"[DELETE_BADREQUEST] Message {message_id} - {str(e)[:100]}", e)
+        
     except Exception as e:
-        log_with_context("ERROR", f"Error deleting message {message_id}", e)
+        log_with_context("ERROR", f"[DELETE_ERROR] Critical error deleting msg {message_id}", e)
 
 
 # ===== CRITICAL FIX: 🔒 StateFilter for PHOTO uploads =====
 # [2025-12-30 23:00] ⚠️ ВАЖНО: Обработчик может быть вызван ТОЛЬКО в нужном стейте!
-# Если пользователь отправит фото В ДРУГОМ стейте - обработчик НЕ сработает (упадет на обработчик ниже)
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def handle_photo_in_uploading_photo_state(message: Message, state: FSMContext):
     """
-    VALID STATE: uploading_photo
-    
-    Правильное место для загрузки основной фотографии.
-    Если юзер здесь отправит фото - это ПРАВИЛЬНО, обработчик срабатывает.
-    Реальная обработка происходит в creation_main.py::photo_handler()
+    VALID STATE: uploading_photo - обработка в creation_main.py
     """
-    # Обработка происходит в creation_main.py
     pass
 
 
 # ===== CRITICAL FIX: 🔒 StateFilter for FURNITURE uploads =====
-# [2025-12-30 23:00] Только для режима ARRANGE_FURNITURE
 @router.message(StateFilter(CreationStates.uploading_furniture), F.photo)
 async def handle_photo_in_uploading_furniture_state(message: Message, state: FSMContext):
     """
-    VALID STATE: uploading_furniture
-    
-    Правильное место для загрузки фото мебели.
-    Реальная обработка в других обработчиках
+    VALID STATE: uploading_furniture - обработка в других обработчиках
     """
-    # Обработка в других файлах
     pass
 
 
 # ===== CRITICAL FIX: 🔒 StateFilter for FACADE uploads =====
-# [2025-12-30 23:00] Только для режима FACADE_DESIGN
 @router.message(StateFilter(CreationStates.loading_facade_sample), F.photo)
 async def handle_photo_in_loading_facade_sample_state(message: Message, state: FSMContext):
     """
-    VALID STATE: loading_facade_sample
-    
-    Правильное место для загрузки фасада.
-    Реальная обработка в других обработчиках
+    VALID STATE: loading_facade_sample - обработка в других обработчиках
     """
-    # Обработка в других файлах
     pass
 
 
 # ===== UNIVERSAL FILE CLEANUP HANDLER =====
 # 🔒 CRITICAL FIX [2025-12-30 23:00]: Добавлен NEGATIVE StateFilter
-# Обрабатывает ВСЕ типы файлов ТОЛЬКО если они НЕ в валидном стейте
-# Порядок регистрации: СНАЧАЛА specific (с StateFilter), ПОТОМ generic (этот обработчик)
 @router.message(
-    # 🔒 Важно: Добавляем ИНВЕРСИЮ - обрабатываем ТОЛЬКО если НЕ в валидных стейтах!
     ~StateFilter(CreationStates.uploading_photo),
     ~StateFilter(CreationStates.uploading_furniture),
     ~StateFilter(CreationStates.loading_facade_sample),
-    # Типы файлов
     F.photo | F.document | F.video | F.video_note | F.audio | F.voice | F.animation
 )
 async def handle_unexpected_files(message: Message, state: FSMContext):
@@ -159,40 +149,17 @@ async def handle_unexpected_files(message: Message, state: FSMContext):
     
     Логика:
     1. Проверить текущий FSM стейт
-    2. Если файл прислан НЕ В нужном стейте:
-       - Отправить сообщение об ошибке
-       - Удалить сообщение об ошибке через 3 сек
-    3. Если стейт правильный - проигнорировать (другой обработчик перехватит)
-    
-    Поддерживаемые типы:
-    - 📷 photo (фото)
-    - 📄 document (PDF, Word, TXT, и т.д.)
-    - 🎥 video (видео)
-    - 📹 video_note (видео-заметка)
-    - 🎵 audio (аудио)
-    - 🎙️ voice (голос)
-    - 🎬 animation (анимация, GIF)
-    
-    🔒 CRITICAL: StateFilter гарантирует что мы обрабатываем ТОЛЬКО файлы в НЕПРАВИЛЬНОМ стейте!
-    Если файл загружен в ПРАВИЛЬНОМ стейте - этот обработчик НЕ будет вызван.
-    
-    ЛОГИРОВАНИЕ:
-    Все действия логируются с указанием:
-    - 📄 Имя файла (creation_extras.py)
-    - 🔧 Имя функции (handle_unexpected_files)
-    - 📍 Номер строки (где произошло событие)
-    - ❌ Ошибка (если есть)
+    2. Отправить сообщение об ошибке
+    3. Удалить сообщение через 3 сек
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
-    message_id = message.message_id
     
     try:
-        # Получить текущий стейт
         current_state = await state.get_state()
-        log_with_context("DEBUG", f"Unexpected file - user_id={user_id}, chat_id={chat_id}, state={current_state}")
+        log_with_context("DEBUG", f"Unexpected file - user_id={user_id}, state={current_state}")
         
-        # Определить тип файла для логирования
+        # Определить тип файла
         file_type = "unknown_file"
         if message.photo:
             file_type = "photo_📷"
@@ -212,12 +179,10 @@ async def handle_unexpected_files(message: Message, state: FSMContext):
         
         log_with_context(
             "WARNING",
-            f"Unexpected file received - user_id={user_id}, chat_id={chat_id}, "
-            f"type={file_type}, current_state={current_state}, expected_states=[uploading_photo, uploading_furniture, loading_facade]"
+            f"Unexpected file received - user_id={user_id}, type={file_type}, state={current_state}"
         )
         
-        # ✅ ИСПРАВЛЕНО [2025-12-30 23:05]: Правильная Markdown разметка
-        # БЕЗ неправильно закрытых **
+        # Отправить сообщение об ошибке
         error_message = (
             "⚠️ Сейчас нельзя отправлять файлы\n\n"
             f"Получено: {file_type}\n\n"
@@ -226,50 +191,33 @@ async def handle_unexpected_files(message: Message, state: FSMContext):
         
         try:
             error_msg = await message.answer(error_message)
-            log_with_context("INFO", f"Error message sent - error_msg_id={error_msg.message_id}")
+            log_with_context("INFO", f"[MSG_SENT] Отправлено msg_id={error_msg.message_id}")
             
-            # Удалить сообщение об ошибке через 3 сек
-            asyncio.create_task(
+            # 🔧 [2025-12-30 23:10] УЛУЧШЕНО: Правильно передаем параметры в asyncio.create_task
+            # Основная разница: message.bot вместо bot
+            delete_task = asyncio.create_task(
                 _delete_message_after_delay(
-                    message.bot,
+                    message.bot,  # ✅ От message, а не параметр
                     chat_id,
                     error_msg.message_id,
                     delay=3
                 )
             )
-            log_with_context("INFO", f"Message scheduled for deletion - user_id={user_id}, delay=3s")
+            log_with_context("INFO", f"[DELETE_SCHEDULED] От msg_id={error_msg.message_id} снесена делетная задача")
             
         except Exception as send_error:
-            log_with_context("ERROR", f"Failed to send error message to user_id={user_id}", send_error)
+            log_with_context("ERROR", f"Failed to send error message", send_error)
         
-        # Логировать попытку отправки файла в БД
+        # Логировать в БД
         try:
             await db.log_activity(user_id, f'unexpected_file_{file_type}')
             log_with_context("INFO", f"Activity logged - user_id={user_id}, file_type={file_type}")
         except Exception as db_error:
-            log_with_context("ERROR", f"Failed to log activity for user_id={user_id}", db_error)
+            log_with_context("ERROR", f"Failed to log activity", db_error)
     
     except Exception as e:
-        log_with_context("ERROR", f"Critical error in handle_unexpected_files - user_id={user_id}", e)
+        log_with_context("ERROR", f"Critical error in handle_unexpected_files", e)
 
 
 # ===== FUTURE HANDLERS TEMPLATE =====
-# Место для добавления других обработчиков (например, text, commands, etc.)
-# 
-# @router.message(F.text)
-# async def handle_text_in_wrong_state(message: Message, state: FSMContext):
-#     """Handle text messages in unexpected states"""
-#     try:
-#         log_with_context("DEBUG", "Text handler triggered")
-#         # Your code here
-#     except Exception as e:
-#         log_with_context("ERROR", "Error in handle_text_in_wrong_state", e)
-#
-# @router.message(F.sticker)
-# async def handle_sticker_in_wrong_state(message: Message, state: FSMContext):
-#     """Handle stickers in unexpected states"""
-#     try:
-#         log_with_context("DEBUG", "Sticker handler triggered")
-#         # Your code here
-#     except Exception as e:
-#         log_with_context("ERROR", "Error in handle_sticker_in_wrong_state", e)
+# Место для добавления других обработчиков
