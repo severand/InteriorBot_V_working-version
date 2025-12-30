@@ -105,7 +105,7 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
 
 # ===== HANDLER: SET_WORK_MODE (Handle mode selection) =====
 # [2025-12-29] NEW (V3)
-# [2025-12-30 22:30] 🔥 CRITICAL: menu_message_id теперь берется из БД!
+# [2025-12-30 22:45] 🔥 CRITICAL: menu_message_id теперь берется из БД + больше логов!
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
@@ -136,7 +136,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     - Кнопки оно также меняет ✅
     - Не создает слишком много сообщений ✅
     
-    CRITICAL FIX: [2025-12-30 22:30]
+    CRITICAL FIX: [2025-12-30 22:45]
     ❌ OLD: Save menu_message_id в FSM (теряется при перезапуске)
     ✅ NEW: menu_message_id автоматически сохраняется в БД через edit_menu()
     
@@ -196,7 +196,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 
 # ===== SCREEN 2: PHOTO_HANDLER (Photo upload for all modes) =====
 # [2025-12-29] UPDATED (V3)
-# [2025-12-30 22:30] 🔥 CRITICAL: menu_message_id теперь берется из БД, не из FSM!
+# [2025-12-30 22:45] 🔥 CRITICAL: menu_message_id из БД + INFO логи для отладки!
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
@@ -217,7 +217,7 @@ async def photo_handler(message: Message, state: FSMContext):
        - ARRANGE_FURNITURE → UPLOADING_FURNITURE
        - FACADE_DESIGN → LOADING_FACADE_SAMPLE
     
-    KEY FIX [2025-12-30 22:30] - PERSISTENT menu_message_id:
+    KEY FIX [2025-12-30 22:45] - PERSISTENT menu_message_id:
     ❌ OLD: menu_message_id was stored in FSM
             Problem: FSM dies on bot restart, so we lose the ID
             Result: Can't delete old message if bot crashes
@@ -281,29 +281,32 @@ async def photo_handler(message: Message, state: FSMContext):
         )
         
         # ===== 4. GET OLD MENU MESSAGE ID FROM DATABASE =====
-        # 🔥 [2025-12-30 22:30] CRITICAL FIX: Take menu_message_id FROM DATABASE!
+        # 🔥 [2025-12-30 22:45] CRITICAL FIX: Take menu_message_id FROM DATABASE!
+        logger.info(f"🔍 [PHOTO_HANDLER] Fetching old menu_message_id from DB for chat_id={chat_id}")
+        
         old_menu_data = await db.get_chat_menu(chat_id)
         old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
         
-        logger.debug(f"[PHOTO_HANDLER] Got old_menu_message_id from DB: {old_menu_message_id}")
+        logger.info(f"📥 [PHOTO_HANDLER] Got from DB: old_menu_message_id={old_menu_message_id}, screen={old_menu_data.get('screen_code') if old_menu_data else None}")
         
         # ===== 5. DELETE OLD MENU MESSAGE (BUG FIX #1) =====
-        # 🔥 [2025-12-30 22:30] DELETE old message BEFORE sending new one!
+        # 🔥 [2025-12-30 22:45] DELETE old message BEFORE sending new one!
         if old_menu_message_id:
             try:
                 await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
-                logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu message {old_menu_message_id}")
+                logger.info(f"🗑️ [PHOTO_HANDLER] ✅ DELETED old menu message {old_menu_message_id}")
             except Exception as e:
                 logger.warning(f"⚠️ [PHOTO_HANDLER] Could not delete old menu {old_menu_message_id}: {e}")
         else:
-            logger.warning(f"⚠️ [PHOTO_HANDLER] old_menu_message_id is None! New message will appear below old one!")
+            logger.warning(f"⚠️ [PHOTO_HANDLER] old_menu_message_id is None! DB returned: {old_menu_data}")
         
         # ===== 6. DETERMINE NEXT SCREEN (depends on mode) =====
         
         if work_mode == WorkMode.NEW_DESIGN.value:
             await state.set_state(CreationStates.room_choice)
             text = f"🏠 **Выберите комнату**"
-            # 🔥 [2025-12-30 22:30] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+            # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+            logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='new_design'")
             text = await add_balance_and_mode_to_text(text, user_id, work_mode='new_design')
             keyboard = get_room_choice_keyboard()
             screen = 'room_choice'
@@ -311,7 +314,8 @@ async def photo_handler(message: Message, state: FSMContext):
         elif work_mode == WorkMode.EDIT_DESIGN.value:
             await state.set_state(CreationStates.edit_design)
             text = f"✏️ **Редактируем дизайн**"
-            # 🔥 [2025-12-30 22:30] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+            # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+            logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='edit_design'")
             text = await add_balance_and_mode_to_text(text, user_id, work_mode='edit_design')
             keyboard = get_edit_design_keyboard()
             screen = 'edit_design'
@@ -319,7 +323,8 @@ async def photo_handler(message: Message, state: FSMContext):
         elif work_mode == WorkMode.SAMPLE_DESIGN.value:
             await state.set_state(CreationStates.download_sample)
             text = f"📥 **Скачать примеры**"
-            # 🔥 [2025-12-30 22:30] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+            # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+            logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='sample_design'")
             text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
             keyboard = get_download_sample_keyboard()
             screen = 'download_sample'
@@ -327,7 +332,8 @@ async def photo_handler(message: Message, state: FSMContext):
         elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
             await state.set_state(CreationStates.uploading_furniture)
             text = f"🛋️ **Расстановка мебели**"
-            # 🔥 [2025-12-30 22:30] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+            # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+            logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='arrange_furniture'")
             text = await add_balance_and_mode_to_text(text, user_id, work_mode='arrange_furniture')
             keyboard = get_uploading_furniture_keyboard()
             screen = 'uploading_furniture'
@@ -335,7 +341,8 @@ async def photo_handler(message: Message, state: FSMContext):
         elif work_mode == WorkMode.FACADE_DESIGN.value:
             await state.set_state(CreationStates.loading_facade_sample)
             text = f"🏘️ **Дизайн фасада**"
-            # 🔥 [2025-12-30 22:30] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+            # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+            logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='facade_design'")
             text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
             keyboard = get_loading_facade_sample_keyboard()
             screen = 'loading_facade_sample'
@@ -359,7 +366,8 @@ async def photo_handler(message: Message, state: FSMContext):
         logger.info(f"✅ [PHOTO_HANDLER] SUCCESS - Menu sent, msg_id={menu_msg.message_id}")
         
         # ===== 8. SAVE new menu_message_id TO DATABASE (not FSM!) =====
-        # 🔥 [2025-12-30 22:30] CRITICAL: Save to DB so it survives bot restart!
+        # 🔥 [2025-12-30 22:45] CRITICAL: Save to DB so it survives bot restart!
+        logger.info(f"💾 [PHOTO_HANDLER] Saving new menu_message_id={menu_msg.message_id} to DB")
         await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, screen)
         
         # Also save to FSM for current session reference
