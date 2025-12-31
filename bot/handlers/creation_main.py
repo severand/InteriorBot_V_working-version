@@ -1,5 +1,3 @@
-# ===== PHASE 1: MAIN ENTRY POINT + PHOTO UPLOAD =====
-
 import asyncio
 import logging
 import html
@@ -114,6 +112,38 @@ async def collect_media_group(user_id: int, media_group_id: str, message_id: int
     logger.info(f"📸 [MEDIA_GROUP] user={user_id}, group={media_group_id}, FINAL count={final_count}")
     
     return final_count, message_ids
+
+
+async def aggressive_delete_message(bot, chat_id: int, message_id: int, retries: int = 3):
+    """
+    🔥 [2025-12-31 14:47] AGGRESSIVE DELETE with retries
+    
+    When Telegram UI caches photos, we need to:
+    1. Delete message IMMEDIATELY
+    2. Retry if first attempt fails
+    3. Don't raise exception - silently continue
+    
+    This ensures photos disappear from UI even if API hiccups
+    """
+    for attempt in range(retries):
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=message_id)
+            logger.debug(f"✅ [DELETE] msg_id={message_id} deleted (attempt {attempt+1})")
+            return True
+        except TelegramBadRequest as e:
+            if "message to delete not found" in str(e):
+                logger.debug(f"⚠️ [DELETE] msg_id={message_id} already deleted")
+                return True
+            logger.debug(f"⚠️ [DELETE] Attempt {attempt+1} failed: {e}")
+            if attempt < retries - 1:
+                await asyncio.sleep(0.2)  # Brief wait before retry
+        except Exception as e:
+            logger.debug(f"⚠️ [DELETE] msg_id={message_id} error: {e}")
+            if attempt < retries - 1:
+                await asyncio.sleep(0.2)
+    
+    logger.warning(f"❌ [DELETE] Failed to delete msg_id={message_id} after {retries} attempts")
+    return False
 
 
 # ===== SCREEN 0: MAIN MENU =====
@@ -234,6 +264,11 @@ async def photo_handler(message: Message, state: FSMContext):
     - When 4 photos arrive simultaneously, all 4 handlers start
     - Without proper locking, each creates its own media_group entry
     - Solution: Get lock IMMEDIATELY, only first handler collects all photos
+    
+    [2025-12-31 14:47] 🔥 AGGRESSIVE DELETE FIX
+    - Use aggressive_delete_message() with retries
+    - Delete IMMEDIATELY without wait
+    - This removes from UI cache
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -277,30 +312,31 @@ async def photo_handler(message: Message, state: FSMContext):
                     
                     media_group_tracker[user_id][media_group_id]['processed'] = True
                     
-                    # 🔥 [2025-12-31 14:45] PARALLEL DELETE ALL PHOTOS
+                    # 🔥 [2025-12-31 14:47] AGGRESSIVE DELETE WITH RETRY
+                    # Delete IMMEDIATELY, in parallel, with retries
                     delete_tasks = []
                     for msg_id in all_message_ids:
                         delete_tasks.append(
-                            message.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                            aggressive_delete_message(message.bot, chat_id, msg_id, retries=3)
                         )
                     
-                    # Wait for all delete tasks to complete
+                    # Wait for all delete tasks
                     results = await asyncio.gather(*delete_tasks, return_exceptions=True)
-                    deleted_count = sum(1 for r in results if not isinstance(r, Exception))
-                    logger.info(f"🗑️ [PHOTO_HANDLER] Deleted {deleted_count}/{photo_count} photos")
+                    deleted_count = sum(1 for r in results if r is True or (not isinstance(r, Exception)))
+                    logger.info(f"🗑️ [PHOTO_HANDLER] Deleted {deleted_count}/{photo_count} photos with aggressive retry")
                     
-                    # 🔥 [2025-12-31 14:45] DELETE OLD MENU
+                    # 🔥 [2025-12-31 14:47] DELETE OLD MENU (AGGRESSIVE)
                     old_menu_data = await db.get_chat_menu(chat_id)
                     old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
                     
                     if old_menu_message_id:
-                        try:
-                            await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
-                            logger.info(f"✅ Удалено старое меню {old_menu_message_id}")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Could not delete old menu: {e}")
+                        success = await aggressive_delete_message(message.bot, chat_id, old_menu_message_id, retries=3)
+                        if success:
+                            logger.info(f"✅ Удалено старое меню {old_menu_message_id} (aggressive)")
+                        else:
+                            logger.warning(f"⚠️ Could not delete old menu {old_menu_message_id}")
                     
-                    # 🔥 [2025-12-31 14:45] SEND TEXT-ONLY MESSAGE (NO buttons)
+                    # 🔥 [2025-12-31 14:47] SEND TEXT-ONLY MESSAGE (NO buttons)
                     text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📸 **Загрузите фото помещения**\\n\\nПожалуйста, отправьте ОДНУ фотографию.")
                     text = f"⚠️ **ПОЖАЛУЙСТА, ОДНО ФОТО!**\\n\\n{text}\\n\\n🔄 Попробуйте ещё раз - отправьте одну фотографию."
                     
@@ -346,11 +382,8 @@ async def photo_handler(message: Message, state: FSMContext):
                 logger.info(f"📥 [PHOTO_HANDLER] Old menu_id={old_menu_message_id}")
                 
                 if old_menu_message_id:
-                    try:
-                        await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
-                        logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu {old_menu_message_id}")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Could not delete old menu: {e}")
+                    await aggressive_delete_message(message.bot, chat_id, old_menu_message_id, retries=2)
+                    logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu {old_menu_message_id}")
                 
                 # DETERMINE NEXT SCREEN
                 if work_mode == WorkMode.NEW_DESIGN.value:
@@ -444,11 +477,8 @@ async def photo_handler(message: Message, state: FSMContext):
             old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
             
             if old_menu_message_id:
-                try:
-                    await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
-                    logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu {old_menu_message_id}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Could not delete old menu: {e}")
+                await aggressive_delete_message(message.bot, chat_id, old_menu_message_id, retries=2)
+                logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu {old_menu_message_id}")
             
             # DETERMINE NEXT SCREEN
             if work_mode == WorkMode.NEW_DESIGN.value:
@@ -516,7 +546,7 @@ async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay:
     """Delete message after N seconds"""
     try:
         await asyncio.sleep(delay)
-        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+        await aggressive_delete_message(bot, chat_id, message_id, retries=2)
         logger.debug(f"✅ Удалено сообщение {message_id} в чате {chat_id}")
     except Exception as e:
         logger.debug(f"⚠️ Не удалось удалить сообщение {message_id}: {e}")
