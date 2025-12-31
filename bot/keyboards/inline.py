@@ -7,6 +7,9 @@
 # [2025-12-30 15:20] 🔧 CRITICAL FIX: get_mode_selection_keyboard(current_mode_is_pro) → get_pro_mode_selection_keyboard()
 #                    - Удален конфликт имён
 #                    - Теперь get_work_mode_selection_keyboard() вызывает правильную функцию
+# [2025-12-31 12:36] 🔥 CRITICAL: Remove back button from SCREEN 2
+#                    - get_uploading_photo_keyboard() now has NO buttons
+#                    - User must upload photo to proceed
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -216,12 +219,20 @@ def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
 
 
 # Экран загружения фото
-def get_upload_photo_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура для экрана загружения фото с кнопкой назад"""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode"))
-    builder.adjust(1)
-    return builder.as_markup()
+def get_uploading_photo_keyboard() -> InlineKeyboardMarkup:
+    """
+    🔥 [2025-12-31 12:36] SCREEN 2: NO BUTTONS!
+    
+    SCREEN 2 (uploading_photo) должен быть чистым:
+    - Только текст с инструкциями
+    - БЕЗ кнопок
+    - Юзер должен загрузить фото или закрыть Telegram
+    - Нет способа вернуться назад
+    
+    Это сфокусирует юзера на загрузке фото.
+    """
+    # ✅ ИСПРАВЛЕНО: Вернуть пустую клавиатуру
+    return InlineKeyboardMarkup(inline_keyboard=[])
 
 
 # Экран выбора что на фото - дом или комнаты
@@ -414,22 +425,6 @@ def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
 # SCREEN 2-5 - ЗАГРУЗКА ФОТО И ВЫБОР СТИЛЕЙ
 # ОБНОВЛЕНО: 2025-12-29 16:21
 # ========================================
-
-def get_uploading_photo_keyboard() -> InlineKeyboardMarkup:
-    """
-    Клавиатура загрузки фото (ЭКРАН 2: UPLOADING_PHOTO)
-    Динамический текст зависит от режима работы
-    
-    HOTFIX: 2025-12-29 21:26 - Исправлена кнопка возврата на select_mode
-    """
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text="🏠 Вернуться к режимам",
-        callback_data="select_mode"
-    ))
-    builder.adjust(1)
-    return builder.as_markup()
-
 
 def get_room_choice_keyboard() -> InlineKeyboardMarkup:
     """
