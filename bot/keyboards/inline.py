@@ -10,6 +10,7 @@
 # [2025-12-31 12:36] 🔥 CRITICAL: Remove back button from SCREEN 2
 #                    - get_uploading_photo_keyboard() now has NO buttons
 #                    - User must upload photo to proceed
+# [2025-12-31 12:39] 🔧 RESTORE: Function still needed for compatibility
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -218,20 +219,26 @@ def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
     return get_mode_selection_keyboard()
 
 
-# Экран загружения фото
+# ========================================
+# SCREEN 2: UPLOADING_PHOTO - КЛАВИАТУРА
+# 🔥 [2025-12-31 12:39] ФУНКЦИЯ ВОССТАНОВЛЕНА
+# ========================================
+
 def get_uploading_photo_keyboard() -> InlineKeyboardMarkup:
     """
-    🔥 [2025-12-31 12:36] SCREEN 2: NO BUTTONS!
+    🔥 [2025-12-31 12:39] SCREEN 2: ПУСТАЯ КЛАВИАТУРА (БЕЗ КНОПОК)
     
     SCREEN 2 (uploading_photo) должен быть чистым:
     - Только текст с инструкциями
-    - БЕЗ кнопок
+    - БЕЗ кнопок навигации
     - Юзер должен загрузить фото или закрыть Telegram
     - Нет способа вернуться назад
     
     Это сфокусирует юзера на загрузке фото.
+    
+    Функция существует для совместимости с creation_main.py
     """
-    # ✅ ИСПРАВЛЕНО: Вернуть пустую клавиатуру
+    # ✅ Возвращаем пустую клавиатуру (без кнопок)
     return InlineKeyboardMarkup(inline_keyboard=[])
 
 
