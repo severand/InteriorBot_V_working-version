@@ -41,9 +41,24 @@ from utils.navigation import edit_menu, show_main_menu
 logger = logging.getLogger(__name__)
 router = Router()
 
+# 🔥 [2025-12-31 12:24] CRITICAL: Locks for synchronizing media_group processing
+# Structure: {user_id: asyncio.Lock()}
+user_media_group_locks = {}
+
 # 🔥 [2025-12-31 11:33] CRITICAL: Track media_group uploads to detect multiple photos
 # Structure: {user_id: {media_group_id: {'photos': [msg_ids], 'processed': False, 'timestamp': time}}}
 media_group_tracker = {}
+
+
+async def get_user_lock(user_id: int) -> asyncio.Lock:
+    """
+    🔥 [2025-12-31 12:24] Get or create lock for user
+    
+    Ensures only ONE handler processes the media_group for this user
+    """
+    if user_id not in user_media_group_locks:
+        user_media_group_locks[user_id] = asyncio.Lock()
+    return user_media_group_locks[user_id]
 
 
 async def collect_media_group(user_id: int, media_group_id: str, message_id: int):
@@ -194,34 +209,42 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 
 
 # ===== SCREEN 2: PHOTO_HANDLER (Photo upload for all modes) =====
-# 🔥 [2025-12-31 11:33] CRITICAL REWRITE: Detect and count photos BEFORE processing!
+# 🔥 [2025-12-31 12:24] CRITICAL REWRITE: Use LOCK to prevent parallel screen creation!
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
     SCREEN 2: Photo upload (UPLOADING_PHOTO)
     
-    🔥 [2025-12-31 11:33] NEW LOGIC:
+    🔥 [2025-12-31 12:24] CRITICAL FIX: USE LOCK!
     
-    1. DETECT if this is media_group (multiple photos uploaded together)
-    2. WAIT 500ms for all photos in group to arrive
-    3. COUNT total photos in group
-    4. IF count > 1:
-       - DELETE ALL photos in group (don't save any!)
-       - Show error: "Отправьте ОДНО фото"
-       - Show SCREEN 2 again (Upload photo)
-       - Return (NO menu)
-    5. IF count == 1:
-       - Save photo
-       - Create menu for next screen
-       - Transition to next screen
+    Problem before:
+    - User uploads 7 photos
+    - All 7 handlers run in PARALLEL
+    - Each deletes 1 photo and creates 1 menu
+    - Result: 7 menus created (BUG!)
     
-    Why this works:
-    - When user uploads 7 photos: all have same media_group_id
-    - All messages arrive ~100-300ms
-    - We wait 500ms to collect all
-    - Then count total and decide
-    - If >1: delete ALL before processing any
-    - If =1: process normally
+    Solution:
+    1. Collect all photos in media_group (wait 500ms)
+    2. ACQUIRE lock - only ONE handler can proceed
+    3. FIRST handler that acquires lock: delete all photos, show error, create SCREEN 2 again
+    4. OTHER handlers: check if already processed, return early
+    5. RELEASE lock
+    - Result: 1 menu screen! ✅
+    
+    Algorithm:
+    - Handler A arrives (photo 1)
+      → Acquires lock first
+      → Collects all 7 photos
+      → count=7 > 1
+      → Deletes all 7
+      → Creates menu
+      → Releases lock
+    
+    - Handlers B-G arrive (photos 2-7)
+      → Try to acquire lock (blocked until A releases)
+      → A already released
+      → Check tracker: already processed
+      → Return early (no menu created)
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -230,166 +253,175 @@ async def photo_handler(message: Message, state: FSMContext):
 
     logger.info(f"🎞️ [PHOTO_HANDLER] START - user_id={user_id}, work_mode={work_mode}, photo received")
 
-    try:
-        # ===== STEP 1: DETECT MEDIA_GROUP =====
-        media_group_id = message.media_group_id
-        
-        if media_group_id:
-            # Multiple photos possible - collect them all
-            logger.info(f"🔍 [PHOTO_HANDLER] Detected media_group_id={media_group_id}")
+    # 🔥 [2025-12-31 12:24] ACQUIRE LOCK
+    lock = await get_user_lock(user_id)
+    async with lock:
+        try:
+            # ===== STEP 1: DETECT MEDIA_GROUP =====
+            media_group_id = message.media_group_id
             
-            photo_count, all_message_ids = await collect_media_group(
-                user_id, 
-                media_group_id, 
-                message.message_id
+            if media_group_id:
+                # Multiple photos possible - collect them all
+                logger.info(f"🔍 [PHOTO_HANDLER] Detected media_group_id={media_group_id}")
+                
+                # 🔥 [2025-12-31 12:24] Check if ALREADY PROCESSED
+                if (user_id in media_group_tracker and 
+                    media_group_id in media_group_tracker[user_id] and 
+                    media_group_tracker[user_id][media_group_id].get('processed')):
+                    
+                    logger.info(f"⏭️ [PHOTO_HANDLER] Media group already processed, skipping handler")
+                    return  # ← EXIT! Already processed by another handler!
+                
+                photo_count, all_message_ids = await collect_media_group(
+                    user_id, 
+                    media_group_id, 
+                    message.message_id
+                )
+                
+                logger.info(f"📸 [PHOTO_HANDLER] Media group collected: count={photo_count}, msg_ids={all_message_ids}")
+                
+                # ===== STEP 2: CHECK IF MULTIPLE PHOTOS =====
+                if photo_count > 1:
+                    logger.warning(f"❌ [PHOTO_HANDLER] MULTIPLE PHOTOS DETECTED: {photo_count}")
+                    
+                    # 🔥 Mark as processed BEFORE deleting!
+                    media_group_tracker[user_id][media_group_id]['processed'] = True
+                    
+                    # 🔥 DELETE ALL photos in the group
+                    for msg_id in all_message_ids:
+                        try:
+                            await message.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                            logger.debug(f"✅ Удалено сообщение {msg_id} в чате {chat_id}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Could not delete msg_id={msg_id}: {e}")
+                    
+                    # Show error
+                    error_text = "❌ **Отправьте ОДНО фото**"
+                    error_msg = await message.answer(error_text, parse_mode="Markdown")
+                    logger.info(f"⚠️ [PHOTO_HANDLER] Error shown, msg_id={error_msg.message_id}")
+                    
+                    # Show SCREEN 2 again (Upload photo) - ONLY ONCE!
+                    screen_text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📄 Загружите фото")
+                    screen_msg = await message.answer(
+                        text=screen_text,
+                        reply_markup=get_upload_photo_keyboard(),
+                        parse_mode="Markdown"
+                    )
+                    logger.info(f"📤 [PHOTO_HANDLER] SCREEN 2 shown (ONE TIME ONLY), msg_id={screen_msg.message_id}")
+                    
+                    # Save menu to DB
+                    await db.save_chat_menu(chat_id, user_id, screen_msg.message_id, 'uploading_photo')
+                    
+                    # Auto-delete error after 3s
+                    asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+                    
+                    return  # ← EXIT! Multiple photos handled!
+            
+            # ===== STEP 3: SINGLE PHOTO - PROCESS NORMALLY =====
+            logger.info(f"✅ [PHOTO_HANDLER] Single photo detected, processing...")
+            
+            # VALIDATION
+            if not message.photo:
+                error_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
+                await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
+                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+                return
+            
+            # BALANCE CHECK
+            balance = await db.get_balance(user_id)
+            if balance <= 0 and work_mode != WorkMode.EDIT_DESIGN.value:
+                error_text = ERROR_INSUFFICIENT_BALANCE
+                error_msg = await message.answer(error_text)
+                await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
+                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+                return
+            
+            # SAVE PHOTO
+            photo_id = message.photo[-1].file_id
+            logger.info(f"💾 [PHOTO_HANDLER] Photo saved - photo_id={photo_id[:20]}...")
+            
+            await state.update_data(
+                photo_id=photo_id,
+                new_photo=True,
+                photo_uploaded=True
             )
             
-            logger.info(f"📸 [PHOTO_HANDLER] Media group collected: count={photo_count}, msg_ids={all_message_ids}")
+            # GET OLD MENU from DB
+            old_menu_data = await db.get_chat_menu(chat_id)
+            old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
             
-            # ===== STEP 2: CHECK IF MULTIPLE PHOTOS =====
-            if photo_count > 1:
-                logger.warning(f"❌ [PHOTO_HANDLER] MULTIPLE PHOTOS DETECTED: {photo_count}")
+            logger.info(f"📥 [PHOTO_HANDLER] Old menu_id={old_menu_message_id}")
+            
+            # DELETE OLD MENU
+            if old_menu_message_id:
+                try:
+                    await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
+                    logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu {old_menu_message_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not delete old menu: {e}")
+            
+            # DETERMINE NEXT SCREEN
+            if work_mode == WorkMode.NEW_DESIGN.value:
+                await state.set_state(CreationStates.room_choice)
+                text = f"🏠 **Выберите комнату**"
+                text = await add_balance_and_mode_to_text(text, user_id, work_mode='new_design')
+                keyboard = get_room_choice_keyboard()
+                screen = 'room_choice'
                 
-                # 🔥 DELETE ALL photos in the group
-                for msg_id in all_message_ids:
-                    try:
-                        await message.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                        logger.info(f"🗑️ [PHOTO_HANDLER] Deleted photo msg_id={msg_id}")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Could not delete msg_id={msg_id}: {e}")
+            elif work_mode == WorkMode.EDIT_DESIGN.value:
+                await state.set_state(CreationStates.edit_design)
+                text = f"✏️ **Редактируем дизайн**"
+                text = await add_balance_and_mode_to_text(text, user_id, work_mode='edit_design')
+                keyboard = get_edit_design_keyboard()
+                screen = 'edit_design'
                 
-                # Show error
-                error_text = "❌ **Отправьте ОДНО фото**"
-                error_msg = await message.answer(error_text, parse_mode="Markdown")
-                logger.info(f"⚠️ [PHOTO_HANDLER] Error shown, msg_id={error_msg.message_id}")
+            elif work_mode == WorkMode.SAMPLE_DESIGN.value:
+                await state.set_state(CreationStates.download_sample)
+                text = f"📥 **Скачать примеры**"
+                text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
+                keyboard = get_download_sample_keyboard()
+                screen = 'download_sample'
                 
-                # Show SCREEN 2 again (Upload photo)
-                screen_text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📄 Загружите фото")
-                screen_msg = await message.answer(
-                    text=screen_text,
-                    reply_markup=get_upload_photo_keyboard(),
-                    parse_mode="Markdown"
-                )
-                logger.info(f"📤 [PHOTO_HANDLER] SCREEN 2 shown again, msg_id={screen_msg.message_id}")
+            elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
+                await state.set_state(CreationStates.uploading_furniture)
+                text = f"🛋️ **Расстановка мебели**"
+                text = await add_balance_and_mode_to_text(text, user_id, work_mode='arrange_furniture')
+                keyboard = get_uploading_furniture_keyboard()
+                screen = 'uploading_furniture'
                 
-                # Save menu to DB
-                await db.save_chat_menu(chat_id, user_id, screen_msg.message_id, 'uploading_photo')
-                
-                # Auto-delete error after 3s
-                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
-                
-                # Clear media_group tracker
-                if user_id in media_group_tracker and media_group_id in media_group_tracker[user_id]:
-                    del media_group_tracker[user_id][media_group_id]
-                    logger.info(f"🗑️ [PHOTO_HANDLER] Cleared media_group tracker for user {user_id}")
-                
-                return  # ← EXIT! No menu created for multiple photos!
-        
-        # ===== STEP 3: SINGLE PHOTO - PROCESS NORMALLY =====
-        logger.info(f"✅ [PHOTO_HANDLER] Single photo detected, processing...")
-        
-        # VALIDATION
-        if not message.photo:
-            error_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
-            await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
-            asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
-            return
-        
-        # BALANCE CHECK
-        balance = await db.get_balance(user_id)
-        if balance <= 0 and work_mode != WorkMode.EDIT_DESIGN.value:
-            error_text = ERROR_INSUFFICIENT_BALANCE
-            error_msg = await message.answer(error_text)
-            await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
-            asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
-            return
-        
-        # SAVE PHOTO
-        photo_id = message.photo[-1].file_id
-        logger.info(f"💾 [PHOTO_HANDLER] Photo saved - photo_id={photo_id[:20]}...")
-        
-        await state.update_data(
-            photo_id=photo_id,
-            new_photo=True,
-            photo_uploaded=True
-        )
-        
-        # GET OLD MENU from DB
-        old_menu_data = await db.get_chat_menu(chat_id)
-        old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
-        
-        logger.info(f"📥 [PHOTO_HANDLER] Old menu_id={old_menu_message_id}")
-        
-        # DELETE OLD MENU
-        if old_menu_message_id:
+            elif work_mode == WorkMode.FACADE_DESIGN.value:
+                await state.set_state(CreationStates.loading_facade_sample)
+                text = f"🏘️ **Дизайн фасада**"
+                text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
+                keyboard = get_loading_facade_sample_keyboard()
+                screen = 'loading_facade_sample'
+            else:
+                logger.error(f"[ERROR] Unknown work_mode: {work_mode}")
+                await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
+                return
+            
+            # SEND MENU
+            logger.info(f"📤 [PHOTO_HANDLER] Sending menu - screen={screen}")
+            menu_msg = await message.answer(
+                text=text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            logger.info(f"✅ [PHOTO_HANDLER] Menu sent, msg_id={menu_msg.message_id}")
+            
+            # SAVE to DB
+            await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, screen)
+            await state.update_data(menu_message_id=menu_msg.message_id)
+            
+            logger.info(f"📊 [PHOTO_HANDLER] COMPLETE - user_id={user_id}, transitioned to {screen}")
+            
+        except Exception as e:
+            logger.error(f"❌ [PHOTO_HANDLER] FATAL ERROR for user {user_id}: {e}", exc_info=True)
             try:
-                await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
-                logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu {old_menu_message_id}")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not delete old menu: {e}")
-        
-        # DETERMINE NEXT SCREEN
-        if work_mode == WorkMode.NEW_DESIGN.value:
-            await state.set_state(CreationStates.room_choice)
-            text = f"🏠 **Выберите комнату**"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='new_design')
-            keyboard = get_room_choice_keyboard()
-            screen = 'room_choice'
-            
-        elif work_mode == WorkMode.EDIT_DESIGN.value:
-            await state.set_state(CreationStates.edit_design)
-            text = f"✏️ **Редактируем дизайн**"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='edit_design')
-            keyboard = get_edit_design_keyboard()
-            screen = 'edit_design'
-            
-        elif work_mode == WorkMode.SAMPLE_DESIGN.value:
-            await state.set_state(CreationStates.download_sample)
-            text = f"📥 **Скачать примеры**"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
-            keyboard = get_download_sample_keyboard()
-            screen = 'download_sample'
-            
-        elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
-            await state.set_state(CreationStates.uploading_furniture)
-            text = f"🛋️ **Расстановка мебели**"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='arrange_furniture')
-            keyboard = get_uploading_furniture_keyboard()
-            screen = 'uploading_furniture'
-            
-        elif work_mode == WorkMode.FACADE_DESIGN.value:
-            await state.set_state(CreationStates.loading_facade_sample)
-            text = f"🏘️ **Дизайн фасада**"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
-            keyboard = get_loading_facade_sample_keyboard()
-            screen = 'loading_facade_sample'
-        else:
-            logger.error(f"[ERROR] Unknown work_mode: {work_mode}")
-            await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
-            return
-        
-        # SEND MENU
-        logger.info(f"📤 [PHOTO_HANDLER] Sending menu - screen={screen}")
-        menu_msg = await message.answer(
-            text=text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-        logger.info(f"✅ [PHOTO_HANDLER] Menu sent, msg_id={menu_msg.message_id}")
-        
-        # SAVE to DB
-        await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, screen)
-        await state.update_data(menu_message_id=menu_msg.message_id)
-        
-        logger.info(f"📊 [PHOTO_HANDLER] COMPLETE - user_id={user_id}, transitioned to {screen}")
-        
-    except Exception as e:
-        logger.error(f"❌ [PHOTO_HANDLER] FATAL ERROR for user {user_id}: {e}", exc_info=True)
-        try:
-            error_msg = await message.answer("❌ Ошибка при обработке фото. Попробуйте ещё раз.")
-            asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
-        except:
-            pass
+                error_msg = await message.answer("❌ Ошибка при обработке фото. Попробуйте ещё раз.")
+                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+            except:
+                pass
 
 
 # ===== HELPER: _delete_message_after_delay =====
