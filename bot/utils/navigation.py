@@ -28,7 +28,12 @@ async def edit_menu(
     Универсальная функция редактирования единого меню (FSM + БД).
     1) Берёт menu_message_id из FSM или БД.
     2) Пытается отредактировать текст; если сообщение — медиа, редактирует caption.
-    3) Если не вышло — удаляет старое меню и создаёт новое.
+    3) Если не вышло — ЯВНО удаляет старое меню и создаёт новое.
+    
+    [2025-12-31 10:41] 🔥 CRITICAL FIX:
+    - ЯВНО удаляем старое сообщение перед созданием нового
+    - Логируем все операции с сообщениями
+    - Предотвращаем дублирование сообщений при перезапуске бота
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -46,12 +51,15 @@ async def edit_menu(
         if menu_info:
             menu_message_id = menu_info['menu_message_id']
             await state.update_data(menu_message_id=menu_message_id)
+            logger.info(f"📥 [EDIT_MENU] Restored menu_id={menu_message_id} from DB for chat {chat_id}")
         else:
             logger.debug(f"[EDIT_MENU] No menu found in DB for chat {chat_id}")
 
     # 2. Пытаемся редактировать
     if menu_message_id:
         try:
+            logger.info(f"📝 [EDIT_MENU] Attempting edit_message_text for msg_id={menu_message_id}, chat={chat_id}")
+            
             await callback.message.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=menu_message_id,
@@ -59,8 +67,10 @@ async def edit_menu(
                 reply_markup=keyboard,
                 parse_mode=parse_mode
             )
+            
             await state.update_data(menu_message_id=menu_message_id)
             await db.save_chat_menu(chat_id, user_id, menu_message_id, screen_code)
+            logger.info(f"✅ [EDIT_MENU] Successfully edited msg_id={menu_message_id}")
             return True
 
         except TelegramBadRequest as e:
@@ -68,9 +78,12 @@ async def edit_menu(
             # Текст не изменился — не считаем за ошибку
             if "message is not modified" in err:
                 await db.save_chat_menu(chat_id, user_id, menu_message_id, screen_code)
+                logger.debug(f"[EDIT_MENU] Message not modified (same content)")
                 return True
             # Сообщение — медиа, редактируем caption
             if "no text in the message to edit" in err:
+                logger.info(f"📷 [EDIT_MENU] Message has media, attempting edit_message_caption for msg_id={menu_message_id}")
+                
                 try:
                     await callback.message.bot.edit_message_caption(
                         chat_id=chat_id,
@@ -81,30 +94,50 @@ async def edit_menu(
                     )
                     await state.update_data(menu_message_id=menu_message_id)
                     await db.save_chat_menu(chat_id, user_id, menu_message_id, screen_code)
+                    logger.info(f"✅ [EDIT_MENU] Successfully edited caption for msg_id={menu_message_id}")
                     return True
                 except Exception as e_cap:
-                    logger.warning(f"[EDIT_MENU] Failed edit_message_caption: {e_cap}")
-            logger.warning(f"[EDIT_MENU] Failed to edit msg_id={menu_message_id}: {e}")
+                    logger.warning(f"⚠️ [EDIT_MENU] Failed edit_message_caption for msg_id={menu_message_id}: {e_cap}")
+            
+            logger.warning(f"⚠️ [EDIT_MENU] Failed to edit msg_id={menu_message_id}: {e}")
 
         except Exception as e:
             logger.error(f"[EDIT_MENU] Unexpected error editing msg_id={menu_message_id}: {e}")
 
-    # 3. FALLBACK — удаляем старое меню (если есть) и создаём новое
+    # 3. FALLBACK — 🔥 ЯВНО удаляем старое меню и создаём новое
+    logger.warning(f"🔄 [EDIT_MENU] FALLBACK: Creating new message (old msg_id={menu_message_id})")
+    
+    # 🔥 [2025-12-31 10:41] CRITICAL: Explicitly delete old message
     if menu_message_id:
         try:
-            await db.delete_old_menu_if_exists(chat_id, callback.message.bot)
-        except Exception as e:
-            logger.debug(f"[EDIT_MENU] delete_old_menu_if_exists failed: {e}")
+            await callback.message.bot.delete_message(
+                chat_id=chat_id,
+                message_id=menu_message_id
+            )
+            logger.info(f"🗑️ [EDIT_MENU] ✅ Deleted old menu message msg_id={menu_message_id}")
+        except Exception as e_delete:
+            logger.warning(f"⚠️ [EDIT_MENU] Could not delete old msg_id={menu_message_id}: {e_delete}")
+            # Continue anyway - we'll create new message and update DB
 
+    # Create new message
     try:
+        logger.info(f"📤 [EDIT_MENU] Creating new menu message for user {user_id}")
+        
         new_msg = await callback.message.answer(
             text=text,
             reply_markup=keyboard,
             parse_mode=parse_mode
         )
+        
+        logger.info(f"✅ [EDIT_MENU] Created new message msg_id={new_msg.message_id}")
+        
+        # 🔥 [2025-12-31 10:41] Update FSM and DB with NEW message ID
         await state.update_data(menu_message_id=new_msg.message_id)
         await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen_code)
+        
+        logger.info(f"💾 [EDIT_MENU] Saved new msg_id={new_msg.message_id} to DB")
         return False
+        
     except Exception as e:
         logger.error(f"[EDIT_MENU] Failed to create new message: {e}")
         return False
@@ -153,6 +186,10 @@ async def update_menu_after_photo(
     """
     Обновление меню после загрузки фото (используется в message handlers).
     Если сообщение — медиа, при ошибке редактируем caption.
+    
+    [2025-12-31 10:41] 🔥 CRITICAL:
+    - Явно удаляет старое сообщение перед созданием нового
+    - Логирует все операции
     """
     chat_id = message.chat.id
     user_id = message.from_user.id
@@ -166,13 +203,15 @@ async def update_menu_after_photo(
         if menu_info:
             menu_message_id = menu_info['menu_message_id']
             await state.update_data(menu_message_id=menu_message_id)
-            logger.info(f"[UPDATE_AFTER_PHOTO] Restored menu_id={menu_message_id} from DB")
+            logger.info(f"📥 [UPDATE_AFTER_PHOTO] Restored menu_id={menu_message_id} from DB")
 
     if not menu_message_id:
         logger.warning(f"[UPDATE_AFTER_PHOTO] Menu ID not found for user {user_id}")
         return False
 
     try:
+        logger.info(f"📝 [UPDATE_AFTER_PHOTO] Attempting edit_message_text for msg_id={menu_message_id}")
+        
         await message.bot.edit_message_text(
             chat_id=chat_id,
             message_id=menu_message_id,
@@ -181,12 +220,15 @@ async def update_menu_after_photo(
             parse_mode=parse_mode
         )
         await db.save_chat_menu(chat_id, user_id, menu_message_id, 'photo_uploaded')
+        logger.info(f"✅ [UPDATE_AFTER_PHOTO] Successfully edited msg_id={menu_message_id}")
         return True
 
     except TelegramBadRequest as e:
         err = str(e).lower()
         if "no text in the message to edit" in err:
             # Попробуем редактировать caption
+            logger.info(f"📷 [UPDATE_AFTER_PHOTO] Message has media, attempting edit_message_caption")
+            
             try:
                 await message.bot.edit_message_caption(
                     chat_id=chat_id,
@@ -196,9 +238,11 @@ async def update_menu_after_photo(
                     parse_mode=parse_mode
                 )
                 await db.save_chat_menu(chat_id, user_id, menu_message_id, 'photo_uploaded')
+                logger.info(f"✅ [UPDATE_AFTER_PHOTO] Successfully edited caption for msg_id={menu_message_id}")
                 return True
             except Exception as e_cap:
-                logger.error(f"[UPDATE_AFTER_PHOTO] Failed to update caption: {e_cap}")
+                logger.error(f"⚠️ [UPDATE_AFTER_PHOTO] Failed to update caption: {e_cap}")
+        
         logger.error(f"[UPDATE_AFTER_PHOTO] Failed to update menu: {e}")
         return False
 
