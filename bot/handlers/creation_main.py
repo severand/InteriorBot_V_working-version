@@ -78,16 +78,14 @@ async def collect_media_group(user_id: int, media_group_id: str, message_id: int
     
     Algorithm:
     1. Register this photo in media_group
-    2. Wait 1000ms for other photos to arrive (increased from 500ms)
+    2. Wait 1000ms for other photos to arrive
     3. Return: (count_of_photos, message_ids)
     
     Why 1000ms?
     - When user uploads 1-2 photos: arrive within ~100-300ms
-    - When user uploads 3-4+ photos: can arrive within ~500-800ms
+    - When user uploads 3-4+ photos: arrive within ~500-800ms
     - 1000ms gives safe margin to collect ALL photos
     - After 1000ms, we can safely say "all photos arrived"
-    
-    🔧 [2025-12-31 13:14] FIX: Was missing last photos when uploading 3+
     """
     
     if user_id not in media_group_tracker:
@@ -106,7 +104,7 @@ async def collect_media_group(user_id: int, media_group_id: str, message_id: int
     
     logger.info(f"📸 [MEDIA_GROUP] user={user_id}, group={media_group_id}, photo #{photo_count} arrived")
     
-    # Wait 1000ms (1 sec) for more photos
+    # Wait 1000ms for more photos
     await asyncio.sleep(1.0)
     
     # Get final count
@@ -303,8 +301,8 @@ async def photo_handler(message: Message, state: FSMContext):
                             logger.warning(f"⚠️ Could not delete old menu: {e}")
                     
                     # 🔥 [2025-12-31 14:45] SEND TEXT-ONLY MESSAGE (NO buttons)
-                    text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📸 **Загрузите фото помещения**\n\nПожалуйста, отправьте ОДНУ фотографию.")
-                    text = f"⚠️ **ПОЖАЛУЙСТА, ОДНО ФОТО!**\n\n{text}\n\n🔄 Попробуйте ещё раз - отправьте одну фотографию."
+                    text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📸 **Загрузите фото помещения**\\n\\nПожалуйста, отправьте ОДНУ фотографию.")
+                    text = f"⚠️ **ПОЖАЛУЙСТА, ОДНО ФОТО!**\\n\\n{text}\\n\\n🔄 Попробуйте ещё раз - отправьте одну фотографию."
                     
                     info_msg = await message.answer(
                         text=text,
