@@ -64,17 +64,20 @@ async def get_user_lock(user_id: int) -> asyncio.Lock:
 
 async def collect_media_group(user_id: int, media_group_id: str, message_id: int):
     """
-    🔥 [2025-12-31 11:33] Collect all photos from media_group
+    🔥 [2025-12-31 13:14] Collect all photos from media_group
     
     Algorithm:
     1. Register this photo in media_group
-    2. Wait 500ms for other photos to arrive (media_group arrives together)
+    2. Wait 1000ms for other photos to arrive (increased from 500ms)
     3. Return: (count_of_photos, message_ids)
     
-    Why 500ms?
-    - When user uploads 7 photos: all arrive within ~100-300ms
-    - 500ms gives safe margin to collect all
-    - After 500ms, we can safely say "all photos arrived"
+    Why 1000ms?
+    - When user uploads 1-2 photos: arrive within ~100-300ms
+    - When user uploads 3-4+ photos: can arrive within ~500-800ms
+    - 1000ms gives safe margin to collect ALL photos
+    - After 1000ms, we can safely say "all photos arrived"
+    
+    🔧 [2025-12-31 13:14] FIX: Was missing last photos when uploading 3+
     """
     
     if user_id not in media_group_tracker:
@@ -93,8 +96,8 @@ async def collect_media_group(user_id: int, media_group_id: str, message_id: int
     
     logger.info(f"📸 [MEDIA_GROUP] user={user_id}, group={media_group_id}, photo #{photo_count} arrived")
     
-    # Wait 500ms for more photos
-    await asyncio.sleep(0.5)
+    # Wait 1000ms (1 sec) for more photos
+    await asyncio.sleep(1.0)
     
     # Get final count
     final_count = len(media_group_tracker[user_id][media_group_id]['photos'])
