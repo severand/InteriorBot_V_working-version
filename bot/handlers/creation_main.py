@@ -40,6 +40,52 @@ from utils.navigation import edit_menu, show_main_menu
 logger = logging.getLogger(__name__)
 router = Router()
 
+# 🔥 [2025-12-31 15:06] Tracking альбомов для параллельного удаления
+# Structure: {user_id: {media_group_id: {'message_ids': [7435, 7436, 7437], 'collected': True}}}
+media_group_cache = {}
+
+
+async def collect_all_media_group_photos(user_id: int, media_group_id: str, message_id: int):
+    """
+    🔥 [2025-12-31 15:06] СОБРАТЬ ВСЕ ФОТО АЛЬБОМА ЗА 1 СЕКУНДУ
+    
+    Когда приходит первое фото:
+    1. Регистрируем его
+    2. ЖДЁМ 1000мс
+    3. За это время приходят ВСЕ остальные фото
+    4. Возвращаем ВСЕ message_ids
+    
+    Все остальные handlers видят что уже collected=True → выходят
+    """
+    if user_id not in media_group_cache:
+        media_group_cache[user_id] = {}
+    
+    # Если первое фото - создаём запись
+    if media_group_id not in media_group_cache[user_id]:
+        media_group_cache[user_id][media_group_id] = {
+            'message_ids': [message_id],
+            'collected': False
+        }
+        logger.info(f"📸 [COLLECT] user={user_id}, group={media_group_id}, photo #1 registered")
+        
+        # ЖДЁМ 1 СЕКУНДУ для прихода остальных фото
+        await asyncio.sleep(1.0)
+        
+        # Помечаем что собрали
+        media_group_cache[user_id][media_group_id]['collected'] = True
+        
+        final_ids = media_group_cache[user_id][media_group_id]['message_ids'].copy()
+        logger.info(f"📸 [COLLECT] user={user_id}, group={media_group_id}, COLLECTED {len(final_ids)} photos")
+        return final_ids
+    else:
+        # Если уже идёт сбор - добавляем фото к существующему
+        if not media_group_cache[user_id][media_group_id]['collected']:
+            media_group_cache[user_id][media_group_id]['message_ids'].append(message_id)
+            count = len(media_group_cache[user_id][media_group_id]['message_ids'])
+            logger.info(f"📸 [COLLECT] user={user_id}, group={media_group_id}, photo #{count} added")
+        
+        return None  # Не первое фото - не нужно собирать
+
 
 # ===== SCREEN 0: MAIN MENU =====
 @router.callback_query(F.data == "main_menu")
@@ -145,54 +191,53 @@ async def photo_handler(message: Message, state: FSMContext):
     """
     SCREEN 2: Photo upload (UPLOADING_PHOTO)
     
-    [2025-12-31 15:01] 🔥 СКОПИРОВАНА ЛОГИКА ИЗ ПРИМЕРА:
-    - Если media_group_id: удалить фото СРАЗУ
-    - Проверить cached_group_id в FSM
-    - Если новый альбом: показать текст, удалить через 3сек
-    - RETURN (не обрабатывать)
+    [2025-12-31 15:06] 🔥 УДАЛЯЕМ ВСЕ ФОТО АЛЬБОМА ОДНОВРЕМЕННО!
     
-    ПРОСТОТА = НАДЁЖНОСТЬ!
+    ЛОГИКА:
+    1. Фото приходит → если media_group_id:
+       - Собираем ВСЕ фото за 1сек
+       - УДАЛЯЕМ ВСЕ ОДНОВРЕМЕННО (параллельно)
+       - RETURN (не показываем ничего)
+    2. Если одиночное фото → обрабатываем нормально
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # 🔥 [2025-12-31 15:01] ТОЧНАЯ КОПИЯ ЛОГИКИ ИЗ ПРИМЕРА
+    # 🔥 [2025-12-31 15:06] АЛЬБОМ - УДАЛИТЬ ВСЕ ФОТО
     if message.media_group_id:
-        data = await state.get_data()
-        cached_group_id = data.get("media_group_id")
+        logger.info(f"📸 [ALBUM] Detected media_group_id={message.media_group_id}")
         
-        # Удалить фото СРАЗУ
-        try:
-            await message.delete()
-        except Exception:
-            pass
+        # СОБРАТЬ ВСЕ ФОТО за 1сек
+        collected_ids = await collect_all_media_group_photos(
+            user_id,
+            message.media_group_id,
+            message.message_id
+        )
         
-        # Если это НОВЫЙ альбом (не тот что был в кэше)
-        if cached_group_id != message.media_group_id:
-            # Сохранить ID этого альбома в FSM
-            await state.update_data(media_group_id=message.media_group_id)
+        # Если это ПЕРВОЕ фото в альбоме - collected_ids будут
+        if collected_ids:
+            logger.warning(f"❌ ALBUM with {len(collected_ids)} photos detected!")
             
-            # Показать текст ошибки
-            msg = await message.answer(TOO_MANY_PHOTOS_TEXT)
+            # 🔥 УДАЛИТЬ ВСЕ ФОТО ОДНОВРЕМЕННО (параллельно)
+            delete_tasks = []
+            for msg_id in collected_ids:
+                delete_tasks.append(
+                    message.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                )
             
-            # Удалить через 3 секунды
-            await asyncio.sleep(3)
-            try:
-                await msg.delete()
-            except Exception:
-                pass
+            # Жди пока все удалятся
+            results = await asyncio.gather(*delete_tasks, return_exceptions=True)
+            success_count = sum(1 for r in results if not isinstance(r, Exception))
+            logger.info(f"🗑️ [DELETE] Deleted {success_count}/{len(collected_ids)} photos")
         
-        # ВЫХОД - не обрабатывать альбом дальше
+        # ВЫХОД - не обрабатываем альбом дальше
         return
     
-    # 🔥 Сбросить media_group_id если одиночное фото
-    await state.update_data(media_group_id=None)
+    # 🔥 ОДИНОЧНОЕ ФОТО - обрабатываем нормально
+    logger.info(f"📸 [SINGLE] Single photo detected")
     
-    # ===== ОБРАБОТКА ОДИНОЧНОГО ФОТО =====
     data = await state.get_data()
     work_mode = data.get('work_mode')
-    
-    logger.info(f"🎞️ [PHOTO_HANDLER] user_id={user_id}, work_mode={work_mode}, single photo")
     
     if not message.photo:
         error_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
