@@ -220,9 +220,15 @@ async def photo_handler(message: Message, state: FSMContext):
     
     LOGIC:
     1. ONE photo: Create menu with buttons, send
-    2. MULTIPLE photos: Delete ALL photos + old menu using parallel delete_message
+    2. MULTIPLE photos: Delete ALL photos + old menu + SEND TEXT-ONLY MESSAGE
     
-    [2025-12-31 13:21] 🔥 CRITICAL FIX: Use delete_message with await.gather for parallel deletion!
+    [2025-12-31 14:45] 🔥 CRITICAL FIX: Multiple photos handling
+    - When multiple photos detected:
+      1. Delete ALL photos in parallel
+      2. Delete old menu
+      3. Send TEXT-ONLY message with UPLOADING_PHOTO_TEMPLATES (NO buttons)
+      4. Stay in uploading_photo state
+      5. Wait for single photo
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -261,7 +267,7 @@ async def photo_handler(message: Message, state: FSMContext):
                     
                     media_group_tracker[user_id][media_group_id]['processed'] = True
                     
-                    # 🔥 [2025-12-31 13:21] PARALLEL DELETE - delete all photos SIMULTANEOUSLY
+                    # 🔥 [2025-12-31 14:45] STEP 2A: PARALLEL DELETE ALL PHOTOS
                     delete_tasks = []
                     for msg_id in all_message_ids:
                         delete_tasks.append(
@@ -270,11 +276,10 @@ async def photo_handler(message: Message, state: FSMContext):
                     
                     # Wait for all delete tasks to complete
                     results = await asyncio.gather(*delete_tasks, return_exceptions=True)
-                    
                     deleted_count = sum(1 for r in results if not isinstance(r, Exception))
                     logger.info(f"🗑️ [PHOTO_HANDLER] Deleted {deleted_count}/{photo_count} photos")
                     
-                    # DELETE OLD MENU (uploading_photo screen)
+                    # 🔥 [2025-12-31 14:45] STEP 2B: DELETE OLD MENU
                     old_menu_data = await db.get_chat_menu(chat_id)
                     old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
                     
@@ -285,7 +290,25 @@ async def photo_handler(message: Message, state: FSMContext):
                         except Exception as e:
                             logger.warning(f"⚠️ Could not delete old menu: {e}")
                     
-                    logger.info(f"📊 [PHOTO_HANDLER] MULTIPLE PHOTOS: All deleted (photos + menu)")
+                    # 🔥 [2025-12-31 14:45] STEP 2C: SEND TEXT-ONLY MESSAGE (NO buttons)
+                    # Get text for current work mode
+                    text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📸 **Загрузите фото помещения**\n\nПожалуйста, отправьте ОДНУ фотографию.")
+                    
+                    # Add warning about multiple photos
+                    text = f"⚠️ **ПОЖАЛУЙСТА, ОДНО ФОТО!**\n\n{text}\n\n🔄 Попробуйте ещё раз - отправьте одну фотографию."
+                    
+                    info_msg = await message.answer(
+                        text=text,
+                        parse_mode="Markdown"
+                        # 🔥 NO reply_markup (NO buttons)
+                    )
+                    logger.info(f"📨 [PHOTO_HANDLER] Text-only message sent: msg_id={info_msg.message_id}")
+                    
+                    # 🔥 [2025-12-31 14:45] STAY IN uploading_photo state
+                    # Do NOT move to next state
+                    # Remain waiting for single photo
+                    
+                    logger.info(f"📊 [PHOTO_HANDLER] MULTIPLE PHOTOS: All deleted (photos + menu), text-only message sent, waiting for single photo")
                     return
             
             # ===== STEP 3: SINGLE PHOTO - PROCESS NORMALLY =====
