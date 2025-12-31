@@ -1,4 +1,3 @@
-# bot/handlers/creation_main.py
 # ===== PHASE 1: MAIN ENTRY POINT + PHOTO UPLOAD =====
 
 import asyncio
@@ -168,7 +167,8 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         
         # Save ONLY work_mode in FSM (NOT menu_message_id - it's in DB)
         await state.update_data(
-            work_mode=work_mode.value
+            work_mode=work_mode.value,
+            photo_uploaded=False  # 🔥 [2025-12-31 10:53] Reset photo flag for new upload session
         )
         await state.set_state(CreationStates.uploading_photo)
         
@@ -197,25 +197,46 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 # ===== SCREEN 2: PHOTO_HANDLER (Photo upload for all modes) =====
 # [2025-12-29] UPDATED (V3)
 # [2025-12-30 22:45] 🔥 CRITICAL: menu_message_id из БД + INFO логи для отладки!
+# [2025-12-31 10:53] 🔥 CRITICAL: Allow only ONE photo per session!
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
     SCREEN 2: Photo upload (UPLOADING_PHOTO)
     
     Logic:
-    1. Photo validation
-    2. Balance check (except EDIT_DESIGN)
-    3. Save file_id in FSM
-    4. GET old menu_message_id FROM DATABASE (NOT FSM!)
-    5. DELETE OLD MENU MESSAGE before sending new one
-    6. Send NEW message with text + buttons BELOW the photo user uploaded
-    7. Save new menu_message_id to DATABASE
-    8. Transition to NEXT screen (depends on mode):
-       - NEW_DESIGN → ROOM_CHOICE
-       - EDIT_DESIGN → EDIT_DESIGN
-       - SAMPLE_DESIGN → DOWNLOAD_SAMPLE
-       - ARRANGE_FURNITURE → UPLOADING_FURNITURE
-       - FACADE_DESIGN → LOADING_FACADE_SAMPLE
+    1. 🔥 [2025-12-31 10:53] CHECK: Has photo already been uploaded? If YES → ERROR
+    2. Photo validation
+    3. Balance check (except EDIT_DESIGN)
+    4. Save file_id in FSM
+    5. GET old menu_message_id FROM DATABASE (NOT FSM!)
+    6. DELETE OLD MENU MESSAGE before sending new one
+    7. Send NEW message with text + buttons BELOW the photo user uploaded
+    8. Save new menu_message_id to DATABASE
+    9. Set photo_uploaded=True flag to prevent duplicate uploads
+    10. Transition to NEXT screen (depends on mode):
+        - NEW_DESIGN → ROOM_CHOICE
+        - EDIT_DESIGN → EDIT_DESIGN
+        - SAMPLE_DESIGN → DOWNLOAD_SAMPLE
+        - ARRANGE_FURNITURE → UPLOADING_FURNITURE
+        - FACADE_DESIGN → LOADING_FACADE_SAMPLE
+    
+    KEY FIX [2025-12-31 10:53] - SINGLE PHOTO PER SESSION:
+    ❌ OLD: Accepted unlimited photos in uploading_photo state
+            Problem: Each photo created new menu message
+            Result: Duplicate menus on screen
+    
+    ✅ NEW: Check FSM state for photo_uploaded flag
+            If flag=True → Send error "Загрузите ОДНО фото"
+            If flag=False → Process first photo, set flag=True
+            Result: Only ONE menu created per session!
+    
+    How it works:
+    1. set_work_mode() sets photo_uploaded=False
+    2. First photo arrives → flag is False → PROCESS normally
+    3. After first photo processes → set photo_uploaded=True
+    4. Second photo arrives → flag is True → REJECT with error
+    5. Error message auto-deletes in 3 seconds
+    6. User can continue to next step with ONE photo
     
     KEY FIX [2025-12-30 22:45] - PERSISTENT menu_message_id:
     ❌ OLD: menu_message_id was stored in FSM
@@ -225,18 +246,6 @@ async def photo_handler(message: Message, state: FSMContext):
     ✅ NEW: menu_message_id is stored in DATABASE (chat_menus table)
             Problem solved: Even if FSM dies, we can get the ID from DB
             Result: Always can delete old message correctly!
-    
-    How it works:
-    1. message.photo received from user
-    2. Extract work_mode from FSM state
-    3. Validate photo + balance
-    4. Save photo_id to FSM
-    5. 🔥 GET old menu_message_id FROM DATABASE using chat_id
-    6. DELETE old menu message using ID from DB
-    7. Prepare text with footer (work_mode param ensures correct footer)
-    8. Send NEW menu message with buttons (replaces deleted one)
-    9. Save new menu_message_id to DATABASE (not FSM!)
-    10. Transition to next screen
     
     Why this is better:
     - Database is persistent (survives bot restarts)
@@ -252,6 +261,23 @@ async def photo_handler(message: Message, state: FSMContext):
     logger.info(f"🎞️ [PHOTO_HANDLER] START - user_id={user_id}, work_mode={work_mode}, photo received")
 
     try:
+        # 🔥 [2025-12-31 10:53] CRITICAL CHECK: Is photo already uploaded?
+        photo_uploaded = data.get('photo_uploaded', False)
+        if photo_uploaded:
+            logger.warning(f"⚠️ [PHOTO_HANDLER] REJECTED - photo already uploaded for user {user_id}")
+            
+            error_text = "❌ **Загрузите ОДНО фото**\n\nВы уже загрузили фото. Переходите к следующему шагу!"
+            error_msg = await message.answer(error_text, parse_mode="Markdown")
+            
+            # Save error message to DB
+            await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
+            
+            # Auto-delete error message after 3 seconds
+            asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+            
+            logger.info(f"ℹ️ [PHOTO_HANDLER] Error message will auto-delete in 3 seconds")
+            return
+        
         # ===== 1. VALIDATION =====
         if not message.photo:
             error_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
@@ -275,9 +301,11 @@ async def photo_handler(message: Message, state: FSMContext):
         
         logger.info(f"💾 [PHOTO_HANDLER] Photo saved - photo_id={photo_id[:20]}...")
         
+        # 🔥 [2025-12-31 10:53] SET photo_uploaded=True BEFORE processing
         await state.update_data(
             photo_id=photo_id,
-            new_photo=True
+            new_photo=True,
+            photo_uploaded=True  # 🔥 Prevent further photo uploads!
         )
         
         # ===== 4. GET OLD MENU MESSAGE ID FROM DATABASE =====
