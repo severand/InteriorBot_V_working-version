@@ -9,6 +9,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.filters.state import StateFilter
 from aiogram.types import CallbackQuery, Message, InputMediaPhoto
+from aiogram.exceptions import TelegramBadRequest
 
 from database.db import db
 
@@ -209,42 +210,23 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 
 
 # ===== SCREEN 2: PHOTO_HANDLER (Photo upload for all modes) =====
-# 🔥 [2025-12-31 12:24] CRITICAL REWRITE: Use LOCK to prevent parallel screen creation!
+# 🔥 [2025-12-31 12:27] CRITICAL FIX: EDIT old menu, don't create new!
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
     SCREEN 2: Photo upload (UPLOADING_PHOTO)
     
-    🔥 [2025-12-31 12:24] CRITICAL FIX: USE LOCK!
+    🔥 [2025-12-31 12:27] CRITICAL FIX: EDIT OLD MENU!
     
-    Problem before:
-    - User uploads 7 photos
-    - All 7 handlers run in PARALLEL
-    - Each deletes 1 photo and creates 1 menu
-    - Result: 7 menus created (BUG!)
-    
-    Solution:
-    1. Collect all photos in media_group (wait 500ms)
-    2. ACQUIRE lock - only ONE handler can proceed
-    3. FIRST handler that acquires lock: delete all photos, show error, create SCREEN 2 again
-    4. OTHER handlers: check if already processed, return early
-    5. RELEASE lock
-    - Result: 1 menu screen! ✅
+    When showing "Upload ONE photo" error:
+    - OLD: message.answer() → creates NEW message
+    - NEW: bot.edit_message_text() → edits OLD menu
     
     Algorithm:
-    - Handler A arrives (photo 1)
-      → Acquires lock first
-      → Collects all 7 photos
-      → count=7 > 1
-      → Deletes all 7
-      → Creates menu
-      → Releases lock
-    
-    - Handlers B-G arrive (photos 2-7)
-      → Try to acquire lock (blocked until A releases)
-      → A already released
-      → Check tracker: already processed
-      → Return early (no menu created)
+    1. Get old menu_message_id from DB
+    2. Try to EDIT it
+    3. If fails: delete old + create new
+    4. Result: NO duplicate menus!
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -300,17 +282,58 @@ async def photo_handler(message: Message, state: FSMContext):
                     error_msg = await message.answer(error_text, parse_mode="Markdown")
                     logger.info(f"⚠️ [PHOTO_HANDLER] Error shown, msg_id={error_msg.message_id}")
                     
-                    # Show SCREEN 2 again (Upload photo) - ONLY ONCE!
+                    # 🔥 [2025-12-31 12:27] EDIT OLD MENU instead of creating new!
+                    # Get old menu from DB
+                    old_menu_data = await db.get_chat_menu(chat_id)
+                    old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
+                    
                     screen_text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📄 Загружите фото")
-                    screen_msg = await message.answer(
-                        text=screen_text,
-                        reply_markup=get_upload_photo_keyboard(),
-                        parse_mode="Markdown"
-                    )
-                    logger.info(f"📤 [PHOTO_HANDLER] SCREEN 2 shown (ONE TIME ONLY), msg_id={screen_msg.message_id}")
+                    keyboard = get_upload_photo_keyboard()
+                    
+                    screen_msg_id = None
+                    
+                    # Try to EDIT old menu
+                    if old_menu_message_id:
+                        try:
+                            await message.bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=old_menu_message_id,
+                                text=screen_text,
+                                reply_markup=keyboard,
+                                parse_mode="Markdown"
+                            )
+                            screen_msg_id = old_menu_message_id
+                            logger.info(f"✅ [PHOTO_HANDLER] EDITED old menu msg_id={old_menu_message_id}")
+                        except TelegramBadRequest as e:
+                            err = str(e).lower()
+                            if "message is not modified" in err:
+                                # Same content - OK
+                                screen_msg_id = old_menu_message_id
+                                logger.debug(f"[PHOTO_HANDLER] Message not modified (same content)")
+                            else:
+                                logger.warning(f"⚠️ [PHOTO_HANDLER] Could not edit old menu: {e}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ [PHOTO_HANDLER] Error editing old menu: {e}")
+                    
+                    # If edit failed - delete old and create new
+                    if not screen_msg_id:
+                        if old_menu_message_id:
+                            try:
+                                await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
+                                logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu {old_menu_message_id}")
+                            except:
+                                pass
+                        
+                        screen_msg = await message.answer(
+                            text=screen_text,
+                            reply_markup=keyboard,
+                            parse_mode="Markdown"
+                        )
+                        screen_msg_id = screen_msg.message_id
+                        logger.info(f"📤 [PHOTO_HANDLER] Created new menu msg_id={screen_msg_id}")
                     
                     # Save menu to DB
-                    await db.save_chat_menu(chat_id, user_id, screen_msg.message_id, 'uploading_photo')
+                    await db.save_chat_menu(chat_id, user_id, screen_msg_id, 'uploading_photo')
                     
                     # Auto-delete error after 3s
                     asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
