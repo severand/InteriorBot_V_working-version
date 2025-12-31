@@ -1,4 +1,5 @@
 # bot/database/db.py
+# --- ОБНОВЛЕН: 2025-12-30 23:59 - Добавлена функция increase_balance() для возврата баланса ---
 # --- ОБНОВЛЕН: 2025-12-24 20:25 - Добавлены методы get_setting/set_setting ---
 # --- ОБНОВЛЕН: 2025-12-24 12:35 - Добавлены методы для PRO MODE функционала ---
 # --- ОБНОВЛЕН: 2025-12-04 11:36 - Добавлены методы для уведомлений и источников трафика ---
@@ -364,6 +365,32 @@ class Database:
                 return True
             except Exception as e:
                 logger.error(f"Ошибка уменьшения баланса: {e}")
+                return False
+
+    async def increase_balance(self, user_id: int, tokens: int) -> bool:
+        """
+        Увеличить баланс генераций на N токенов.
+        
+        Используется для:
+        - Возврата баланса при ошибке генерации
+        - Добавления бонусов
+        - Возмещения потраченных генераций
+        
+        Параметры:
+        - user_id: ID пользователя
+        - tokens: количество генераций для добавления (положительное число)
+        
+        Возвращает:
+        - True если успешно обновлено, False при ошибке
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                await db.execute(UPDATE_BALANCE, (tokens, user_id))
+                await db.commit()
+                logger.info(f"✅ Возвращено {tokens} генераций пользователю {user_id}")
+                return True
+            except Exception as e:
+                logger.error(f"❌ Ошибка увеличения баланса: {e}")
                 return False
 
     async def add_tokens(self, user_id: int, tokens: int) -> bool:
