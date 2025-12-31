@@ -41,6 +41,17 @@ from utils.navigation import edit_menu, show_main_menu
 logger = logging.getLogger(__name__)
 router = Router()
 
+# 🔥 [2025-12-31 11:04] CRITICAL: Per-user locks for synchronizing concurrent photo uploads
+# Prevents race condition when user uploads multiple photos simultaneously
+user_photo_locks = {}  # {user_id: asyncio.Lock()}
+
+
+def get_user_lock(user_id: int) -> asyncio.Lock:
+    """🔥 Get or create asyncio.Lock for user"""
+    if user_id not in user_photo_locks:
+        user_photo_locks[user_id] = asyncio.Lock()
+    return user_photo_locks[user_id]
+
 
 # ===== SCREEN 0: MAIN MENU =====
 @router.callback_query(F.data == "main_menu")
@@ -131,7 +142,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     4. Result: ONE message with photo + buttons (no duplicates!) ✅
     
     Why NOT just send_message about mode:
-    - edit_menu() отредактивает ТЕКУЩЕЕ меню на SCREEN 1
+    - edit_menu() отредактивает ТЕКУщЕЕ меню на SCREEN 1
     - Кнопки оно также меняет ✅
     - Не создает слишком много сообщений ✅
     
@@ -198,45 +209,51 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 # [2025-12-29] UPDATED (V3)
 # [2025-12-30 22:45] 🔥 CRITICAL: menu_message_id из БД + INFO логи для отладки!
 # [2025-12-31 10:53] 🔥 CRITICAL: Allow only ONE photo per session!
+# [2025-12-31 11:04] 🔥 CRITICAL: Use asyncio.Lock to sync concurrent uploads!
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
     SCREEN 2: Photo upload (UPLOADING_PHOTO)
     
     Logic:
-    1. 🔥 [2025-12-31 10:53] CHECK: Has photo already been uploaded? If YES → ERROR
-    2. Photo validation
-    3. Balance check (except EDIT_DESIGN)
-    4. Save file_id in FSM
-    5. GET old menu_message_id FROM DATABASE (NOT FSM!)
-    6. DELETE OLD MENU MESSAGE before sending new one
-    7. Send NEW message with text + buttons BELOW the photo user uploaded
-    8. Save new menu_message_id to DATABASE
-    9. Set photo_uploaded=True flag to prevent duplicate uploads
-    10. Transition to NEXT screen (depends on mode):
+    1. 🔥 [2025-12-31 11:04] LOCK: Acquire per-user lock (sync concurrent uploads)
+    2. 🔥 [2025-12-31 10:53] CHECK: Has photo already been uploaded? If YES → ERROR
+    3. Photo validation
+    4. Balance check (except EDIT_DESIGN)
+    5. Save file_id in FSM
+    6. GET old menu_message_id FROM DATABASE (NOT FSM!)
+    7. DELETE OLD MENU MESSAGE before sending new one
+    8. Send NEW message with text + buttons BELOW the photo user uploaded
+    9. Save new menu_message_id to DATABASE
+    10. Set photo_uploaded=True flag to prevent duplicate uploads
+    11. Transition to NEXT screen (depends on mode):
         - NEW_DESIGN → ROOM_CHOICE
         - EDIT_DESIGN → EDIT_DESIGN
         - SAMPLE_DESIGN → DOWNLOAD_SAMPLE
         - ARRANGE_FURNITURE → UPLOADING_FURNITURE
         - FACADE_DESIGN → LOADING_FACADE_SAMPLE
     
-    KEY FIX [2025-12-31 10:53] - SINGLE PHOTO PER SESSION:
-    ❌ OLD: Accepted unlimited photos in uploading_photo state
-            Problem: Each photo created new menu message
-            Result: Duplicate menus on screen
+    KEY FIX [2025-12-31 11:04] - SYNC CONCURRENT PHOTO UPLOADS:
+    🔥 Problem: When user uploads multiple photos SIMULTANEOUSLY:
+              - All photo_handler() calls run in parallel
+              - All read photo_uploaded=False (race condition)
+              - All create menu messages
+              - Result: 5-7 duplicate menus!
     
-    ✅ NEW: Check FSM state for photo_uploaded flag
-            If flag=True → Send error "Загрузите ОДНО фото"
-            If flag=False → Process first photo, set flag=True
-            Result: Only ONE menu created per session!
+    🔥 Solution: Use asyncio.Lock per user
+              - Only ONE photo_handler() can run at a time for user
+              - First photo: Lock acquired ✅ PROCESS
+              - Second photo: Waiting for lock → photo_uploaded=True → REJECT
+              - All others: Same as second
     
     How it works:
-    1. set_work_mode() sets photo_uploaded=False
-    2. First photo arrives → flag is False → PROCESS normally
-    3. After first photo processes → set photo_uploaded=True
-    4. Second photo arrives → flag is True → REJECT with error
-    5. Error message auto-deletes in 3 seconds
-    6. User can continue to next step with ONE photo
+    1. get_user_lock(user_id) → Returns lock for this user
+    2. async with lock: → Acquire lock (wait if needed)
+    3. First photo acquires lock immediately ✅ PROCESS
+    4. Concurrent photos wait for lock
+    5. When first finishes → sets photo_uploaded=True
+    6. Waiting photo acquires lock → reads photo_uploaded=True → REJECT
+    7. Remaining photos follow same path
     
     KEY FIX [2025-12-30 22:45] - PERSISTENT menu_message_id:
     ❌ OLD: menu_message_id was stored in FSM
@@ -246,12 +263,6 @@ async def photo_handler(message: Message, state: FSMContext):
     ✅ NEW: menu_message_id is stored in DATABASE (chat_menus table)
             Problem solved: Even if FSM dies, we can get the ID from DB
             Result: Always can delete old message correctly!
-    
-    Why this is better:
-    - Database is persistent (survives bot restarts)
-    - FSM is volatile (dies on restart)
-    - We always know which message to delete
-    - Clean UI, no orphaned messages
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -260,148 +271,159 @@ async def photo_handler(message: Message, state: FSMContext):
 
     logger.info(f"🎞️ [PHOTO_HANDLER] START - user_id={user_id}, work_mode={work_mode}, photo received")
 
+    # 🔥 [2025-12-31 11:04] GET USER LOCK - Synchronize concurrent uploads
+    lock = get_user_lock(user_id)
+    
     try:
-        # 🔥 [2025-12-31 10:53] CRITICAL CHECK: Is photo already uploaded?
-        photo_uploaded = data.get('photo_uploaded', False)
-        if photo_uploaded:
-            logger.warning(f"⚠️ [PHOTO_HANDLER] REJECTED - photo already uploaded for user {user_id}")
+        async with lock:
+            logger.info(f"🔐 [PHOTO_HANDLER] LOCK ACQUIRED for user {user_id}")
             
-            error_text = "❌ **Загрузите ОДНО фото**\n\nВы уже загрузили фото. Переходите к следующему шагу!"
-            error_msg = await message.answer(error_text, parse_mode="Markdown")
+            # Re-read state after acquiring lock (might have changed)
+            data = await state.get_data()
             
-            # Save error message to DB
-            await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
+            # 🔥 [2025-12-31 10:53] CRITICAL CHECK: Is photo already uploaded?
+            photo_uploaded = data.get('photo_uploaded', False)
+            if photo_uploaded:
+                logger.warning(f"⚠️ [PHOTO_HANDLER] REJECTED - photo already uploaded for user {user_id}")
+                
+                error_text = "❌ **Загружите ОДНО фото**\n\nВы уже загрузили фото. Переходите к следующему шагу!"
+                error_msg = await message.answer(error_text, parse_mode="Markdown")
+                
+                # Save error message to DB
+                await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
+                
+                # Auto-delete error message after 3 seconds
+                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+                
+                logger.info(f"ℹ️ [PHOTO_HANDLER] Error message will auto-delete in 3 seconds")
+                return
             
-            # Auto-delete error message after 3 seconds
-            asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+            # ===== 1. VALIDATION =====
+            if not message.photo:
+                error_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
+                await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
+                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+                return
             
-            logger.info(f"ℹ️ [PHOTO_HANDLER] Error message will auto-delete in 3 seconds")
-            return
-        
-        # ===== 1. VALIDATION =====
-        if not message.photo:
-            error_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
-            await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
-            asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
-            return
-        
-        # ===== 2. BALANCE CHECK =====
-        balance = await db.get_balance(user_id)
-        
-        # Exception for EDIT_DESIGN: can work WITHOUT balance
-        if balance <= 0 and work_mode != WorkMode.EDIT_DESIGN.value:
-            error_text = ERROR_INSUFFICIENT_BALANCE
-            error_msg = await message.answer(error_text)
-            await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
-            asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
-            return
-        
-        # ===== 3. SAVE PHOTO =====
-        photo_id = message.photo[-1].file_id
-        
-        logger.info(f"💾 [PHOTO_HANDLER] Photo saved - photo_id={photo_id[:20]}...")
-        
-        # 🔥 [2025-12-31 10:53] SET photo_uploaded=True BEFORE processing
-        await state.update_data(
-            photo_id=photo_id,
-            new_photo=True,
-            photo_uploaded=True  # 🔥 Prevent further photo uploads!
-        )
-        
-        # ===== 4. GET OLD MENU MESSAGE ID FROM DATABASE =====
-        # 🔥 [2025-12-30 22:45] CRITICAL FIX: Take menu_message_id FROM DATABASE!
-        logger.info(f"🔍 [PHOTO_HANDLER] Fetching old menu_message_id from DB for chat_id={chat_id}")
-        
-        old_menu_data = await db.get_chat_menu(chat_id)
-        old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
-        
-        logger.info(f"📥 [PHOTO_HANDLER] Got from DB: old_menu_message_id={old_menu_message_id}, screen={old_menu_data.get('screen_code') if old_menu_data else None}")
-        
-        # ===== 5. DELETE OLD MENU MESSAGE (BUG FIX #1) =====
-        # 🔥 [2025-12-30 22:45] DELETE old message BEFORE sending new one!
-        if old_menu_message_id:
-            try:
-                await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
-                logger.info(f"🗑️ [PHOTO_HANDLER] ✅ DELETED old menu message {old_menu_message_id}")
-            except Exception as e:
-                logger.warning(f"⚠️ [PHOTO_HANDLER] Could not delete old menu {old_menu_message_id}: {e}")
-        else:
-            logger.warning(f"⚠️ [PHOTO_HANDLER] old_menu_message_id is None! DB returned: {old_menu_data}")
-        
-        # ===== 6. DETERMINE NEXT SCREEN (depends on mode) =====
-        
-        if work_mode == WorkMode.NEW_DESIGN.value:
-            await state.set_state(CreationStates.room_choice)
-            text = f"🏠 **Выберите комнату**"
-            # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
-            logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='new_design'")
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='new_design')
-            keyboard = get_room_choice_keyboard()
-            screen = 'room_choice'
+            # ===== 2. BALANCE CHECK =====
+            balance = await db.get_balance(user_id)
             
-        elif work_mode == WorkMode.EDIT_DESIGN.value:
-            await state.set_state(CreationStates.edit_design)
-            text = f"✏️ **Редактируем дизайн**"
-            # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
-            logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='edit_design'")
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='edit_design')
-            keyboard = get_edit_design_keyboard()
-            screen = 'edit_design'
+            # Exception for EDIT_DESIGN: can work WITHOUT balance
+            if balance <= 0 and work_mode != WorkMode.EDIT_DESIGN.value:
+                error_text = ERROR_INSUFFICIENT_BALANCE
+                error_msg = await message.answer(error_text)
+                await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
+                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+                return
             
-        elif work_mode == WorkMode.SAMPLE_DESIGN.value:
-            await state.set_state(CreationStates.download_sample)
-            text = f"📥 **Скачать примеры**"
-            # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
-            logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='sample_design'")
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
-            keyboard = get_download_sample_keyboard()
-            screen = 'download_sample'
+            # ===== 3. SAVE PHOTO =====
+            photo_id = message.photo[-1].file_id
             
-        elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
-            await state.set_state(CreationStates.uploading_furniture)
-            text = f"🛋️ **Расстановка мебели**"
-            # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
-            logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='arrange_furniture'")
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='arrange_furniture')
-            keyboard = get_uploading_furniture_keyboard()
-            screen = 'uploading_furniture'
+            logger.info(f"💾 [PHOTO_HANDLER] Photo saved - photo_id={photo_id[:20]}...")
             
-        elif work_mode == WorkMode.FACADE_DESIGN.value:
-            await state.set_state(CreationStates.loading_facade_sample)
-            text = f"🏘️ **Дизайн фасада**"
-            # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
-            logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='facade_design'")
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
-            keyboard = get_loading_facade_sample_keyboard()
-            screen = 'loading_facade_sample'
-        else:
-            logger.error(f"[ERROR] Unknown work_mode: {work_mode}")
-            await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
-            return
-        
-        # ===== 7. SEND MENU BELOW PHOTO (NO PHOTO REATTACHMENT!) =====
-        # ✅ [2025-12-30 22:10] FIX: Just send text message with buttons
-        # Do NOT use edit_message_media() - it causes duplicate photos!
-        
-        logger.info(f"📤 [PHOTO_HANDLER] Sending menu message - screen={screen}, user_id={user_id}")
-        
-        menu_msg = await message.answer(
-            text=text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-        
-        logger.info(f"✅ [PHOTO_HANDLER] SUCCESS - Menu sent, msg_id={menu_msg.message_id}")
-        
-        # ===== 8. SAVE new menu_message_id TO DATABASE (not FSM!) =====
-        # 🔥 [2025-12-30 22:45] CRITICAL: Save to DB so it survives bot restart!
-        logger.info(f"💾 [PHOTO_HANDLER] Saving new menu_message_id={menu_msg.message_id} to DB")
-        await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, screen)
-        
-        # Also save to FSM for current session reference
-        await state.update_data(menu_message_id=menu_msg.message_id)
-        
-        logger.info(f"📊 [PHOTO_HANDLER] COMPLETE - user_id={user_id}, work_mode={work_mode}, transitioned to {screen}")
+            # 🔥 [2025-12-31 11:04] SET photo_uploaded=True IMMEDIATELY AFTER VALIDATING
+            await state.update_data(
+                photo_id=photo_id,
+                new_photo=True,
+                photo_uploaded=True  # 🔥 Prevent further photo uploads!
+            )
+            logger.info(f"🔐 [PHOTO_HANDLER] Set photo_uploaded=True for user {user_id}")
+            
+            # ===== 4. GET OLD MENU MESSAGE ID FROM DATABASE =====
+            # 🔥 [2025-12-30 22:45] CRITICAL FIX: Take menu_message_id FROM DATABASE!
+            logger.info(f"🔍 [PHOTO_HANDLER] Fetching old menu_message_id from DB for chat_id={chat_id}")
+            
+            old_menu_data = await db.get_chat_menu(chat_id)
+            old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
+            
+            logger.info(f"📥 [PHOTO_HANDLER] Got from DB: old_menu_message_id={old_menu_message_id}, screen={old_menu_data.get('screen_code') if old_menu_data else None}")
+            
+            # ===== 5. DELETE OLD MENU MESSAGE (BUG FIX #1) =====
+            # 🔥 [2025-12-30 22:45] DELETE old message BEFORE sending new one!
+            if old_menu_message_id:
+                try:
+                    await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
+                    logger.info(f"🗑️ [PHOTO_HANDLER] ✅ DELETED old menu message {old_menu_message_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ [PHOTO_HANDLER] Could not delete old menu {old_menu_message_id}: {e}")
+            else:
+                logger.warning(f"⚠️ [PHOTO_HANDLER] old_menu_message_id is None! DB returned: {old_menu_data}")
+            
+            # ===== 6. DETERMINE NEXT SCREEN (depends on mode) =====
+            
+            if work_mode == WorkMode.NEW_DESIGN.value:
+                await state.set_state(CreationStates.room_choice)
+                text = f"🏠 **Выберите комнату**"
+                # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+                logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='new_design'")
+                text = await add_balance_and_mode_to_text(text, user_id, work_mode='new_design')
+                keyboard = get_room_choice_keyboard()
+                screen = 'room_choice'
+                
+            elif work_mode == WorkMode.EDIT_DESIGN.value:
+                await state.set_state(CreationStates.edit_design)
+                text = f"✏️ **Редактируем дизайн**"
+                # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+                logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='edit_design'")
+                text = await add_balance_and_mode_to_text(text, user_id, work_mode='edit_design')
+                keyboard = get_edit_design_keyboard()
+                screen = 'edit_design'
+                
+            elif work_mode == WorkMode.SAMPLE_DESIGN.value:
+                await state.set_state(CreationStates.download_sample)
+                text = f"📥 **Скачать примеры**"
+                # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+                logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='sample_design'")
+                text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
+                keyboard = get_download_sample_keyboard()
+                screen = 'download_sample'
+                
+            elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
+                await state.set_state(CreationStates.uploading_furniture)
+                text = f"🛋️ **Расстановка мебели**"
+                # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+                logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='arrange_furniture'")
+                text = await add_balance_and_mode_to_text(text, user_id, work_mode='arrange_furniture')
+                keyboard = get_uploading_furniture_keyboard()
+                screen = 'uploading_furniture'
+                
+            elif work_mode == WorkMode.FACADE_DESIGN.value:
+                await state.set_state(CreationStates.loading_facade_sample)
+                text = f"🏘️ **Дизайн фасада**"
+                # 🔥 [2025-12-30 22:45] CRITICAL: Pass work_mode as KEYWORD ARGUMENT!
+                logger.info(f"🔧 [PHOTO_HANDLER] Adding footer with work_mode='facade_design'")
+                text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
+                keyboard = get_loading_facade_sample_keyboard()
+                screen = 'loading_facade_sample'
+            else:
+                logger.error(f"[ERROR] Unknown work_mode: {work_mode}")
+                await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
+                return
+            
+            # ===== 7. SEND MENU BELOW PHOTO (NO PHOTO REATTACHMENT!) =====
+            # ✅ [2025-12-30 22:10] FIX: Just send text message with buttons
+            # Do NOT use edit_message_media() - it causes duplicate photos!
+            
+            logger.info(f"📤 [PHOTO_HANDLER] Sending menu message - screen={screen}, user_id={user_id}")
+            
+            menu_msg = await message.answer(
+                text=text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+            logger.info(f"✅ [PHOTO_HANDLER] SUCCESS - Menu sent, msg_id={menu_msg.message_id}")
+            
+            # ===== 8. SAVE new menu_message_id TO DATABASE (not FSM!) =====
+            # 🔥 [2025-12-30 22:45] CRITICAL: Save to DB so it survives bot restart!
+            logger.info(f"💾 [PHOTO_HANDLER] Saving new menu_message_id={menu_msg.message_id} to DB")
+            await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, screen)
+            
+            # Also save to FSM for current session reference
+            await state.update_data(menu_message_id=menu_msg.message_id)
+            
+            logger.info(f"📊 [PHOTO_HANDLER] COMPLETE - user_id={user_id}, work_mode={work_mode}, transitioned to {screen}")
+            logger.info(f"🔐 [PHOTO_HANDLER] LOCK RELEASED for user {user_id}")
         
     except Exception as e:
         logger.error(f"❌ [PHOTO_HANDLER] FATAL ERROR for user {user_id}: {e}", exc_info=True)
