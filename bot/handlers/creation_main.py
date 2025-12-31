@@ -210,23 +210,26 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 
 
 # ===== SCREEN 2: PHOTO_HANDLER (Photo upload for all modes) =====
-# 🔥 [2025-12-31 12:27] CRITICAL FIX: EDIT old menu, don't create new!
+# 🔥 [2025-12-31 12:30] CRITICAL: Multiple photos = error text ONLY, no buttons!
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
     SCREEN 2: Photo upload (UPLOADING_PHOTO)
     
-    🔥 [2025-12-31 12:27] CRITICAL FIX: EDIT OLD MENU!
+    🔥 [2025-12-31 12:30] LOGIC:
     
-    When showing "Upload ONE photo" error:
-    - OLD: message.answer() → creates NEW message
-    - NEW: bot.edit_message_text() → edits OLD menu
+    1. ONE photo:
+       → Delete old menu (uploading_photo screen)
+       → Create NEW menu with next screen (room_choice, etc) + inline buttons
     
-    Algorithm:
-    1. Get old menu_message_id from DB
-    2. Try to EDIT it
-    3. If fails: delete old + create new
-    4. Result: NO duplicate menus!
+    2. MULTIPLE photos:
+       → Delete ALL photos
+       → Edit old menu to show ERROR TEXT ONLY
+       → NO inline buttons - plain error message
+       → User must retry with ONE photo
+    
+    Reason: Multiple photos = rejected, retry needed.
+    Don't show interactive menu, just error.
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -277,67 +280,46 @@ async def photo_handler(message: Message, state: FSMContext):
                         except Exception as e:
                             logger.warning(f"⚠️ Could not delete msg_id={msg_id}: {e}")
                     
-                    # Show error
-                    error_text = "❌ **Отправьте ОДНО фото**"
-                    error_msg = await message.answer(error_text, parse_mode="Markdown")
-                    logger.info(f"⚠️ [PHOTO_HANDLER] Error shown, msg_id={error_msg.message_id}")
-                    
-                    # 🔥 [2025-12-31 12:27] EDIT OLD MENU instead of creating new!
-                    # Get old menu from DB
+                    # 🔥 [2025-12-31 12:30] EDIT OLD MENU with ERROR TEXT ONLY, NO BUTTONS!
                     old_menu_data = await db.get_chat_menu(chat_id)
                     old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
                     
-                    screen_text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📄 Загружите фото")
-                    keyboard = get_upload_photo_keyboard()
+                    # Error text WITHOUT buttons
+                    error_text = f"📸 **Отправьте ОДНО фото**\n\n🗑️ Вы отправили {photo_count} фото. Они удалены."
                     
-                    screen_msg_id = None
-                    
-                    # Try to EDIT old menu
                     if old_menu_message_id:
                         try:
+                            # EDIT old menu with error text ONLY
                             await message.bot.edit_message_text(
                                 chat_id=chat_id,
                                 message_id=old_menu_message_id,
-                                text=screen_text,
-                                reply_markup=keyboard,
+                                text=error_text,
+                                reply_markup=None,  # ← NO BUTTONS!
                                 parse_mode="Markdown"
                             )
-                            screen_msg_id = old_menu_message_id
-                            logger.info(f"✅ [PHOTO_HANDLER] EDITED old menu msg_id={old_menu_message_id}")
+                            logger.info(f"✅ [PHOTO_HANDLER] EDITED menu with error (no buttons), msg_id={old_menu_message_id}")
+                            
+                            # Don't save to DB - this is temporary error state
+                            
                         except TelegramBadRequest as e:
                             err = str(e).lower()
                             if "message is not modified" in err:
-                                # Same content - OK
-                                screen_msg_id = old_menu_message_id
-                                logger.debug(f"[PHOTO_HANDLER] Message not modified (same content)")
+                                logger.debug(f"[PHOTO_HANDLER] Message same content")
                             else:
-                                logger.warning(f"⚠️ [PHOTO_HANDLER] Could not edit old menu: {e}")
+                                logger.warning(f"⚠️ [PHOTO_HANDLER] Could not edit: {e}")
+                                # Try to delete and create new
+                                try:
+                                    await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
+                                except:
+                                    pass
+                                await message.answer(error_text, parse_mode="Markdown")
                         except Exception as e:
-                            logger.warning(f"⚠️ [PHOTO_HANDLER] Error editing old menu: {e}")
+                            logger.warning(f"⚠️ [PHOTO_HANDLER] Error: {e}")
+                    else:
+                        # No old menu - create error message
+                        await message.answer(error_text, parse_mode="Markdown")
                     
-                    # If edit failed - delete old and create new
-                    if not screen_msg_id:
-                        if old_menu_message_id:
-                            try:
-                                await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
-                                logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu {old_menu_message_id}")
-                            except:
-                                pass
-                        
-                        screen_msg = await message.answer(
-                            text=screen_text,
-                            reply_markup=keyboard,
-                            parse_mode="Markdown"
-                        )
-                        screen_msg_id = screen_msg.message_id
-                        logger.info(f"📤 [PHOTO_HANDLER] Created new menu msg_id={screen_msg_id}")
-                    
-                    # Save menu to DB
-                    await db.save_chat_menu(chat_id, user_id, screen_msg_id, 'uploading_photo')
-                    
-                    # Auto-delete error after 3s
-                    asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
-                    
+                    logger.info(f"📊 [PHOTO_HANDLER] MULTIPLE PHOTOS REJECTED: {photo_count} photos deleted")
                     return  # ← EXIT! Multiple photos handled!
             
             # ===== STEP 3: SINGLE PHOTO - PROCESS NORMALLY =====
@@ -375,7 +357,7 @@ async def photo_handler(message: Message, state: FSMContext):
             
             logger.info(f"📥 [PHOTO_HANDLER] Old menu_id={old_menu_message_id}")
             
-            # DELETE OLD MENU
+            # DELETE OLD MENU (uploading_photo screen)
             if old_menu_message_id:
                 try:
                     await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
@@ -423,7 +405,7 @@ async def photo_handler(message: Message, state: FSMContext):
                 await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
                 return
             
-            # SEND MENU
+            # SEND MENU with next screen + buttons
             logger.info(f"📤 [PHOTO_HANDLER] Sending menu - screen={screen}")
             menu_msg = await message.answer(
                 text=text,
