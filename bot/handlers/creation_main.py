@@ -15,7 +15,7 @@ from database.db import db
 
 from keyboards.inline import (
     get_work_mode_selection_keyboard,  # ✅ ИСПРАВЛЕНО: 5 режимов работы
-    get_upload_photo_keyboard,
+    get_uploading_photo_keyboard,
     get_what_is_in_photo_keyboard,
     get_payment_keyboard,
     get_room_choice_keyboard,
@@ -196,7 +196,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             callback=callback,
             state=state,
             text=text,
-            keyboard=get_upload_photo_keyboard(),
+            keyboard=get_uploading_photo_keyboard(),
             show_balance=False,
             screen_code='uploading_photo'
         )
@@ -461,7 +461,7 @@ async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
         callback=callback,
         state=state,
         text=UPLOAD_PHOTO_TEXT,
-        keyboard=get_upload_photo_keyboard(),
+        keyboard=get_uploading_photo_keyboard(),
         show_balance=False,
         screen_code='upload_photo'
     )
