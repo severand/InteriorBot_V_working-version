@@ -25,15 +25,18 @@ async def edit_menu(
     screen_code: str = 'main_menu'
 ) -> bool:
     """
+    🔥 [2025-12-31 12:16] CRITICAL FIX:
+    
     Универсальная функция редактирования единого меню (FSM + БД).
-    1) Берёт menu_message_id из FSM или БД.
+    1) Берёт menu_message_id из FSM (если есть) ИЛИ из БД (после перезапуска)
     2) Пытается отредактировать текст; если сообщение — медиа, редактирует caption.
     3) Если не вышло — ЯВНО удаляет старое меню и создаёт новое.
     
-    [2025-12-31 10:41] 🔥 CRITICAL FIX:
-    - ЯВНО удаляем старое сообщение перед созданием нового
-    - Логируем все операции с сообщениями
-    - Предотвращаем дублирование сообщений при перезапуске бота
+    KEY FIX [2025-12-31 12:16]:
+    - ВСЕГДА пытаемся загрузить menu_message_id из БД сначала
+    - Это обеспечивает работу после перезапуска бота
+    - FSM очищается при перезапуске, но БД остается
+    - Все callback_query handlers должны вызвать эту функцию сразу
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -42,18 +45,28 @@ async def edit_menu(
     if show_balance:
         text = await add_balance_and_mode_to_text(text, user_id)
 
-    # 1. menu_message_id из FSM / БД
-    data = await state.get_data()
-    menu_message_id = data.get('menu_message_id')
-
+    # 1. menu_message_id: СНАЧАЛА пытаемся из БД, потом из FSM
+    # 🔥 [2025-12-31 12:16] Это критично для работы после перезапуска!
+    menu_message_id = None
+    
+    # Сначала из БД (работает после перезапуска!)
+    menu_info = await db.get_chat_menu(chat_id)
+    if menu_info:
+        menu_message_id = menu_info['menu_message_id']
+        logger.info(f"📥 [EDIT_MENU] Loaded menu_id={menu_message_id} from DB for chat {chat_id}")
+    
+    # Если не в БД, пробуем FSM
     if not menu_message_id:
-        menu_info = await db.get_chat_menu(chat_id)
-        if menu_info:
-            menu_message_id = menu_info['menu_message_id']
-            await state.update_data(menu_message_id=menu_message_id)
-            logger.info(f"📥 [EDIT_MENU] Restored menu_id={menu_message_id} from DB for chat {chat_id}")
+        data = await state.get_data()
+        menu_message_id = data.get('menu_message_id')
+        if menu_message_id:
+            logger.debug(f"📥 [EDIT_MENU] Loaded menu_id={menu_message_id} from FSM for chat {chat_id}")
         else:
-            logger.debug(f"[EDIT_MENU] No menu found in DB for chat {chat_id}")
+            logger.warning(f"⚠️ [EDIT_MENU] No menu found in DB or FSM for chat {chat_id}")
+    
+    # Сохраняем в FSM для текущей сессии
+    if menu_message_id:
+        await state.update_data(menu_message_id=menu_message_id)
 
     # 2. Пытаемся редактировать
     if menu_message_id:
@@ -68,7 +81,6 @@ async def edit_menu(
                 parse_mode=parse_mode
             )
             
-            await state.update_data(menu_message_id=menu_message_id)
             await db.save_chat_menu(chat_id, user_id, menu_message_id, screen_code)
             logger.info(f"✅ [EDIT_MENU] Successfully edited msg_id={menu_message_id}")
             return True
@@ -92,7 +104,6 @@ async def edit_menu(
                         reply_markup=keyboard,
                         parse_mode=parse_mode
                     )
-                    await state.update_data(menu_message_id=menu_message_id)
                     await db.save_chat_menu(chat_id, user_id, menu_message_id, screen_code)
                     logger.info(f"✅ [EDIT_MENU] Successfully edited caption for msg_id={menu_message_id}")
                     return True
@@ -107,7 +118,7 @@ async def edit_menu(
     # 3. FALLBACK — 🔥 ЯВНО удаляем старое меню и создаём новое
     logger.warning(f"🔄 [EDIT_MENU] FALLBACK: Creating new message (old msg_id={menu_message_id})")
     
-    # 🔥 [2025-12-31 10:41] CRITICAL: Explicitly delete old message
+    # 🔥 CRITICAL: Explicitly delete old message
     if menu_message_id:
         try:
             await callback.message.bot.delete_message(
@@ -131,7 +142,7 @@ async def edit_menu(
         
         logger.info(f"✅ [EDIT_MENU] Created new message msg_id={new_msg.message_id}")
         
-        # 🔥 [2025-12-31 10:41] Update FSM and DB with NEW message ID
+        # Update FSM and DB with NEW message ID
         await state.update_data(menu_message_id=new_msg.message_id)
         await db.save_chat_menu(chat_id, user_id, new_msg.message_id, screen_code)
         
@@ -186,10 +197,6 @@ async def update_menu_after_photo(
     """
     Обновление меню после загрузки фото (используется в message handlers).
     Если сообщение — медиа, при ошибке редактируем caption.
-    
-    [2025-12-31 10:41] 🔥 CRITICAL:
-    - Явно удаляет старое сообщение перед созданием нового
-    - Логирует все операции
     """
     chat_id = message.chat.id
     user_id = message.from_user.id
