@@ -352,6 +352,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 # [2025-12-31 10:19] 🔥 CRITICAL HOTFIX: Добавить save_chat_menu() после КАЖДОЙ успешной отправки фото
 # [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НИКОГДА НЕ удаляем старый дизайн! СОЗДАЕМ новое сообщение!
 # [2025-12-31 16:30] 🔥 CRITICAL FIX: УДАЛЯЕМ старое меню со стилями ПЕРЕД созданием нового!
+# [2025-12-31 16:40] 🔥 HOTFIX: ИСПРАВИТЬ callback.message.bot → callback.bot для get_message!
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -360,7 +361,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     """
     SCREEN 4-5→6: Обработчик выбора стиля и генерация дизайна
     
-    🔥 CRITICAL FIX [2025-12-31 16:30]:
+    🔥 CRITICAL REWRITE [2025-12-31 16:30]:
     АРХИТЕКТУРА ПРАВИЛЬНАЯ:
     1️⃣ Юзер в меню стилей (текстовое сообщение с кнопками) - msg_id=7487
     2️⃣ Нажимает "выбрать стиль modern"
@@ -690,17 +691,16 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
 # [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu
 # [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НЕ редактируем фото, создаем НОВОЕ меню!
 # [2025-12-31 16:30] 🔥 CRITICAL FIX: УДАЛЯЕМ старое меню со стилями ДО создания нового!
+# [2025-12-31 16:40] 🔥 HOTFIX: ИСПРАВИТЬ callback.message.bot.get_message → callback.bot.get_message!
 @router.callback_query(F.data == "change_style")
 async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
     ПОСЛЕ генерации: смена стиля
     
-    [2025-12-31 16:30] 🔥 CRITICAL FIX:
-    - БЫЛО: Редактировать caption старого фото (дизайна)
-    - ТЕПЕРЬ: 
-      1️⃣ Удалить СТАРОЕ меню выбора стилей (если оно есть)
-      2️⃣ СОЗДАТЬ НОВОЕ меню выбора стилей
-      3️⃣ Оставить старый дизайн в истории
+    [2025-12-31 16:40] 🔥 HOTFIX:
+    - Правильное использование callback.bot.get_message() вместо callback.message.bot.get_message()
+    - Проверяем старое меню перед удалением
+    - Создаем новое меню выбора стилей
     
     Логика: восстановление в состояние choose_style для новой генерации
     """
@@ -725,19 +725,15 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, adm
         await show_main_menu(callback, state, admins)
         return
 
-    # 🔥 [2025-12-31 16:30] ШАГ 1: УДАЛЯЕМ СТАРОЕ МЕНЮ СО СТИЛЯМИ (если оно есть)
-    # Это может быть меню выбора стилей из предыдущей попытки
+    # 🔥 [2025-12-31 16:40] ШАГ 1: УДАЛЯЕМ СТАРОЕ МЕНЮ СО СТИЛЯМИ (если оно есть)
+    # ПРАВИЛЬНЫЙ СИНТАКСИС: callback.bot.get_message (не callback.message.bot)
     if old_menu_id:
         try:
-            # Получаем info о текущем сообщении
-            try:
-                msg_info = await callback.message.bot.get_message(chat_id, old_menu_id)
-                # Если это текстовое меню (не фото) - удаляем
-                if msg_info and not msg_info.photo:
-                    await callback.message.bot.delete_message(chat_id, old_menu_id)
-                    logger.warning(f"🗑️ [CHANGE_STYLE] Deleted old style menu: msg_id={old_menu_id}")
-            except Exception as check_error:
-                logger.warning(f"⚠️ [CHANGE_STYLE] Could not check old menu: {check_error}")
+            msg_info = await callback.bot.get_message(chat_id, old_menu_id)
+            # Если это текстовое меню (не фото) - удаляем
+            if msg_info and not msg_info.photo:
+                await callback.bot.delete_message(chat_id, old_menu_id)
+                logger.warning(f"🗑️ [CHANGE_STYLE] Deleted old style menu: msg_id={old_menu_id}")
         except Exception as delete_error:
             logger.warning(f"⚠️ [CHANGE_STYLE] Could not delete old menu: {delete_error}")
     
