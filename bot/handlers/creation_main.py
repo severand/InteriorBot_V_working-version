@@ -210,26 +210,14 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 
 
 # ===== SCREEN 2: PHOTO_HANDLER (Photo upload for all modes) =====
-# 🔥 [2025-12-31 12:30] CRITICAL: Multiple photos = error text ONLY, no buttons!
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
     SCREEN 2: Photo upload (UPLOADING_PHOTO)
     
-    🔥 [2025-12-31 12:30] LOGIC:
-    
-    1. ONE photo:
-       → Delete old menu (uploading_photo screen)
-       → Create NEW menu with next screen (room_choice, etc) + inline buttons
-    
-    2. MULTIPLE photos:
-       → Delete ALL photos
-       → Edit old menu to show ERROR TEXT ONLY
-       → NO inline buttons - plain error message
-       → User must retry with ONE photo
-    
-    Reason: Multiple photos = rejected, retry needed.
-    Don't show interactive menu, just error.
+    LOGIC:
+    1. ONE photo: Create menu with buttons, send
+    2. MULTIPLE photos: Delete all photos, DONE (no error message)
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -238,7 +226,6 @@ async def photo_handler(message: Message, state: FSMContext):
 
     logger.info(f"🎞️ [PHOTO_HANDLER] START - user_id={user_id}, work_mode={work_mode}, photo received")
 
-    # 🔥 [2025-12-31 12:24] ACQUIRE LOCK
     lock = await get_user_lock(user_id)
     async with lock:
         try:
@@ -246,16 +233,14 @@ async def photo_handler(message: Message, state: FSMContext):
             media_group_id = message.media_group_id
             
             if media_group_id:
-                # Multiple photos possible - collect them all
                 logger.info(f"🔍 [PHOTO_HANDLER] Detected media_group_id={media_group_id}")
                 
-                # 🔥 [2025-12-31 12:24] Check if ALREADY PROCESSED
                 if (user_id in media_group_tracker and 
                     media_group_id in media_group_tracker[user_id] and 
                     media_group_tracker[user_id][media_group_id].get('processed')):
                     
                     logger.info(f"⏭️ [PHOTO_HANDLER] Media group already processed, skipping handler")
-                    return  # ← EXIT! Already processed by another handler!
+                    return
                 
                 photo_count, all_message_ids = await collect_media_group(
                     user_id, 
@@ -269,10 +254,9 @@ async def photo_handler(message: Message, state: FSMContext):
                 if photo_count > 1:
                     logger.warning(f"❌ [PHOTO_HANDLER] MULTIPLE PHOTOS DETECTED: {photo_count}")
                     
-                    # 🔥 Mark as processed BEFORE deleting!
                     media_group_tracker[user_id][media_group_id]['processed'] = True
                     
-                    # 🔥 DELETE ALL photos in the group
+                    # DELETE ALL photos
                     for msg_id in all_message_ids:
                         try:
                             await message.bot.delete_message(chat_id=chat_id, message_id=msg_id)
@@ -280,59 +264,18 @@ async def photo_handler(message: Message, state: FSMContext):
                         except Exception as e:
                             logger.warning(f"⚠️ Could not delete msg_id={msg_id}: {e}")
                     
-                    # 🔥 [2025-12-31 12:30] EDIT OLD MENU with ERROR TEXT ONLY, NO BUTTONS!
-                    old_menu_data = await db.get_chat_menu(chat_id)
-                    old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
-                    
-                    # Error text WITHOUT buttons
-                    error_text = f"📸 **Отправьте ОДНО фото**\n\n🗑️ Вы отправили {photo_count} фото. Они удалены."
-                    
-                    if old_menu_message_id:
-                        try:
-                            # EDIT old menu with error text ONLY
-                            await message.bot.edit_message_text(
-                                chat_id=chat_id,
-                                message_id=old_menu_message_id,
-                                text=error_text,
-                                reply_markup=None,  # ← NO BUTTONS!
-                                parse_mode="Markdown"
-                            )
-                            logger.info(f"✅ [PHOTO_HANDLER] EDITED menu with error (no buttons), msg_id={old_menu_message_id}")
-                            
-                            # Don't save to DB - this is temporary error state
-                            
-                        except TelegramBadRequest as e:
-                            err = str(e).lower()
-                            if "message is not modified" in err:
-                                logger.debug(f"[PHOTO_HANDLER] Message same content")
-                            else:
-                                logger.warning(f"⚠️ [PHOTO_HANDLER] Could not edit: {e}")
-                                # Try to delete and create new
-                                try:
-                                    await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
-                                except:
-                                    pass
-                                await message.answer(error_text, parse_mode="Markdown")
-                        except Exception as e:
-                            logger.warning(f"⚠️ [PHOTO_HANDLER] Error: {e}")
-                    else:
-                        # No old menu - create error message
-                        await message.answer(error_text, parse_mode="Markdown")
-                    
                     logger.info(f"📊 [PHOTO_HANDLER] MULTIPLE PHOTOS REJECTED: {photo_count} photos deleted")
-                    return  # ← EXIT! Multiple photos handled!
+                    return
             
             # ===== STEP 3: SINGLE PHOTO - PROCESS NORMALLY =====
             logger.info(f"✅ [PHOTO_HANDLER] Single photo detected, processing...")
             
-            # VALIDATION
             if not message.photo:
                 error_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
                 await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
                 asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
                 return
             
-            # BALANCE CHECK
             balance = await db.get_balance(user_id)
             if balance <= 0 and work_mode != WorkMode.EDIT_DESIGN.value:
                 error_text = ERROR_INSUFFICIENT_BALANCE
@@ -341,7 +284,6 @@ async def photo_handler(message: Message, state: FSMContext):
                 asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
                 return
             
-            # SAVE PHOTO
             photo_id = message.photo[-1].file_id
             logger.info(f"💾 [PHOTO_HANDLER] Photo saved - photo_id={photo_id[:20]}...")
             
@@ -351,13 +293,11 @@ async def photo_handler(message: Message, state: FSMContext):
                 photo_uploaded=True
             )
             
-            # GET OLD MENU from DB
             old_menu_data = await db.get_chat_menu(chat_id)
             old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
             
             logger.info(f"📥 [PHOTO_HANDLER] Old menu_id={old_menu_message_id}")
             
-            # DELETE OLD MENU (uploading_photo screen)
             if old_menu_message_id:
                 try:
                     await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
@@ -405,7 +345,6 @@ async def photo_handler(message: Message, state: FSMContext):
                 await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
                 return
             
-            # SEND MENU with next screen + buttons
             logger.info(f"📤 [PHOTO_HANDLER] Sending menu - screen={screen}")
             menu_msg = await message.answer(
                 text=text,
@@ -414,7 +353,6 @@ async def photo_handler(message: Message, state: FSMContext):
             )
             logger.info(f"✅ [PHOTO_HANDLER] Menu sent, msg_id={menu_msg.message_id}")
             
-            # SAVE to DB
             await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, screen)
             await state.update_data(menu_message_id=menu_msg.message_id)
             
@@ -429,7 +367,6 @@ async def photo_handler(message: Message, state: FSMContext):
                 pass
 
 
-# ===== HELPER: _delete_message_after_delay =====
 async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int):
     """Delete message after N seconds"""
     try:
@@ -440,7 +377,6 @@ async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay:
         logger.debug(f"⚠️ Не удалось удалить сообщение {message_id}: {e}")
 
 
-# ===== OLD SYSTEM: CREATE_DESIGN (for backwards compatibility) =====
 @router.callback_query(F.data == "create_design")
 async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
     """Start creating design (old system)"""
