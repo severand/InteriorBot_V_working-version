@@ -349,6 +349,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 # [2025-12-30 01:20] 🔥 BUGFIX #2: Убрать answer_photo() в fallback - редактировать меню, не отправлять новое
 # [2025-12-30 01:47] 🔍 CRITICAL DIAGNOSTICS: Добавить логирование для трекинга двойной отправки
 # [2025-12-30 17:00] 🔥 MAJOR FIX: Правильная обработка медиа, удаление старых при fallback
+# [2025-12-31 10:19] 🔥 CRITICAL HOTFIX: Добавить save_chat_menu() после КАЖДОЙ успешной отправки фото
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -368,6 +369,13 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     - Fallback: send_photo + delete старого сообщения (избегаем дублей)
     - Все операции логируются с request_id
     - StateFilter на обработчике (нет пересечений)
+    
+    🔥 CRITICAL HOTFIX [2025-12-31 10:19]:
+    - Добавить await db.save_chat_menu() СРАЗУ после каждой успешной отправки фото
+    - ПОПЫТКА 1 (edit_message_media) → save_chat_menu()
+    - ПОПЫТКА 2 (answer_photo + delete) → save_chat_menu()
+    - ПОПЫТКА 3 (BufferedInputFile) → save_chat_menu()
+    - БЕЗ этого menu_message_id не обновится при краше бота!
     
     🔍 DIAGNOSTICS [2025-12-30 01:47]:
     - Каждые answer_photo/send_photo/edit_message_media логируются
@@ -500,6 +508,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             photo_sent = True
             logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_1: edit_message_media")
             log_photo_send(user_id, "edit_message_media", menu_message_id, request_id, "style_choice")
+            
+            # 🔥 [2025-12-31 10:19] CRITICAL: Сохраняем в БД СРАЗУ после успешной отправки
+            await db.save_chat_menu(chat_id, user_id, menu_message_id, 'post_generation')
+            logger.warning(f"📊 [DIAG] request_id={request_id} SAVED_TO_DB after ATTEMPT_1")
 
         except TelegramBadRequest as media_error:
             logger.warning(f"📊 [DIAG] request_id={request_id} FAILED_ATTEMPT_1: {media_error}")
@@ -533,6 +545,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                 menu_message_id = photo_msg.message_id
                 photo_sent = True
                 logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_2: answer_photo + delete")
+                
+                # 🔥 [2025-12-31 10:19] CRITICAL: Сохраняем в БД СРАЗУ после успешной отправки
+                await db.save_chat_menu(chat_id, user_id, menu_message_id, 'post_generation')
+                logger.warning(f"📊 [DIAG] request_id={request_id} SAVED_TO_DB after ATTEMPT_2")
 
             except Exception as url_error:
                 logger.warning(f"📊 [DIAG] request_id={request_id} FAILED_ATTEMPT_2: {url_error}")
@@ -569,6 +585,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                                 menu_message_id = photo_msg.message_id
                                 photo_sent = True
                                 logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_3: answer_photo_buffered + delete")
+                                
+                                # 🔥 [2025-12-31 10:19] CRITICAL: Сохраняем в БД СРАЗУ после успешной отправки
+                                await db.save_chat_menu(chat_id, user_id, menu_message_id, 'post_generation')
+                                logger.warning(f"📊 [DIAG] request_id={request_id} SAVED_TO_DB after ATTEMPT_3")
                             else:
                                 logger.error(f"📊 [DIAG] request_id={request_id} ATTEMPT_3 HTTP {resp.status}")
 
@@ -595,7 +615,6 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         # УСПЕХ - Устанавливаем состояние POST_GENERATION
         await state.set_state(CreationStates.post_generation)
         await state.update_data(menu_message_id=menu_message_id)
-        await db.save_chat_menu(chat_id, user_id, menu_message_id, 'post_generation')
 
         logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_END for user_id={user_id}")
         logger.info(f"[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}")
@@ -620,6 +639,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 # ===== SCREEN 6: POST_GENERATION_MENU (Меню после генерации) =====
 # [2025-12-29] НОВОЕ (V3)
 # [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu
+# [2025-12-31 10:19] 🔥 CRITICAL HOTFIX: Добавить save_chat_menu() сразу после edit_message_caption
 @router.callback_query(
     StateFilter(CreationStates.post_generation),
     F.data == "post_generation"
@@ -627,6 +647,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
     """
     SCREEN 6: Меню после генерации (POST_GENERATION)
+    
+    [2025-12-31 10:19] 🔥 CRITICAL HOTFIX:
+    - Добавить save_chat_menu() СРАЗУ после edit_message_caption()
+    - Без этого при краше бота menu_message_id не обновится
     
     Log: "[V3] NEW_DESIGN+POST_GENERATION - menu shown, user_id={user_id}"
     """
@@ -658,6 +682,11 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
                     parse_mode="Markdown"
                 )
                 logger.info(f"✅ [POST_GENERATION] Caption edited for media msg_id={current_msg.message_id}")
+                
+                # 🔥 [2025-12-31 10:19] CRITICAL: Сохраняем СРАЗУ после edit_message_caption!
+                await db.save_chat_menu(chat_id, user_id, current_msg.message_id, 'post_generation')
+                logger.warning(f"📊 [POST_GENERATION] SAVED_TO_DB after edit_message_caption")
+                
             except Exception as e:
                 logger.warning(f"⚠️ [POST_GENERATION] Failed to edit caption: {e}, trying edit_menu")
                 await edit_menu(
@@ -676,8 +705,6 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
                 keyboard=get_post_generation_keyboard(),
                 screen_code='post_generation'
             )
-        
-        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'post_generation')
         
         logger.info(f"[V3] NEW_DESIGN+POST_GENERATION - menu shown, user_id={user_id}")
         await callback.answer()
