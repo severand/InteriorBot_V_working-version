@@ -193,7 +193,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         )
         await state.set_state(CreationStates.uploading_photo)
         
-        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загружите фото")
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загрузите фото")
         
         await edit_menu(
             callback=callback,
@@ -220,7 +220,9 @@ async def photo_handler(message: Message, state: FSMContext):
     
     LOGIC:
     1. ONE photo: Create menu with buttons, send
-    2. MULTIPLE photos: Delete ALL photos + old menu, DONE
+    2. MULTIPLE photos: Delete ALL photos + old menu using message.delete()
+    
+    [2025-12-31 13:17] 🔥 CRITICAL: message.delete() removes ALL from media_group!
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -259,13 +261,14 @@ async def photo_handler(message: Message, state: FSMContext):
                     
                     media_group_tracker[user_id][media_group_id]['processed'] = True
                     
-                    # DELETE ALL photos from media group
-                    for msg_id in all_message_ids:
-                        try:
-                            await message.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                            logger.debug(f"✅ Удалено фото {msg_id}")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Could not delete photo msg_id={msg_id}: {e}")
+                    # 🔥 [2025-12-31 13:17] ONE CALL to delete ALL photos from media_group!
+                    try:
+                        await message.delete()
+                        logger.info(f"🗑️ [PHOTO_HANDLER] Deleted ALL {photo_count} photos using message.delete()")
+                    except TelegramBadRequest:
+                        logger.warning(f"⚠️ [PHOTO_HANDLER] Photos already deleted")
+                    except Exception as e:
+                        logger.warning(f"⚠️ [PHOTO_HANDLER] Could not delete photos: {e}")
                     
                     # DELETE OLD MENU (uploading_photo screen)
                     old_menu_data = await db.get_chat_menu(chat_id)
