@@ -32,6 +32,7 @@ from utils.texts import (
     ROOM_CHOICE_TEXT,
     CHOOSE_STYLE_TEXT,
     ERROR_INSUFFICIENT_BALANCE,
+    POST_GENERATION_MENU_TEXT,  # ✅ [2025-12-31 16:50] ДОБАВЛЕН ИМПОРТ
 )
 
 from utils.helpers import add_balance_and_mode_to_text
@@ -86,7 +87,7 @@ def log_photo_send(user_id: int, method: str, message_id: int, request_id: str =
 
 # ===== SCREEN 3: ROOM_CHOICE (NEW_DESIGN только) =====
 # [2025-12-29] НОВОЕ (V3)
-# [2025-12-30 17:00] 🔥 FIX: НЕ редактируем медиа-сообщение, создаем новое текстовое меню
+# [2025-12-30 17:00] 🔥 FIX: НЕ редактируем медиа-сообщение, создаеем новое текстовое меню
 @router.callback_query(F.data == "room_choice")
 async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
     """
@@ -350,9 +351,10 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 # [2025-12-30 01:47] 🔍 CRITICAL DIAGNOSTICS: Добавить логирование для трекинга двойной отправки
 # [2025-12-30 17:00] 🔥 MAJOR FIX: Правильная обработка медиа, удаление старых при fallback
 # [2025-12-31 10:19] 🔥 CRITICAL HOTFIX: Добавить save_chat_menu() после КАЖДОЙ успешной отправки фото
-# [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НИКОГДА НЕ удаляем старый дизайн! СОЗДАЕМ новое сообщение!
+# [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НИКОГДА НЕ удаляем старый дизайн! СОЗДАЕЕМ новое сообщение!
 # [2025-12-31 16:30] 🔥 CRITICAL FIX: УДАЛЯЕМ старое меню со стилями ПЕРЕД созданием нового!
 # [2025-12-31 16:40] 🔥 HOTFIX: ИСПРАВИТЬ callback.message.bot → callback.bot для get_message!
+# [2025-12-31 16:50] 🔥 HOTFIX: ИСПОЛЬЗОВАТЬ POST_GENERATION_MENU_TEXT для caption дизайна!
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -368,12 +370,16 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     3️⃣ СРАЗУ УДАЛЯЕМ ТЕКСТОВОЕ МЕНЮ СО СТИЛЯМИ (msg_id=7487)
     4️⃣ Отправляем НОВОЕ сообщение "⏳ Генерируем modern..."
     5️⃣ Генерируем изображение
-    6️⃣ Отправляем НОВОЕ сообщение с дизайном + кнопки
+    6️⃣ Отправляем НОВОЕ сообщение с дизайном + кнопки + ТЕКСТ СВЕРХУ
     
     ✅ РЕЗУЛЬТАТ: 
        - СТАРЫЕ дизайны остаются в истории
        - НОВЫЙ дизайн создается отдельно
        - Меню со стилями удаляется (чистый интерфейс)
+    
+    [2025-12-31 16:50] 🔥 HOTFIX:
+    - Использовать POST_GENERATION_MENU_TEXT для caption дизайна
+    - Правильное форматирование: ФОТО + ТЕКСТ СВЕРХУ + 3 КНОПКИ
     
     ❌ НИКОГДА НЕ удаляем сгенерированные дизайны!
     
@@ -476,18 +482,13 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     )
 
     if result_image_url:
-        # Подготовка подписи
-        room_name = html.escape(room.replace('_', ' ').title(), quote=True)
-        style_name = html.escape(style.replace('_', ' ').title(), quote=True)
-        caption = f"✨ Ваш новый дизайн {room_name} в стиле <b>{style_name}</b>!"
-        
-        # Подготовка текста для post_generation меню
-        post_gen_text = await add_balance_and_mode_to_text(
-            "✅ **Выбери что дальше**",
+        # 🔥 [2025-12-31 16:50] Подготовка подписи с использованием POST_GENERATION_MENU_TEXT
+        post_gen_caption = await add_balance_and_mode_to_text(
+            POST_GENERATION_MENU_TEXT,
             user_id,
-            work_mode  # ✅ 3-й аргумент!
+            work_mode
         )
-
+        
         photo_sent = False
 
         # 🔥 [2025-12-31 16:00] ПОПЫТКА 1: Отправляем фото с результатом
@@ -497,8 +498,8 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             # ОТПРАВЛЯЕМ НОВОЕ ФОТО (не редактируем старое!)
             photo_msg = await callback.message.answer_photo(
                 photo=result_image_url,
-                caption=caption,
-                parse_mode="HTML",
+                caption=post_gen_caption,
+                parse_mode="Markdown",
                 reply_markup=get_post_generation_keyboard()
             )
             
@@ -532,8 +533,8 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
                             photo_msg = await callback.message.answer_photo(
                                 photo=BufferedInputFile(photo_data, filename="design.jpg"),
-                                caption=caption,
-                                parse_mode="HTML",
+                                caption=post_gen_caption,
+                                parse_mode="Markdown",
                                 reply_markup=get_post_generation_keyboard()
                             )
                             
@@ -637,8 +638,11 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
         # Будем на этом экране
         await state.set_state(CreationStates.post_generation)
         
-        text = f"✅ **Выбери что дальше**"
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+        text = await add_balance_and_mode_to_text(
+            POST_GENERATION_MENU_TEXT,
+            user_id,
+            work_mode
+        )
         
         # ✅ Проверяем медиа перед edit_menu
         current_msg = callback.message
@@ -689,7 +693,7 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
 # ===== POST-GENERATION: CHANGE_STYLE (Смена стиля после генерации) =====
 # [2025-12-29] НОВОЕ (V3)
 # [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu
-# [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НЕ редактируем фото, создаем НОВОЕ меню!
+# [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НЕ редактируем фото, создаеем НОВОЕ меню!
 # [2025-12-31 16:30] 🔥 CRITICAL FIX: УДАЛЯЕМ старое меню со стилями ДО создания нового!
 # [2025-12-31 16:40] 🔥 HOTFIX: ИСПРАВИТЬ callback.message.bot.get_message → callback.bot.get_message!
 @router.callback_query(F.data == "change_style")
