@@ -217,7 +217,7 @@ async def photo_handler(message: Message, state: FSMContext):
     
     LOGIC:
     1. ONE photo: Create menu with buttons, send
-    2. MULTIPLE photos: Delete all photos, DONE (no error message)
+    2. MULTIPLE photos: Delete ALL photos + old menu, DONE
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -256,15 +256,26 @@ async def photo_handler(message: Message, state: FSMContext):
                     
                     media_group_tracker[user_id][media_group_id]['processed'] = True
                     
-                    # DELETE ALL photos
+                    # DELETE ALL photos from media group
                     for msg_id in all_message_ids:
                         try:
                             await message.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                            logger.debug(f"✅ Удалено сообщение {msg_id} в чате {chat_id}")
+                            logger.debug(f"✅ Удалено фото {msg_id}")
                         except Exception as e:
-                            logger.warning(f"⚠️ Could not delete msg_id={msg_id}: {e}")
+                            logger.warning(f"⚠️ Could not delete photo msg_id={msg_id}: {e}")
                     
-                    logger.info(f"📊 [PHOTO_HANDLER] MULTIPLE PHOTOS REJECTED: {photo_count} photos deleted")
+                    # DELETE OLD MENU (uploading_photo screen)
+                    old_menu_data = await db.get_chat_menu(chat_id)
+                    old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
+                    
+                    if old_menu_message_id:
+                        try:
+                            await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
+                            logger.info(f"✅ Удалено старое меню {old_menu_message_id}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Could not delete old menu: {e}")
+                    
+                    logger.info(f"📊 [PHOTO_HANDLER] MULTIPLE PHOTOS: All deleted (photos + menu)")
                     return
             
             # ===== STEP 3: SINGLE PHOTO - PROCESS NORMALLY =====
