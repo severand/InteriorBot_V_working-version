@@ -11,8 +11,9 @@
 #                    - get_uploading_photo_keyboard() now has NO buttons
 #                    - User must upload photo to proceed
 # [2025-12-31 12:39] 🔧 RESTORE: Function still needed for compatibility
-# [2026-01-02 21:21] 🔥 CRITICAL HOTFIX: change_style, uploading_photo, to_main_menu callbacks
-#                    - Fixed get_post_generation_keyboard() callback_data="to_main_menu" instead of "select_mode"
+# [2026-01-02 21:28] ↩️ REVERT: Вернул callback_data="select_mode" для 'Главное меню' кнопки в get_post_generation_keyboard()
+#                    - Было неправильное исправление select_mode → to_main_menu
+#                    - Восстановлено оригинальное значение select_mode
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -339,12 +340,7 @@ def get_style_keyboard() -> InlineKeyboardMarkup:
 # Экран после генерации  или очистки помещения
 def get_post_generation_keyboard(show_continue_editing: bool = False) -> InlineKeyboardMarkup:
     """
-    🔥 [2026-01-02 21:21] ОСНОВНАЯ версия клавиатуры после генерации (SCREEN 6).
-    
-    CRITICAL HOTFIX: Исправлена callback_data для кнопки "Главное меню"
-    - Было: callback_data="select_mode" (неправильно, не находил handler)
-    - Теперь: callback_data="to_main_menu" (правильно, совпадает с handler в creation_new_design.py)
-    
+    ОСНОВНАЯ версия клавиатуры после генерации (SCREEN 6).
     Используется для всех сценариев генерации.
 
     Логика:
@@ -372,8 +368,8 @@ def get_post_generation_keyboard(show_continue_editing: bool = False) -> InlineK
             InlineKeyboardButton(text="📸 Новое фото         ", callback_data="uploading_photo"),
         )
 
-    # Ряд 2: Главное меню (широкая) - ИСПРАВЛЕНО: select_mode → to_main_menu
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню    ", callback_data="to_main_menu"))
+    # Ряд 2: Главное меню (широкая)
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню    ", callback_data="select_mode"))
 
     return builder.as_markup()
 
