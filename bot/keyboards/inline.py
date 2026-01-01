@@ -510,10 +510,11 @@ def get_choose_style_2_keyboard() -> InlineKeyboardMarkup:
         builder.row(*buttons)
     
     builder.row(
-        InlineKeyboardButton(text="⬅️ Назад", callback_data="choose_style_1"),
+        InlineKeyboardButton(text="⬅️ Назад", callback_data="styles_page_1"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
     )
-    builder.adjust(2)
+    # ✅ ПРАВИЛЬНЫЙ ADJUST: 2 для каждого ряда стилей + 2 для навигации
+    builder.adjust(2, 2, 2, 2, 2, 2, 2)  # 6 рядов стилей (по 2) + 1 ряд навигации (по 2)
     return builder.as_markup()
 
 
