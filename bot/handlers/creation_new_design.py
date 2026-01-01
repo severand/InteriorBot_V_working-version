@@ -475,7 +475,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     )
 
     # ═════════════════════════════════════════════════════════════════════════
-    # ОБРАБОТКА УСПЕШНОЙ ГЕНЕРАЦИИ
+    # # 🎨 [SCREEN 6] МЕНЮ ПОСЛЕ ГЕНЕРАЦИИ
     # ═════════════════════════════════════════════════════════════════════════
 
     if result_image_url:
@@ -484,7 +484,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         room_display = ROOM_TYPES.get(room, room.replace('_', ' ').title())
         style_display = STYLE_TYPES.get(style, style.replace('_', ' ').title())
         
-        design_caption = f"""✨ <b>Ваш новый {room_display} дизайн в стиле {style_display} готов!</b>
+        design_caption = f"""✨ <b>Ваш новый дизайн {room_display} в стиле {style_display} готов!</b>
         """
         
         menu_caption = f"""🎨 <b>Что дальше?</b>
@@ -626,79 +626,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         )
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# 🎨 [SCREEN 6] МЕНЮ ПОСЛЕ ГЕНЕРАЦИИ
-# ═════════════════════════════════════════════════════════════════════════════
 
-@router.callback_query(
-    StateFilter(CreationStates.post_generation),
-    F.data == "post_generation"
-)
-async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
-    """
-    🎨 [SCREEN 6] Меню после генерации дизайна
-    
-    📍 ПУТЬ: [SCREEN 6] → пользователь видит меню
-    
-    ✅ Редактируем caption фото если это медиа
-    ✅ Отправляем текстовое меню если это текст
-    """
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-
-    try:
-        data = await state.get_data()
-        work_mode = data.get('work_mode')
-        balance = await db.get_balance(user_id)
-        
-        await state.set_state(CreationStates.post_generation)
-        
-        text = f"""🎨 <b>Что дальше? 22222</b>
-
-Выберите действие:
-🔄 Другой стиль - примеря другой стиль на эту комнату
-🏠 Главное меню - вернуться в главное меню
-
-📊 Баланс: <b>{balance}</b> генераций | 🔧 Режим: <b>{work_mode}</b>"""
-        
-        current_msg = callback.message
-        
-        if current_msg.photo:
-            try:
-                await callback.message.bot.edit_message_caption(
-                    chat_id=chat_id,
-                    message_id=current_msg.message_id,
-                    caption=text,
-                    reply_markup=get_post_generation_keyboard(),
-                    parse_mode="HTML"
-                )
-                logger.info(f"✅ [SCREEN 6] Caption edited")
-                
-                await db.save_chat_menu(chat_id, user_id, current_msg.message_id, 'post_generation')
-                
-            except Exception as e:
-                logger.warning(f"⚠️ [SCREEN 6] Failed to edit caption: {e}")
-                await edit_menu(
-                    callback=callback,
-                    state=state,
-                    text="✅ Выбери что дальше",
-                    keyboard=get_post_generation_keyboard(),
-                    screen_code='post_generation'
-                )
-        else:
-            await edit_menu(
-                callback=callback,
-                state=state,
-                text="✅ Выбери что дальше",
-                keyboard=get_post_generation_keyboard(),
-                screen_code='post_generation'
-            )
-        
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] SCREEN 6 menu failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
