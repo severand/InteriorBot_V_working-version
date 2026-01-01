@@ -359,6 +359,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 # [2026-01-01 16:47] 🔥 CRITICAL FIX: ИСПОЛЬЗОВАТЬ HTML вместо Markdown в caption для избежания ошибок парсинга!
 # [2026-01-01 17:02] 🔥 CRITICAL FIX: Сообщение должно быть ДИНАМИЧЕСКИМ - название комнаты и стиля!
 # [2026-01-01 17:17] 🔥 MAJOR REWRITE: СОХРАНЯТЬ PHOTO_MESSAGE_ID И MENU_MESSAGE_ID ОТДЕЛЬНО!
+# [2026-01-01 17:35] 🔥 CRITICAL REWRITE: При change_style - РЕДАКТИРОВАТЬ ТОЛЬКО МЕНЮ, не генерировать!
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -366,13 +367,6 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
     """
     SCREEN 4-5→6: Обработчик выбора стиля и генерация дизайна
-    
-    [2026-01-01 17:17] 🔥 MAJOR REWRITE:
-    СОХРАНЯТЬ ДВА ОТДЕЛЬНЫХ MESSAGE_ID:
-    - photo_message_id: сообщение с фото (msg_id=7544)
-    - menu_message_id: сообщение с кнопками (msg_id=7545)
-    
-    При change_style: РЕДАКТИРУЕМ оба сообщения, не создаём новые!
     
     [2026-01-01 17:02] 🔥 CRITICAL FIX:
     Сообщение ДИНАМИЧЕСКОЕ - выводится:
@@ -524,8 +518,6 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 📊 Баланс: <b>{balance}</b> генераций | 🔧 Режим: <b>{work_mode}</b>"""
         
         photo_sent = False
-        photo_msg_id = None
-        menu_msg_id = None
 
         # 🔥 [2025-12-31 16:00] ПОПЫТКА 1: Отправляем фото с результатом
         try:
@@ -539,7 +531,6 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             )
             
             photo_sent = True
-            photo_msg_id = photo_msg.message_id
             logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_1: answer_photo, msg_id={photo_msg.message_id}")
             log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id, "style_choice")
             
@@ -554,11 +545,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                     parse_mode="HTML",
                     reply_markup=get_post_generation_keyboard()
                 )
-                menu_msg_id = menu_msg.message_id
                 logger.warning(f"📊 [DIAG] request_id={request_id} MENU_SENT: msg_id={menu_msg.message_id}")
                 
-                # 🔥 [2026-01-01 17:17] СОХРАНЯТЬ ОБА MESSAGE_ID ОТДЕЛЬНО!
-                await state.update_data(photo_message_id=photo_msg_id, menu_message_id=menu_msg_id)
+                # Сохраняем menu message_id (используется при change_style)
+                await state.update_data(photo_message_id=photo_msg.message_id, menu_message_id=menu_msg.message_id)
                 await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_menu')
                 
             except Exception as menu_error:
@@ -595,7 +585,6 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                             log_photo_send(user_id, "answer_photo_buffered", photo_msg.message_id, request_id, "style_choice")
                             
                             photo_sent = True
-                            photo_msg_id = photo_msg.message_id
                             logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_ATTEMPT_2: answer_photo_buffered")
                             
                             # 🔥 [2025-12-31 10:19] CRITICAL: Сохраняем в БД СРАЗУ после успешной отправки
@@ -609,11 +598,9 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                                     parse_mode="HTML",
                                     reply_markup=get_post_generation_keyboard()
                                 )
-                                menu_msg_id = menu_msg.message_id
                                 logger.warning(f"📊 [DIAG] request_id={request_id} MENU_SENT: msg_id={menu_msg.message_id}")
                                 
-                                # 🔥 [2026-01-01 17:17] СОХРАНЯТЬ ОБА MESSAGE_ID ОТДЕЛЬНО!
-                                await state.update_data(photo_message_id=photo_msg_id, menu_message_id=menu_msg_id)
+                                await state.update_data(photo_message_id=photo_msg.message_id, menu_message_id=menu_msg.message_id)
                                 await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_menu')
                                 
                             except Exception as menu_error:
@@ -654,11 +641,6 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
         # УСПЕХ - Устанавливаем состояние POST_GENERATION
         await state.set_state(CreationStates.post_generation)
-        # 🔥 [2026-01-01 17:17] СОХРАНЯТЬ ОБА MESSAGE_ID!
-        if photo_msg_id:
-            await state.update_data(photo_message_id=photo_msg_id)
-        if menu_msg_id:
-            await state.update_data(menu_message_id=menu_msg_id)
 
         logger.warning(f"📊 [DIAG] request_id={request_id} SUCCESS_END for user_id={user_id}")
         logger.info(f"[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}")
@@ -775,223 +757,60 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
 # [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НЕ редактируем фото, создаем НОВОЕ меню!
 # [2025-12-31 16:30] 🔥 CRITICAL FIX: УДАЛЯЕМ старое меню со стилями ДО создания нового!
 # [2025-12-31 16:40] 🔥 HOTFIX: ИСПРАВИТЬ callback.message.bot.get_message → callback.bot.get_message!
-# [2026-01-01 17:17] 🔥 MAJOR REWRITE: РЕДАКТИРУЕМ СУЩЕСТВУЮЩЕЕ МЕНЮ ВМЕСТО СОЗДАНИЯ НОВОГО!
+# [2026-01-01 17:35] 🔥 MAJOR REWRITE: РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ, БЕЗ ГЕНЕРАЦИИ!
 @router.callback_query(F.data == "change_style")
-async def change_style_after_gen(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
+async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
     """
     ПОСЛЕ генерации: смена стиля
     
-    [2026-01-01 17:17] 🔥 MAJOR REWRITE:
-    РЕДАКТИРУЕМ МЕНЮ ВМЕСТО СОЗДАНИЯ НОВОГО!
+    [2026-01-01 17:35] 🔥 MAJOR REWRITE:
+    РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ, БЕЗ ГЕНЕРАЦИИ!
     
-    ЛОГИКА:
-    1️⃣ Юзер нажимает "Другой стиль" (callback с текущим меню msg_id=7545)
-    2️⃣ Получаем photo_message_id (msg_id=7544) из state
-    3️⃣ Генерируем новый дизайн
-    4️⃣ РЕДАКТИРУЕМ фото-сообщение (msg_id=7544) с новым изображением
-    5️⃣ РЕДАКТИРУЕМ меню-сообщение (msg_id=7545) с новой подписью
+    Логика:
+    1️⃣ Юзер видит фото + меню с кнопками
+    2️⃣ Нажимает "Другой стиль"
+    3️⃣ РЕДАКТИРУЕМ МЕНЮ (меняем содержимое на стили)
+    4️⃣ Больше НИЧЕГО не генерируем!
+    5️⃣ Фото остается БЕЗ ИЗМЕНЕНИЙ
     
-    ✅ РЕЗУЛЬТАТ: Два сообщения РЕДАКТИРУЮТСЯ, не создаются новые!
+    Затем при выборе стиля из этого меню - вызовется style_choice_handler
+    и там произойдет генерация нового дизайна
     """
-    style = callback.data.split("_")[-1] if "_" in callback.data else "random"
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
-    menu_message_id = callback.message.message_id  # 🔥 Это меню с кнопками!
-    request_id = str(uuid.uuid4())[:8]
+    menu_message_id = callback.message.message_id  # 🔥 ID МЕНЮ с кнопками!
 
-    logger.warning(f"🔍 [CHANGE_STYLE_START] request_id={request_id}, user_id={user_id}, menu_msg_id={menu_message_id}")
+    logger.warning(f"🔍 [CHANGE_STYLE] START: user_id={user_id}, menu_msg_id={menu_message_id}")
 
     data = await state.get_data()
-    photo_id = data.get('photo_id')
-    room = data.get('selected_room')
     work_mode = data.get('work_mode')
-    photo_message_id = data.get('photo_message_id')  # 🔥 Получаем ID фото-сообщения!
+    balance = await db.get_balance(user_id)
 
-    if not photo_id or not room or not photo_message_id:
-        logger.error(f"⚠️ [CHANGE_STYLE] Missing data: photo_id={photo_id}, room={room}, photo_msg_id={photo_message_id}")
-        try:
-            await callback.answer(
-                "⚠️ Сессия устарела. Начните сначала.",
-                show_alert=True
-            )
-        except Exception:
-            pass
-        await show_main_menu(callback, state, admins)
-        return
-
-    # Проверка баланса
-    is_admin = user_id in admins
-    if not is_admin:
-        balance = await db.get_balance(user_id)
-        if balance <= 0:
-            await callback.answer(
-                "❌ Недостаточно генераций",
-                show_alert=True
-            )
-            return
-        await db.decrease_balance(user_id)
-
-    await callback.answer()
-
-    # 🔥 [2026-01-01 17:17] Отправляем прогресс-сообщение
-    progress_msg = None
     try:
-        progress_text = await add_balance_and_mode_to_text(
-            f"⚡ Генерирую {style} дизайн...",
-            user_id,
-            work_mode
-        )
-        progress_msg = await callback.message.answer(
-            text=progress_text,
+        # ✅ РЕДАКТИРУЕМ ТЕКУЩЕЕ МЕНЮ НА ВЫБОР СТИЛЕЙ
+        await state.set_state(CreationStates.choose_style_1)
+        
+        text = f"🎨 **Выберите стиль дизайна**"
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+        
+        # 🔥 [2026-01-01 17:35] РЕДАКТИРУЕМ МЕНЮ
+        await callback.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=menu_message_id,
+            text=text,
+            reply_markup=get_choose_style_1_keyboard(),
             parse_mode="Markdown"
         )
-        logger.warning(f"📊 [CHANGE_STYLE] Progress msg sent: msg_id={progress_msg.message_id}")
+        
+        # ✅ Сохраняем в БД
+        await db.save_chat_menu(chat_id, user_id, menu_message_id, 'choose_style_1')
+        
+        logger.info(f"✅ [CHANGE_STYLE] Menu edited: msg_id={menu_message_id}, user_id={user_id}")
+        await callback.answer()
+        
     except Exception as e:
-        logger.warning(f"⚠️ [CHANGE_STYLE] Failed to send progress: {e}")
-
-    # Получаем PRO mode
-    pro_settings = await db.get_user_pro_settings(user_id)
-    use_pro = pro_settings.get('pro_mode', False)
-
-    # ГЕНЕРИРУЕМ
-    try:
-        result_image_url = await smart_generate_interior(
-            photo_id, room, style, bot_token, use_pro=use_pro
+        logger.error(f"[ERROR] CHANGE_STYLE failed: {e}", exc_info=True)
+        await callback.answer(
+            "❌ Ошибка при смене стиля. Попробуйте еще раз.",
+            show_alert=True
         )
-        success = result_image_url is not None
-    except Exception as e:
-        logger.error(f"[ERROR] CHANGE_STYLE generation failed: {e}")
-        result_image_url = None
-        success = False
-
-    # Логируем в БД
-    await db.log_generation(
-        user_id=user_id,
-        room_type=room,
-        style_type=style,
-        operation_type='design',
-        success=success
-    )
-
-    if result_image_url:
-        # 🔥 Формируем текст
-        balance = await db.get_balance(user_id)
-        room_display = ROOM_TYPES.get(room, room.replace('_', ' ').title())
-        style_display = STYLE_TYPES.get(style, style.replace('_', ' ').title())
-        
-        design_caption = f"""✨ <b>Ваш новый дизайн в стиле {style_display} готов!</b>
-
-🎨 {room_display} преобразилась!"""
-        
-        menu_caption = f"""🎨 <b>Что дальше?</b>
-
-Выберите действие:
-🔄 Другой стиль - примеря другой стиль на эту комнату
-🏠 Главное меню - вернуться в главное меню
-
-📊 Баланс: <b>{balance}</b> генераций | 🔧 Режим: <b>{work_mode}</b>"""
-
-        # 🔥 [2026-01-01 17:17] РЕДАКТИРУЕМ ФОТО-СООБЩЕНИЕ
-        try:
-            logger.warning(f"📊 [CHANGE_STYLE] ATTEMPT_1: Editing photo msg_id={photo_message_id}")
-            
-            await callback.bot.edit_message_media(
-                chat_id=chat_id,
-                message_id=photo_message_id,
-                media=InputMediaPhoto(
-                    media=result_image_url,
-                    caption=design_caption,
-                    parse_mode="HTML"
-                )
-            )
-            
-            logger.warning(f"✅ [CHANGE_STYLE] Photo edited successfully: msg_id={photo_message_id}")
-            
-            # 🔥 РЕДАКТИРУЕМ МЕНЮ-СООБЩЕНИЕ
-            try:
-                await callback.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=menu_message_id,
-                    text=menu_caption,
-                    reply_markup=get_post_generation_keyboard(),
-                    parse_mode="HTML"
-                )
-                logger.warning(f"✅ [CHANGE_STYLE] Menu edited successfully: msg_id={menu_message_id}")
-                
-                # Сохраняем в БД
-                await db.save_chat_menu(chat_id, user_id, menu_message_id, 'post_generation_menu')
-                
-            except Exception as menu_edit_error:
-                logger.warning(f"⚠️ [CHANGE_STYLE] Failed to edit menu: {menu_edit_error}")
-
-        except Exception as photo_edit_error:
-            logger.warning(f"⚠️ [CHANGE_STYLE] ATTEMPT_1 FAILED: {photo_edit_error}")
-            
-            # 🔥 FALLBACK: Попытка через BufferedInputFile
-            try:
-                logger.warning(f"📊 [CHANGE_STYLE] ATTEMPT_2: BufferedInputFile")
-                
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(result_image_url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                        if resp.status == 200:
-                            photo_data = await resp.read()
-                            
-                            await callback.bot.edit_message_media(
-                                chat_id=chat_id,
-                                message_id=photo_message_id,
-                                media=InputMediaPhoto(
-                                    media=BufferedInputFile(photo_data, filename="design.jpg"),
-                                    caption=design_caption,
-                                    parse_mode="HTML"
-                                )
-                            )
-                            
-                            logger.warning(f"✅ [CHANGE_STYLE] ATTEMPT_2 SUCCESS: Photo edited")
-                            
-                            # РЕДАКТИРУЕМ МЕНЮ
-                            try:
-                                await callback.bot.edit_message_text(
-                                    chat_id=chat_id,
-                                    message_id=menu_message_id,
-                                    text=menu_caption,
-                                    reply_markup=get_post_generation_keyboard(),
-                                    parse_mode="HTML"
-                                )
-                                logger.warning(f"✅ [CHANGE_STYLE] Menu edited: msg_id={menu_message_id}")
-                                await db.save_chat_menu(chat_id, user_id, menu_message_id, 'post_generation_menu')
-                            except Exception as menu_error:
-                                logger.warning(f"⚠️ [CHANGE_STYLE] Failed to edit menu: {menu_error}")
-                        else:
-                            logger.error(f"📊 [CHANGE_STYLE] HTTP {resp.status}")
-            
-            except Exception as buffer_error:
-                logger.error(f"📊 [CHANGE_STYLE] ATTEMPT_2 FAILED: {buffer_error}")
-                
-                # FALLBACK: Создаем НОВОЕ меню (если оба способа не сработали)
-                logger.warning(f"⚠️ [CHANGE_STYLE] ALL_ATTEMPTS_FAILED, creating new style menu")
-                await state.set_state(CreationStates.choose_style_1)
-                
-                new_msg = await callback.message.answer(
-                    text="🎨 **Выберите стиль дизайна**",
-                    reply_markup=get_choose_style_1_keyboard(),
-                    parse_mode="Markdown"
-                )
-                await state.update_data(menu_message_id=new_msg.message_id)
-                await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'choose_style_1')
-                
-                logger.info(f"✅ [CHANGE_STYLE] Fallback: new style menu created")
-    else:
-        # Ошибка генерации - возвращаем баланс
-        if not is_admin:
-            await db.increase_balance(user_id, 1)
-        
-        logger.error(f"❌ [CHANGE_STYLE] Generation failed for user_id={user_id}")
-    
-    # Удаляем прогресс-сообщение
-    if progress_msg:
-        try:
-            await progress_msg.delete()
-        except Exception:
-            pass
-    
-    logger.info(f"[V3] NEW_DESIGN+CHANGE_STYLE - finished, user_id={user_id}")
