@@ -17,6 +17,7 @@
 #    • SCREEN 4-5→6: style_choice_handler() - 🔥 ГЕНЕРАЦИЯ ДИЗАЙНА [MAIN]
 #    • SCREEN 6: post_generation_menu() - Меню после генерации
 #    • SCREEN 6→4: change_style_after_gen() - Смена стиля (без генерации)
+#    • SCREEN 6→2: uploading_photo_from_generation() - 🆕 Новое фото [NEW]
 #
 # 🔧 АРХИТЕКТУРА FSM (Finite State Machine):
 #    CreationStates.room_choice → choose_style_1 → choose_style_2 → post_generation
@@ -26,6 +27,7 @@
 #
 # 📊 ВЕРСИЯ: 3.0
 # 📅 ДАТА: 2026-01-01
+# 🔧 HOTFIX: [2026-01-01 20:30] Добавлен handler для "uploading_photo" callback
 # ============================================================================
 
 import asyncio
@@ -49,6 +51,7 @@ from keyboards.inline import (
     get_post_generation_keyboard,
     get_payment_keyboard,
     get_main_menu_keyboard,
+    get_uploading_photo_keyboard,
 )
 
 from services.api_fallback import smart_generate_interior
@@ -61,6 +64,7 @@ from utils.texts import (
     ERROR_INSUFFICIENT_BALANCE,
     ROOM_TYPES,
     STYLE_TYPES,
+    UPLOAD_PHOTO_TEXT,
 )
 
 from utils.helpers import add_balance_and_mode_to_text
@@ -127,6 +131,117 @@ def log_photo_send(user_id: int, method: str, message_id: int, request_id: str =
             f"count={len(PHOTO_SEND_LOG[user_id])}, "
             f"all={PHOTO_SEND_LOG[user_id]}"
         )
+
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🆕 [2026-01-01 20:30] HANDLER: UPLOADING_PHOTO FROM POST-GENERATION
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════
+# 📍 ЭКРАН: 6→2 (навигация для нового фото)
+# 📊 FSM STATE: CreationStates.post_generation → CreationStates.uploading_photo
+# 🎯 НАЗНАЧЕНИЕ: При клике на кнопку "📸 Новое фото" - вернуться к загрузке фото
+# ⬅️ ПРЕДЫДУЩИЙ ЭКРАН: SCREEN 6 (меню после генерации)
+# ➡️ СЛЕДУЮЩИЙ ЭКРАН: SCREEN 2 (загрузка нового фото)
+# 🔌 ТРИГГЕР: F.data == "uploading_photo"
+#
+# 📋 ЛОГИКА:
+# 1️⃣ Пользователь видит готовый дизайн + меню
+# 2️⃣ Нажимает кнопку "📸 Новое фото"
+# 3️⃣ ОЧИЩАЕМ ВСЕ ДАННЫЕ О ТЕКУЩЕМ ДИЗАЙНЕ
+# 4️⃣ Переходим в состояние uploading_photo
+# 5️⃣ Показываем текст "Загрузите новое фото"
+# 6️⃣ Пользователь загружает НОВОЕ фото
+# 7️⃣ Начинается НОВЫЙ ЦИКЛ (выбор комнаты, стиля, генерация)
+#
+# 📝 ЛОГИРОВАНИЕ:
+# - "[V3] NEW_DESIGN+UPLOAD_NEW_PHOTO - reset to uploading_photo, user_id={user_id}"
+
+@router.callback_query(
+    StateFilter(CreationStates.post_generation),
+    F.data == "uploading_photo"
+)
+async def uploading_photo_from_generation(callback: CallbackQuery, state: FSMContext):
+    """
+    🆕 [2026-01-01 20:30] uploading_photo_from_generation() - Новое фото после дизайна
+    
+    📍 ПУТЬ: [SCREEN 6: дизайн готов] → нажать "📸 Новое фото" → [SCREEN 2: загрузка]
+    
+    🔌 ТРИГГЕР: 
+    - StateFilter: CreationStates.post_generation (находимся после генерации)
+    - F.data == "uploading_photo" (кнопка "новое фото")
+    
+    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.uploading_photo
+    
+    📋 АЛГОРИТМ:
+    1️⃣ ОЧИЩАЕМ ВСЕ данные о ТЕКУЩЕМ дизайне (photo_id, selected_room, etc.)
+    2️⃣ Переходим в состояние uploading_photo
+    3️⃣ Отправляем текст: "Загрузите новое фото"
+    4️⃣ Показываем ПУСТУЮ клавиатуру (БЕЗ кнопок)
+    5️⃣ Пользователь загружает НОВОЕ фото
+    6️⃣ Триггер photo_handler из creation_main.py обрабатывает его
+    
+    💾 ОЧИЩАЕТ ИЗ FSM:
+    - photo_id (текущее фото)
+    - selected_room (выбранная комната)
+    - menu_message_id (ID старого меню)
+    - photo_message_id (ID старого дизайна)
+    - Остальные данные FSM тоже очищаются
+    
+    ⚠️ ОТЛИЧИЕ ОТ ПЕРВОНАЧАЛЬНОЙ ЗАГРУЗКИ:
+    - При запуске бота (SCREEN 0→1→2) - пользователь попадает на uploading_photo из select_mode
+    - Здесь (SCREEN 6→2) - пользователь попадает на uploading_photo из post_generation
+    - Технически - один и тот же экран, но разный путь туда
+    
+    📤 ОТПРАВЛЯЕТ:
+    - Текст: "📷 Загрузите новое фото помещения"
+    - Клавиатура: get_uploading_photo_keyboard() → ПУСТАЯ (без кнопок)
+    - Без баланса и режима работы
+    
+    📝 ЛОГИРОВАНИЕ:
+    - "[V3] NEW_DESIGN+UPLOAD_NEW_PHOTO - reset to uploading_photo, user_id={user_id}"
+    - "🆕 [UPLOADING_PHOTO] New photo for user={user_id}, cleared FSM state"
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+    menu_message_id = callback.message.message_id
+
+    try:
+        logger.warning(f"🆕 [UPLOADING_PHOTO] START: user_id={user_id}, from post_generation")
+        
+        # ✅ ОЧИЩАЕМ ВСЕ ДАННЫЕ О ТЕКУЩЕМ ДИЗАЙНЕ (но сохраняем work_mode)
+        data = await state.get_data()
+        work_mode = data.get('work_mode')  # ← СОХРАНЯЕМ режим работы
+        
+        # Очищаем FSM
+        await state.clear()
+        
+        # Восстанавливаем только work_mode (если был сохранён)
+        if work_mode:
+            await state.update_data(work_mode=work_mode)
+        
+        # Переходим в состояние загрузки фото
+        await state.set_state(CreationStates.uploading_photo)
+        
+        # Формируем текст меню для загрузки
+        text = UPLOAD_PHOTO_TEXT or "📷 Загрузите новое фото помещения"
+        
+        # ✅ Редактируем текущее меню или создаем новое
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_uploading_photo_keyboard(),
+            show_balance=False,
+            screen_code='uploading_photo'
+        )
+        
+        logger.warning(f"🆕 [UPLOADING_PHOTO] READY: user_id={user_id}, waiting for new photo")
+        logger.info(f"[V3] NEW_DESIGN+UPLOAD_NEW_PHOTO - reset to uploading_photo, user_id={user_id}")
+        
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] UPLOADING_PHOTO_FROM_GENERATION failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
 
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -1036,7 +1151,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 # 2️⃣ Нажимает любую кнопку из меню
 # 3️⃣ Обновляется текст и кнопки в меню (edit_message_caption для фото)
 #
-# [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu
+# [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu()
 # [2025-12-31 10:19] 🔥 CRITICAL HOTFIX: Добавить save_chat_menu() сразу после edit_message_caption
 #
 # 📝 ЛОГИРОВАНИЕ:
