@@ -121,13 +121,13 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
 
     # Ряд 1: Создать дизайн
     builder.row(InlineKeyboardButton(
-        text="      🎨 Создать дизайн      ",
+        text="             🎨 Создать дизайн              ",
         callback_data="create_design"
     ))
     
     # Ряд 2: Личный кабинет
     builder.row(InlineKeyboardButton(
-        text="     👤 Личный кабинет        ",
+        text="             👤 Личный кабинет               ",
         callback_data="show_profile"
     ))
     
