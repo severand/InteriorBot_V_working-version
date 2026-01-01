@@ -356,13 +356,13 @@ def get_post_generation_keyboard(show_continue_editing: bool = False) -> InlineK
         # Ручной промпт
         builder.row(
             InlineKeyboardButton(text="✏️ Продолжить редактирование", callback_data="continue_editing"),
-            InlineKeyboardButton(text="📸 Новое фото", callback_data="create_design"),
+            InlineKeyboardButton(text="📸 Новое фото", callback_data="uploading_photo"),
         )
     else:
         # Генерация по стилю
         builder.row(
             InlineKeyboardButton(text="🔄 Другой стиль      ", callback_data="change_style"),
-            InlineKeyboardButton(text="📸 Новое фото         ", callback_data="create_design"),
+            InlineKeyboardButton(text="📸 Новое фото         ", callback_data="uploading_photo"),
         )
 
     # Ряд 2: Главное меню (широкая)
