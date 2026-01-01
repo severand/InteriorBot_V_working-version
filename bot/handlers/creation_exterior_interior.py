@@ -78,7 +78,6 @@ from aiogram.types import CallbackQuery, Message
 from database.db import db
 
 from keyboards.inline import (
-    get_what_is_in_photo_keyboard,
     get_uploading_photo_keyboard,
     get_room_keyboard,
     get_style_keyboard,
