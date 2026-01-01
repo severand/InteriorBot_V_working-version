@@ -482,10 +482,12 @@ def get_choose_style_1_keyboard() -> InlineKeyboardMarkup:
     
     builder.row(
         InlineKeyboardButton(text="⬅️ К комнате", callback_data="room_choice"),
-        InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode"),
-        InlineKeyboardButton(text="▶️ Ещё", callback_data="choose_style_2")
+        InlineKeyboardButton(text="▶️ Ещё", callback_data="choose_style_2"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
+    
     )
-    builder.adjust(2)
+        # ✅ ПРАВИЛЬНЫЙ ADJUST: 2 для стилей, 1 для последнего ряда
+    builder.adjust(2, 2, 2, 2, 2, 2, 1)  # 6 рядов со стилями (по 2) + 1 ряд с 3 кнопками
     return builder.as_markup()
 
 
