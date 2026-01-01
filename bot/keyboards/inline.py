@@ -292,9 +292,11 @@ def get_post_generation_keyboard(show_continue_editing: bool = False) -> InlineK
         )
 
     # Ряд 2: Главное меню (широкая)
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню    ", callback_data="select_mode"))
+    builder.row(InlineKeyboardButton(text="🏠 Выбрать новый режим    ", callback_data="select_mode"))
 
     return builder.as_markup()
+
+
 
 
 # Экран подтверждения очистки пространства
@@ -311,6 +313,8 @@ def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="clear_space_cancel"))
     builder.adjust(1)
     return builder.as_markup()
+
+
 
 
 # ЭКРАН ЛИЧНОГО КАБИНЕТА
@@ -355,6 +359,7 @@ def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
+    
 
 # ========================================
 # SCREEN 2-5 - ЗАГРУЗКА ФОТО И ВЫБОР СТИЛЕЙ
@@ -386,6 +391,7 @@ def get_room_choice_keyboard() -> InlineKeyboardMarkup:
     builder.adjust(2)
     return builder.as_markup()
 
+    
 
     
 # ЭКРАН ВЫБОРА СТИЛЯ_1
@@ -417,6 +423,8 @@ def get_choose_style_1_keyboard() -> InlineKeyboardMarkup:
         # ✅ ПРАВИЛЬНЫЙ ADJUST: 2 для стилей, 1 для последнего ряда
     builder.adjust(2, 2, 2, 2, 2, 2, 2, 1)  # 6 рядов со стилями (по 2) + 1 ряд с 3 кнопками
     return builder.as_markup()
+
+
 
 # ЭКРАН ВЫБОРА СТИЛЯ_2
 #======================
