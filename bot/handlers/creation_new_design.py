@@ -25,9 +25,9 @@
 # 🔥 ГЛАВНЫЙ ОБРАБОТЧИК:
 #    style_choice_handler() - Генерирует дизайн через smart_generate_interior()
 #
-# 📊 ВЕРСИЯ: 3.0
-# 📅 ДАТА: 2026-01-01
-# 🔧 HOTFIX: [2026-01-01 20:30] Добавлен handler для "uploading_photo" callback
+# 📊 ВЕРСИЯ: 3.1
+# 📅 ДАТА: 2026-01-02
+# 🔧 HOTFIX: [2026-01-02 12:00] Добавлены обработчики для change_style и to_main_menu из post_generation
 # ============================================================================
 
 import asyncio
@@ -245,56 +245,202 @@ async def uploading_photo_from_generation(callback: CallbackQuery, state: FSMCon
 
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
-# 🏠 [SCREEN 3] ВЫБОР ТИПА ПОМЕЩЕНИЯ (ROOM CHOICE)
+# 🆕 [2026-01-02 12:00] HANDLER: TO_MAIN_MENU FROM POST-GENERATION
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
-# 📍 ЭКРАН: 3
-# 📊 FSM STATE: CreationStates.room_choice
-# 🎯 НАЗНАЧЕНИЕ: Показать пользователю меню с 10 типами помещений для выбора
-# ⬅️ ПРЕДЫДУЩИЙ ЭКРАН: SCREEN 2 (загрузка фото)
-# ➡️ СЛЕДУЮЩИЙ ЭКРАН: SCREEN 4 (выбор стиля, страница 1)
-# 🔌 ТРИГГЕР: callback_data == "room_choice"
+# 📍 ЭКРАН: 6→0 (вернуться в главное меню из экрана дизайна)
+# 📊 FSM STATE: CreationStates.post_generation → clear/WorkMode.select_mode
+# 🎯 НАЗНАЧЕНИЕ: При клике на кнопку "🏠 Главное меню" - вернуться в главное меню
+# ⬅️ ПРЕДЫДУЩИЙ ЭКРАН: SCREEN 6 (меню после генерации)
+# ➡️ СЛЕДУЮЩИЙ ЭКРАН: SCREEN 0 (главное меню)
+# 🔌 ТРИГГЕР: StateFilter(CreationStates.post_generation) + F.data == "to_main_menu"
 #
 # 📋 ЛОГИКА:
-# 1️⃣ Пользователь завершил загрузку фото (SCREEN 2)
-# 2️⃣ Нажимает кнопку "Далее" → callback_data == "room_choice"
-# 3️⃣ Отправляется НОВОЕ текстовое меню с 10 типами комнат
-# 4️⃣ Сохраняется menu_message_id в БД для отслеживания
-#
-# [2025-12-30 17:00] 🔥 FIX:
-# - Если текущее сообщение содержит ФОТО (media) → НЕ редактируем edit_message_text!
-# - Создаем НОВОЕ текстовое меню через answer()
-# - Старое медиа-сообщение остаётся в истории (не удаляем)
-#
-# 📤 ОТПРАВЛЯЕТ:
-# - Текстовое сообщение: "🏠 Выберите тип помещения"
-# - Inline keyboard: get_room_choice_keyboard() (10 кнопок, 2 в ряд)
-# - Показывает баланс и режим работы
-#
-# 💾 СОХРАНЯЕТ В БД:
-# - menu_message_id (ID нового сообщения)
-# - screen_code = 'room_choice' (для отслеживания)
+# 1️⃣ Пользователь видит готовый дизайн + меню
+# 2️⃣ Нажимает кнопку "🏠 Главное меню"
+# 3️⃣ Очищаем FSM (завершаем режим new_design)
+# 4️⃣ Показываем главное меню с 3 кнопками (Новый дизайн, Галерея, Настройки)
 #
 # 📝 ЛОГИРОВАНИЕ:
-# - "[V3] NEW_DESIGN+ROOM_CHOICE - menu shown, user_id={user_id}"
+# - "[V3] NEW_DESIGN+TO_MAIN_MENU - reset, user_id={user_id}"
+
+@router.callback_query(
+    StateFilter(CreationStates.post_generation),
+    F.data == "to_main_menu"
+)
+async def to_main_menu_from_post_generation(callback: CallbackQuery, state: FSMContext, admins: list[int]):
+    """
+    🆕 [2026-01-02 12:00] to_main_menu_from_post_generation() - В главное меню из дизайна
+    
+    📍 ПУТЬ: [SCREEN 6: дизайн готов] → нажать "🏠 Главное меню" → [SCREEN 0: меню]
+    
+    🔌 ТРИГГЕР: 
+    - StateFilter: CreationStates.post_generation (находимся после генерации)
+    - F.data == "to_main_menu" (кнопка "главное меню")
+    
+    📊 НОВОЕ СОСТОЯНИЕ: clear (FSM очищается)
+    
+    📋 АЛГОРИТМ:
+    1️⃣ ОЧИЩАЕМ ВСЕ данные о текущем дизайне (photo_id, room, style, etc.)
+    2️⃣ Завершаем режим new_design
+    3️⃣ Показываем главное меню (show_main_menu)
+    
+    📤 ОТПРАВЛЯЕТ:
+    - Главное меню с кнопками:
+      ├─ "✨ Создать новый дизайн"
+      ├─ "🖼️ Моя галерея"
+      └─ "⚙️ Настройки"
+    
+    📝 ЛОГИРОВАНИЕ:
+    - "[V3] NEW_DESIGN+TO_MAIN_MENU - reset, user_id={user_id}"
+    """
+    user_id = callback.from_user.id
+    
+    try:
+        logger.warning(f"🏠 [TO_MAIN_MENU] START: user_id={user_id}, from post_generation")
+        
+        # ✅ Очищаем FSM (завершаем режим new_design)
+        await state.clear()
+        
+        # Показываем главное меню
+        await show_main_menu(callback, state, admins)
+        
+        logger.info(f"[V3] NEW_DESIGN+TO_MAIN_MENU - reset, user_id={user_id}")
+        
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] TO_MAIN_MENU_FROM_POST_GENERATION failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
+
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔄 [SCREEN 6→4] СМЕНА СТИЛЯ ПОСЛЕ ГЕНЕРАЦИИ (CHANGE STYLE) - FIXED VERSION
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════
+# 📍 ЭКРАН: 6→4 (навигация назад БЕЗ переколки фото)
+# 📊 FSM STATE: CreationStates.post_generation → CreationStates.choose_style_1
+# 🎯 НАЗНАЧЕНИЕ: Вернуться на экран выбора стилей БЕЗ повторной загрузки фото
+# ⬅️ ПРЕДЫДУЩИЙ ЭКРАН: SCREEN 6 (меню после генерации)
+# ➡️ СЛЕДУЮЩИЙ ЭКРАН: SCREEN 4 (стили, страница 1)
+# 🔌 ТРИГГЕР: StateFilter(CreationStates.post_generation) + F.data == "change_style"
+#
+# 📋 ЛОГИКА:
+# 1️⃣ Пользователь видит готовый дизайн + меню
+# 2️⃣ Нажимает кнопку "🔄 Другой стиль"
+# 3️⃣ РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ (на стили)
+# 4️⃣ Показываем снова меню со стилями
+# 5️⃣ При выборе стиля → вызовется style_choice_handler и произойдет генерация
+#
+# [2026-01-02 12:00] 🔥 CRITICAL FIX: Добавлен StateFilter для post_generation!
+# [2026-01-01 17:35] 🔥 MAJOR REWRITE: РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ, БЕЗ ГЕНЕРАЦИИ!
+#
+# 📝 ЛОГИРОВАНИЕ:
+# - "[V3] NEW_DESIGN+CHANGE_STYLE - back to style selection, user_id={user_id}"
+
+@router.callback_query(
+    StateFilter(CreationStates.post_generation),
+    F.data == "change_style"
+)
+async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
+    """
+    🔄 [SCREEN 6→4] change_style_after_gen() - Смена стиля после генерации
+    
+    📍 ПУТЬ: [SCREEN 6: дизайн готов] → нажать "🔄 Другой стиль" → [SCREEN 4: выбор стилей]
+    
+    🔌 ТРИГГЕР: 
+    - StateFilter: CreationStates.post_generation (находимся после генерации)
+    - F.data == "change_style" (кнопка "смена стиля")
+    
+    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.choose_style_1
+    
+    [2026-01-02 12:00] 🔥 CRITICAL FIX:
+    - ДОБАВЛЕН StateFilter(CreationStates.post_generation)!
+    - БЕЗ этого фильтра callback мог бы поймать неправильный handler
+    - Теперь обработчик срабатывает ТОЛЬКО из состояния post_generation
+    
+    [2026-01-01 17:35] 🔥 MAJOR REWRITE - РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ!
+    
+    📋 ЛОГИКА (ВАЖНО!):
+    1️⃣ Юзер видит ФОТО дизайна + МЕНЮ с кнопками
+    2️⃣ Нажимает "🔄 Другой стиль"
+    3️⃣ РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ (меняем содержимое на стили)
+    4️⃣ ФОТО ОСТАЕТСЯ БЕЗ ИЗМЕНЕНИЙ!
+    5️⃣ Больше НИЧЕГО не генерируем!
+    
+    Затем при выборе стиля из этого меню:
+    → вызовется style_choice_handler()
+    → произойдет генерация НОВОГО дизайна
+    → придет НОВОЕ фото с новым стилем
+    
+    ✨ ЭФФЕКТ ДЛЯ ЮЗЕРА:
+    "Я вижу свой дизайн, нажимаю 'другой стиль', и вижу новое меню
+     с выбором стилей. Без лишних движений - сразу выбираю новый стиль
+     и генерируется новый дизайн."
+    
+    📤 ОТПРАВЛЯЕТ:
+    - Редактированное МЕНЮ: "🎨 Выберите стиль дизайна"
+    - 12 стилей (первая страница)
+    - Кнопки: "⬅️ Вернуться на первую", "🏠 Главное меню", "▶️ Ещё"
+    
+    💾 СОХРАНЯЕТ В БД:
+    - screen_code = 'choose_style_1'
+    
+    ❌ НЕ ГЕНЕРИРУЕТ ДИЗАЙН!
+    ❌ НЕ УДАЛЯЕТ ФОТО!
+    ✅ РЕДАКТИРУЕТ ТОЛЬКО МЕНЮ!
+    
+    📝 ЛОГИРОВАНИЕ:
+    - "[V3] NEW_DESIGN+CHANGE_STYLE - back to style selection, user_id={user_id}"
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+    menu_message_id = callback.message.message_id  # 🔥 ID МЕНЮ с кнопками!
+
+    logger.warning(f"🔍 [CHANGE_STYLE] START: user_id={user_id}, menu_msg_id={menu_message_id}")
+
+    data = await state.get_data()
+    work_mode = data.get('work_mode')
+    balance = await db.get_balance(user_id)
+
+    try:
+        # ✅ РЕДАКТИРУЕМ ТЕКУЩЕЕ МЕНЮ НА ВЫБОР СТИЛЕЙ
+        # Переходим в состояние выбора стиля
+        await state.set_state(CreationStates.choose_style_1)
+        
+        # Формируем текст меню со стилями
+        text = f"🎨 **Выберите стиль дизайна**"
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+        
+        # 🔥 [2026-01-01 17:35] РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ - БЕЗ ФОТО!
+        await callback.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=menu_message_id,
+            text=text,
+            reply_markup=get_choose_style_1_keyboard(),
+            parse_mode="Markdown"
+        )
+        
+        # ✅ Сохраняем в БД (обновляем screen_code)
+        await db.save_chat_menu(chat_id, user_id, menu_message_id, 'choose_style_1')
+        
+        logger.info(f"✅ [CHANGE_STYLE] Menu edited: msg_id={menu_message_id}, user_id={user_id}")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] CHANGE_STYLE failed: {e}", exc_info=True)
+        await callback.answer(
+            "❌ Ошибка при смене стиля. Попробуйте еще раз.",
+            show_alert=True
+        )
+
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🏠 [SCREEN 3] ВЫБОР ТИПА ПОМЕЩЕНИЯ (ROOM CHOICE)
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(F.data == "room_choice")
 async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
     """
     🏠 [SCREEN 3] room_choice_menu() - Меню выбора типа помещения
-    
-    📍 ПУТЬ: [SCREEN 2: загрузка фото] → "Далее" → [SCREEN 3: выбор комнаты]
-    
-    ✅ ЕСЛИ ТЕКУЩЕЕ СООБЩЕНИЕ - МЕДИА (фото):
-       → Создаём НОВОЕ текстовое меню через answer()
-       → НЕ используем edit_message_text() на медиа-сообщении!
-    
-    ✅ ЕСЛИ ТЕКУЩЕЕ СООБЩЕНИЕ - ТЕКСТ:
-       → Редактируем через edit_menu() как обычно
-    
-    💡 ДОПОЛНИТЕЛЬНАЯ ФУНКЦИОНАЛЬНОСТЬ:
-    - Отображает текущий баланс
-    - Отображает текущий режим работы (basic/pro)
-    - Сохраняет для истории в БД
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -359,30 +505,6 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
 # 🏠 [SCREEN 3→4] ОБРАБОТЧИК ВЫБОРА КОМНАТЫ (ROOM CHOICE HANDLER)
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
-# 📍 ЭКРАН: 3→4 (переход)
-# 📊 FSM STATE: CreationStates.room_choice → CreationStates.choose_style_1
-# 🎯 НАЗНАЧЕНИЕ: Обработать выбор типа помещения и перейти к выбору стиля
-# ⬅️ ПРЕДЫДУЩИЙ ЭКРАН: SCREEN 3 (выбор комнаты)
-# ➡️ СЛЕДУЮЩИЙ ЭКРАН: SCREEN 4 (выбор стиля, страница 1)
-# 🔌 ТРИГГЕР: F.data.startswith("room_") например "room_kitchen", "room_bedroom" и т.д.
-#
-# 📋 ЛОГИКА:
-# 1️⃣ Пользователь нажимает на кнопку комнаты (room_kitchen, room_bedroom и т.д.)
-# 2️⃣ Сохраняем выбор в FSM (selected_room)
-# 3️⃣ Переходим в состояние choose_style_1
-# 4️⃣ Показываем меню с ПЕРВОЙ страницей стилей (12 стилей)
-#
-# [2025-12-30 17:00] 🔥 FIX:
-# - Аналогичная логика: проверяем медиа перед edit_menu()
-# - Если медиа - создаем НОВОЕ текстовое меню
-#
-# 💾 СОХРАНЯЕТ:
-# - selected_room (в FSM) → используется при генерации дизайна
-# - menu_message_id (обновляется)
-# - screen_code = 'choose_style_1'
-#
-# 📝 ЛОГИРОВАНИЕ:
-# - "[V3] NEW_DESIGN+ROOM_CHOICE - selected: {room}, user_id={user_id}"
 
 @router.callback_query(
     StateFilter(CreationStates.room_choice),
@@ -391,25 +513,6 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
 async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
     """
     🏠 [SCREEN 3→4] room_choice_handler() - Обработчик выбора комнаты
-    
-    📍 ПУТЬ: [SCREEN 3: выбор комнаты] → нажимает кнопку комнаты → [SCREEN 4: стили]
-    
-    🔌 ТРИГГЕРЫ:
-    - StateFilter: CreationStates.room_choice (в этом состоянии)
-    - F.data.startswith("room_") (кнопка с комнатой: room_kitchen, room_bedroom, etc.)
-    
-    📊 АЛГОРИТМ:
-    1️⃣ Извлекаем выбранную комнату из callback_data
-    2️⃣ Сохраняем selected_room в FSM
-    3️⃣ Переходим в состояние CreationStates.choose_style_1
-    4️⃣ Отправляем меню со СТИЛЯМИ (первая страница)
-    5️⃣ Сохраняем новый menu_message_id в БД
-    
-    💡 ПРИМЕРЫ callback_data:
-    - "room_kitchen" → room = "kitchen"
-    - "room_bedroom" → room = "bedroom"
-    - "room_bathroom" → room = "bathroom"
-    - И так далее для всех 10 типов помещений
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -477,26 +580,6 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
 # 🎨 [SCREEN 4] ВЫБОР СТИЛЯ СТРАНИЦА 1 (CHOOSE STYLE PAGE 1)
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
-# 📍 ЭКРАН: 4
-# 📊 FSM STATE: CreationStates.choose_style_1
-# 🎯 НАЗНАЧЕНИЕ: Показать ПЕРВУЮ СТРАНИЦУ стилей (12 стилей) + кнопку "▶️ Ещё"
-# ⬅️ ПРЕДЫДУЩИЙ ЭКРАН: SCREEN 3 (выбор комнаты) ИЛИ SCREEN 5 (вернулся с стр. 2)
-# ➡️ СЛЕДУЮЩИЙ ЭКРАН: SCREEN 5 (вторая страница стилей) ИЛИ SCREEN 6 (генерация, при выборе)
-# 🔌 ТРИГГЕР: StateFilter(CreationStates.choose_style_2) + F.data == "styles_page_1"
-#
-# 📋 ЛОГИКА:
-# 1️⃣ Пользователь находится на ЭКРАНЕ 5 (вторая страница стилей)
-# 2️⃣ Нажимает кнопку "⬅️ Назад на первую страницу"
-# 3️⃣ Переходим в состояние choose_style_1
-# 4️⃣ Показываем ПЕРВУЮ СТРАНИЦУ со стилями (12 стилей)
-# 5️⃣ Кнопки навигации: "⬅️ Назад", "🏠 Главное меню", "▶️ Ещё"
-#
-# 🌍 ТИПЫ СТИЛЕЙ НА ПЕРВОЙ СТРАНИЦЕ:
-# Modern, Minimalist, Loft, Scandinavian, Industrial, Art Deco,
-# Eclectic, Bohemian, Glamour, Vintage, Baroque, Contemporary
-#
-# 📝 ЛОГИРОВАНИЕ:
-# - "[V3] NEW_DESIGN+CHOOSE_STYLE - back to page 1, user_id={user_id}"
 
 @router.callback_query(
     StateFilter(CreationStates.choose_style_2),
@@ -505,27 +588,6 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
 async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
     """
     🎨 [SCREEN 5→4] choose_style_1_menu() - Вернуться на первую страницу стилей
-    
-    📍 ПУТЬ: [SCREEN 5: стили стр. 2] → нажать "⬅️ Назад" → [SCREEN 4: стили стр. 1]
-    
-    🔌 ТРИГГЕР: 
-    - StateFilter: CreationStates.choose_style_2 (находимся на странице 2)
-    - F.data == "styles_page_1" (кнопка "назад на страницу 1")
-    
-    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.choose_style_1
-    
-    📤 ОТПРАВЛЯЕТ:
-    - Текстовое меню: "🎨 Выберите стиль дизайна (страница 1)"
-    - 12 кнопок с ПЕРВОЙ группой стилей
-    - Кнопки навигации: "⬅️ Назад", "🏠 Главное меню", "▶️ Ещё"
-    
-    💡 ОТЛИЧИЕ ОТ SCREEN 4:
-    - SCREEN 4 - попадаем сюда после выбора комнаты (первый раз на стили)
-    - Здесь - возвращаемся со второй страницы
-    
-    ⚠️ ПРОВЕРКА МЕДИА:
-    - Если текущее сообщение - фото → создаем новое текстовое меню
-    - Если текущее сообщение - текст → редактируем через edit_menu()
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -574,26 +636,6 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
 # 🎨 [SCREEN 5] ВЫБОР СТИЛЯ СТРАНИЦА 2 (CHOOSE STYLE PAGE 2)
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
-# 📍 ЭКРАН: 5
-# 📊 FSM STATE: CreationStates.choose_style_2
-# 🎯 НАЗНАЧЕНИЕ: Показать ВТОРУЮ СТРАНИЦУ стилей (ещё 12 стилей)
-# ⬅️ ПРЕДЫДУЩИЙ ЭКРАН: SCREEN 4 (первая страница стилей)
-# ➡️ СЛЕДУЮЩИЙ ЭКРАН: SCREEN 4 (вернуться на первую) ИЛИ SCREEN 6 (генерация, при выборе)
-# 🔌 ТРИГГЕР: StateFilter(CreationStates.choose_style_1) + F.data == "styles_page_2"
-#
-# 📋 ЛОГИКА:
-# 1️⃣ Пользователь находится на ЭКРАНЕ 4 (первая страница стилей)
-# 2️⃣ Нажимает кнопку "▶️ Ещё" (показать еще стили)
-# 3️⃣ Переходим в состояние choose_style_2
-# 4️⃣ Показываем ВТОРУЮ СТРАНИЦУ со СТИЛЯМИ (ещё 12 стилей)
-# 5️⃣ Кнопки навигации: "⬅️ Назад на первую", "🏠 Главное меню"
-#
-# 🌍 ТИПЫ СТИЛЕЙ НА ВТОРОЙ СТРАНИЦЕ (примеры):
-# Steampunk, Mediterranean, Japanese, Moroccan, Rustic, Victorian,
-# Art Nouveau, Maximalist, Cyberpunk, Cottagecore, и другие
-#
-# 📝 ЛОГИРОВАНИЕ:
-# - "[V3] NEW_DESIGN+CHOOSE_STYLE - page 2 shown, user_id={user_id}"
 
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1),
@@ -602,28 +644,6 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
 async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
     """
     🎨 [SCREEN 4→5] choose_style_2_menu() - Показать вторую страницу стилей
-    
-    📍 ПУТЬ: [SCREEN 4: стили стр. 1] → нажать "▶️ Ещё" → [SCREEN 5: стили стр. 2]
-    
-    🔌 ТРИГГЕР: 
-    - StateFilter: CreationStates.choose_style_1 (находимся на странице 1)
-    - F.data == "styles_page_2" (кнопка "далее на страницу 2")
-    
-    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.choose_style_2
-    
-    📤 ОТПРАВЛЯЕТ:
-    - Текстовое меню: "🎨 Выберите стиль дизайна (страница 2)"
-    - 12 кнопок с ВТОРОЙ группой стилей
-    - Кнопки навигации: "⬅️ Назад на первую", "🏠 Главное меню"
-    
-    💡 ОТЛИЧИЕ ОТ SCREEN 4:
-    - На этой странице ДРУГИЕ стили (вторая половина)
-    - Нет кнопки "▶️ Ещё дальше" - это последняя страница
-    - Есть кнопка "⬅️ Вернуться на первую"
-    
-    ⚠️ ПРОВЕРКА МЕДИА:
-    - Если текущее сообщение - фото → создаем новое текстовое меню
-    - Если текущее сообщение - текст → редактируем через edit_menu()
     """
     user_id = callback.from_user.id
     
@@ -671,57 +691,6 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
 # 🔥 [SCREEN 4-5→6] ГЛАВНЫЙ ОБРАБОТЧИК: ГЕНЕРАЦИЯ ДИЗАЙНА (STYLE CHOICE + GENERATION)
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
-# 📍 ЭКРАН: 4-5→6 (ГЛАВНАЯ ФУНКЦИЯ - ГЕНЕРИРУЕТ ДИЗАЙН!)
-# 📊 FSM STATE: CreationStates.choose_style_1 или choose_style_2 → CreationStates.post_generation
-# 🎯 НАЗНАЧЕНИЕ: ⭐️ САМАЯ ВАЖНАЯ ФУНКЦИЯ ⭐️ Генерирует дизайн интерьера через AI
-# ⬅️ ПРЕДЫДУЩИЙ ЭКРАН: SCREEN 4 или SCREEN 5 (выбор стиля)
-# ➡️ СЛЕДУЮЩИЙ ЭКРАН: SCREEN 6 (меню после генерации с фото дизайна)
-# 🔌 ТРИГГЕР: F.data.startswith("style_") например "style_modern", "style_minimalist" и т.д.
-#
-# 🔥 ПРОЦЕСС ГЕНЕРАЦИИ (ДЕТАЛЬНО):
-# ════════════════════════════════════════════════════════════════════════════════════════════════════
-# 1️⃣ ПРОВЕРКА БАЛАНСА - Проверяем, хватает ли генераций на счету
-# 2️⃣ УДАЛЕНИЕ МЕНЮ - Удаляем текстовое меню со стилями (чистим интерфейс)
-# 3️⃣ ПРОГРЕСС - Отправляем сообщение с прогрессом "⚡ Генерирую дизайн..."
-# 4️⃣ 🤖 ГЕНЕРАЦИЯ - Вызываем smart_generate_interior() из services/api_fallback.py
-#    ├─ Использует загруженное фото юзера
-#    ├─ Применяет выбранный стиль и комнату
-#    └─ Возвращает URL сгенерированного дизайна (или None при ошибке)
-# 5️⃣ ОТПРАВКА ДИЗАЙНА - Отправляем ФОТО дизайна (сообщение 1) с динамическим caption
-#    └─ Caption: "✨ Ваш новый дизайн в стиле LOFT готов! 🎨 Кухня преобразилась!"
-# 6️⃣ ОТПРАВКА МЕНЮ - Отправляем ОТДЕЛЬНОЕ меню с кнопками (сообщение 2)
-#    └─ Кнопки: "🔄 Другой стиль", "📸 Новое фото", "🏠 Главное меню"
-# 7️⃣ УДАЛЕНИЕ ПРОГРЕССА - Удаляем сообщение с прогрессом (очищаем интерфейс)
-# 8️⃣ ПЕРЕХОД НА SCREEN 6 - Устанавливаем состояние post_generation
-#
-# 💾 СОХРАНЯЕТ В БД:
-# - photo_message_id (ID фото с дизайном) ← используется для редактирования
-# - menu_message_id (ID меню с кнопками) ← используется для редактирования
-# - Логирует в таблицу generations (для аналитики)
-# - Минусует 1 генерацию из баланса пользователя
-#
-# 🔧 FALLBACK МЕХАНИЗМ (Если первая попытка отправки не сработала):
-# - ПОПЫТКА 1: Отправляем фото прямо по URL из AI API
-# - ПОПЫТКА 2: Если URL не сработал → загружаем файл локально через aiohttp
-#           → Отправляем через BufferedInputFile
-# - FALLBACK: Если обе попытки не сработали → возвращаем баланс и показываем ошибку
-#
-# 🔥 ДИНАМИЧЕСКОЕ СООБЩЕНИЕ (2026-01-01 17:02):
-# Вместо: "Ваш новый дизайн готов!"
-# Пишем:  "✨ Ваш новый дизайн в стиле LOFT готов! 🎨 Кухня преобразилась!"
-#
-# room_display = ROOM_TYPES.get(room) → "Кухня"
-# style_display = STYLE_TYPES.get(style) → "Современный"
-# caption = f"✨ Ваш новый дизайн в стиле {style_display} готов!\n🎨 {room_display} преобразилась!"
-#
-# ⚠️ ВАЖНО: НЕ редактируем фото-сообщение, а отправляем НОВОЕ!
-# - Это избегает ошибок Telegram при редактировании медиа
-# - Фото-сообщение и меню-сообщение отправляются ОТДЕЛЬНО
-# - Используем HTML для caption вместо Markdown
-#
-# 📝 ЛОГИРОВАНИЕ (diagnostic):
-# - "[V3] NEW_DESIGN+STYLE - generated for {room}/{style}, user_id={user_id}"
-# - "[V3] NEW_DESIGN+POST_GENERATION - ready, user_id={user_id}"
 
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
@@ -730,94 +699,6 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
     """
     🔥 [SCREEN 4-5→6] style_choice_handler() - ГЛАВНЫЙ ГЕНЕРАТОР ДИЗАЙНА
-    
-    📍 ПУТЬ: [SCREEN 4 или 5] → выбор стиля → 🔥 ГЕНЕРАЦИЯ → [SCREEN 6]
-    
-    🔌 ТРИГГЕРЫ:
-    - StateFilter: CreationStates.choose_style_1 или choose_style_2 (в меню стилей)
-    - F.data.startswith("style_") (кнопка со стилем: style_modern, style_minimalist, etc.)
-    
-    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.post_generation
-    
-    ═══════════════════════════════════════════════════════════════════════════════════════════════════
-    🔥 ПОЛНЫЙ ПРОЦЕСС ГЕНЕРАЦИИ:
-    ═══════════════════════════════════════════════════════════════════════════════════════════════════
-    
-    1️⃣ ИЗВЛЕЧЕНИЕ ДАННЫХ
-       - style из callback_data (строка после "style_")
-       - photo_id из FSM (загруженное фото)
-       - selected_room из FSM (выбранная комната)
-       - work_mode из FSM (режим: basic/pro)
-    
-    2️⃣ ПРОВЕРКА БАЛАНСА
-       - Получаем баланс из БД
-       - Если баланс ≤ 0 → показываем меню с кнопкой покупки
-       - Если баланс > 0 → продолжаем
-    
-    3️⃣ МИНУСОВАНИЕ БАЛАНСА
-       - db.decrease_balance(user_id) → минус 1 генерация
-       - (для админов баланс не убавляется)
-    
-    4️⃣ РЕДАКТИРОВАНИЕ ИЛИ УДАЛЕНИЕ ТЕКСТОВОГО МЕНЮ
-       - НОВЫЙ ПОДХОД (2026-01-01 17:35):
-       - Если текущее сообщение - ТЕКСТ → редактируем его в ПРОГРЕСС
-       - Если текущее сообщение - ФОТО → удаляем его и создаем НОВОЕ для прогресса
-       - Чистим интерфейс перед генерацией
-    
-    5️⃣ ОТПРАВКА ПРОГРЕССА
-       - Отправляем сообщение "⚡ Генерирую modern дизайн..."
-       - Сохраняем message_id для последующего удаления
-    
-    6️⃣ 🤖 ГЕНЕРАЦИЯ ДИЗАЙНА [ASYNC - может быть долгой!]
-       - await smart_generate_interior(photo_id, room, style, bot_token, use_pro=...)
-       - Функция находится в services/api_fallback.py
-       - Возвращает URL сгенерированного изображения (или None при ошибке)
-    
-    7️⃣ ОТПРАВКА ФОТО ДИЗАЙНА
-       - answer_photo(photo=result_image_url, caption=..., parse_mode="HTML")
-       - Динамический caption: "✨ Ваш новый дизайн в стиле LOFT готов!"
-       - Сохраняем message_id фото в БД (для будущих редактирований)
-    
-    8️⃣ ОТПРАВКА МЕНЮ С КНОПКАМИ
-       - answer(text=..., reply_markup=get_post_generation_keyboard())
-       - Отдельное сообщение под фото
-       - Кнопки: "🔄 Другой стиль", "📸 Новое фото", "🏠 Главное меню"
-    
-    9️⃣ ОЧИСТКА ИНТЕРФЕЙСА
-       - delete(progress_msg) → удаляем сообщение с прогрессом
-    
-    1️⃣0️⃣ ПЕРЕХОД НА SCREEN 6
-        - await state.set_state(CreationStates.post_generation)
-    
-    ═══════════════════════════════════════════════════════════════════════════════════════════════════
-    
-    ⚠️ FALLBACK МЕХАНИЗМ (при ошибке отправки фото):
-    
-    ПОПЫТКА 1: Прямая отправка по URL
-      └─ await callback.message.answer_photo(photo=result_image_url, ...)
-      
-    ПОПЫТКА 2: Если URL не работает → загружаем файл локально
-      ├─ async with aiohttp.ClientSession() as session:
-      │   async with session.get(result_image_url) as resp:
-      │     photo_data = await resp.read()
-      └─ await callback.message.answer_photo(photo=BufferedInputFile(photo_data), ...)
-    
-    FALLBACK: Если обе попытки провалились
-      ├─ db.increase_balance(user_id, 1) → возвращаем баланс
-      └─ await callback.message.answer("❌ Ошибка при отправке изображения...")
-    
-    ═══════════════════════════════════════════════════════════════════════════════════════════════════
-    
-    💾 ЧТО СОХРАНЯЕТСЯ В БД:
-    - photo_message_id (ID сообщения с фото дизайна)
-    - menu_message_id (ID сообщения с кнопками)
-    - generations таблица (логирование всех генераций для аналитики)
-    - уменьшенный баланс пользователя
-    
-    📝 ПРИМЕРЫ ЛОГИРОВАНИЯ:
-    - "[V3] NEW_DESIGN+STYLE - generated for kitchen/loft, user_id=123456789"
-    - "[V3] NEW_DESIGN+POST_GENERATION - ready, user_id=123456789"
-    - "✨ Ваш новый дизайн в стиле Loft готов! 🎨 Кухня преобразилась!"
     """
     style = callback.data.split("_")[-1]
     user_id = callback.from_user.id
@@ -898,8 +779,8 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             logger.warning(f"📊 [DIAG] request_id={request_id} STEP_2: Progress msg sent, msg_id={progress_msg.message_id}")
             
         else:
-                # Текущее сообщение - ТЕКСТ → редактируем его в ПРОГРЕСС (экономим место)
-                progress_msg = await callback.message.edit_text(
+            # Текущее сообщение - ТЕКСТ → редактируем его в ПРОГРЕСС (экономим место)
+            progress_msg = await callback.message.edit_text(
                 text=balance_text,
                 parse_mode="Markdown"
             )
@@ -1139,23 +1020,6 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
 # 🎨 [SCREEN 6] МЕНЮ ПОСЛЕ ГЕНЕРАЦИИ (POST-GENERATION MENU)
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════
-# 📍 ЭКРАН: 6
-# 📊 FSM STATE: CreationStates.post_generation
-# 🎯 НАЗНАЧЕНИЕ: Показать меню с вариантами действий после того, как дизайн готов
-# ⬅️ ПРЕДЫДУЩИЙ ЭКРАН: SCREEN 6 (после генерации дизайна)
-# ➡️ СЛЕДУЮЩИЙ ЭКРАН: SCREEN 4 (смена стиля) или SCREEN 0 (главное меню)
-# 🔌 ТРИГГЕР: StateFilter(CreationStates.post_generation) + F.data == "post_generation"
-#
-# 📋 ЛОГИКА:
-# 1️⃣ Пользователь видит фото дизайна + меню с кнопками
-# 2️⃣ Нажимает любую кнопку из меню
-# 3️⃣ Обновляется текст и кнопки в меню (edit_message_caption для фото)
-#
-# [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu()
-# [2025-12-31 10:19] 🔥 CRITICAL HOTFIX: Добавить save_chat_menu() сразу после edit_message_caption
-#
-# 📝 ЛОГИРОВАНИЕ:
-# - "[V3] NEW_DESIGN+POST_GENERATION - menu shown, user_id={user_id}"
 
 @router.callback_query(
     StateFilter(CreationStates.post_generation),
@@ -1164,30 +1028,6 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
     """
     🎨 [SCREEN 6] post_generation_menu() - Меню после генерации дизайна
-    
-    📍 ПУТЬ: [SCREEN 6: дизайн готов] → пользователь видит меню с выборами
-    
-    🔌 ТРИГГЕР: 
-    - StateFilter: CreationStates.post_generation (находимся после генерации)
-    - F.data == "post_generation" (обновление меню, вызывается автоматически)
-    
-    📊 СОСТОЯНИЕ: Остаемся в CreationStates.post_generation
-    
-    📤 ОТПРАВЛЯЕТ:
-    - Редактирует caption фото дизайна (если это медиа-сообщение)
-    - Отправляет НОВОЕ текстовое меню (если текущее - текст)
-    - Кнопки: "🔄 Другой стиль", "📸 Новое фото", "🏠 Главное меню"
-    
-    💾 СОХРАНЯЕТ В БД:
-    - menu_message_id (для отслеживания)
-    - screen_code = 'post_generation'
-    
-    [2025-12-31 10:19] 🔥 CRITICAL HOTFIX:
-    - Добавить save_chat_menu() СРАЗУ после edit_message_caption()
-    - Без этого при краше бота menu_message_id не обновится в БД
-    
-    📝 ЛОГИРОВАНИЕ:
-    - "[V3] NEW_DESIGN+POST_GENERATION - menu shown, user_id={user_id}"
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -1254,115 +1094,3 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"[ERROR] POST_GENERATION_MENU failed: {e}", exc_info=True)
         await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
-
-
-# ═════════════════════════════════════════════════════════════════════════════════════════════════════
-# 🔄 [SCREEN 6→4] СМЕНА СТИЛЯ ПОСЛЕ ГЕНЕРАЦИИ (CHANGE STYLE)
-# ═════════════════════════════════════════════════════════════════════════════════════════════════════
-# 📍 ЭКРАН: 6→4 (навигация назад БЕЗ переколки фото)
-# 📊 FSM STATE: CreationStates.post_generation → CreationStates.choose_style_1
-# 🎯 НАЗНАЧЕНИЕ: Вернуться на экран выбора стилей БЕЗ повторной загрузки фото
-# ⬅️ ПРЕДЫДУЩИЙ ЭКРАН: SCREEN 6 (меню после генерации)
-# ➡️ СЛЕДУЮЩИЙ ЭКРАН: SCREEN 4 (стили, страница 1)
-# 🔌 ТРИГГЕР: F.data == "change_style"
-#
-# 📋 ЛОГИКА:
-# 1️⃣ Пользователь видит готовый дизайн + меню
-# 2️⃣ Нажимает кнопку "🔄 Другой стиль"
-# 3️⃣ РЕДАКТИРУЕМ МЕНЮ (только меню, БЕЗ генерации!)
-# 4️⃣ Показываем снова меню со стилями
-# 5️⃣ При выборе стиля → вызовется style_choice_handler и произойдет генерация
-#
-# [2026-01-01 17:35] 🔥 MAJOR REWRITE: РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ, БЕЗ ГЕНЕРАЦИИ!
-# [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НЕ редактируем фото, создаем НОВОЕ меню!
-#
-# 📝 ЛОГИРОВАНИЕ:
-# - "[V3] NEW_DESIGN+CHANGE_STYLE - back to style selection, user_id={user_id}"
-
-@router.callback_query(F.data == "change_style")
-async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
-    """
-    🔄 [SCREEN 6→4] change_style_after_gen() - Смена стиля после генерации
-    
-    📍 ПУТЬ: [SCREEN 6: дизайн готов] → нажать "🔄 Другой стиль" → [SCREEN 4: выбор стилей]
-    
-    🔌 ТРИГГЕР: 
-    - StateFilter: CreationStates.post_generation (находимся после генерации)
-    - F.data == "change_style" (кнопка "смена стиля")
-    
-    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.choose_style_1
-    
-    [2026-01-01 17:35] 🔥 MAJOR REWRITE - РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ!
-    
-    📋 ЛОГИКА (ВАЖНО!):
-    1️⃣ Юзер видит ФОТО дизайна + МЕНЮ с кнопками
-    2️⃣ Нажимает "🔄 Другой стиль"
-    3️⃣ РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ (меняем содержимое на стили)
-    4️⃣ ФОТО ОСТАЕТСЯ БЕЗ ИЗМЕНЕНИЙ!
-    5️⃣ Больше НИЧЕГО не генерируем!
-    
-    Затем при выборе стиля из этого меню:
-    → вызовется style_choice_handler()
-    → произойдет генерация НОВОГО дизайна
-    → придет НОВОЕ фото с новым стилем
-    
-    ✨ ЭФФЕКТ ДЛЯ ЮЗЕРА:
-    "Я вижу свой дизайн, нажимаю 'другой стиль', и вижу новое меню
-     с выбором стилей. Без лишних движений - сразу выбираю новый стиль
-     и генерируется новый дизайн."
-    
-    📤 ОТПРАВЛЯЕТ:
-    - Редактированное МЕНЮ: "🎨 Выберите стиль дизайна"
-    - 12 стилей (первая страница)
-    - Кнопки: "⬅️ Вернуться на первую", "🏠 Главное меню", "▶️ Ещё"
-    
-    💾 СОХРАНЯЕТ В БД:
-    - screen_code = 'choose_style_1'
-    
-    ❌ НЕ ГЕНЕРИРУЕТ ДИЗАЙН!
-    ❌ НЕ УДАЛЯЕТ ФОТО!
-    ✅ РЕДАКТИРУЕТ ТОЛЬКО МЕНЮ!
-    
-    📝 ЛОГИРОВАНИЕ:
-    - "[V3] NEW_DESIGN+CHANGE_STYLE - back to style selection, user_id={user_id}"
-    """
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-    menu_message_id = callback.message.message_id  # 🔥 ID МЕНЮ с кнопками!
-
-    logger.warning(f"🔍 [CHANGE_STYLE] START: user_id={user_id}, menu_msg_id={menu_message_id}")
-
-    data = await state.get_data()
-    work_mode = data.get('work_mode')
-    balance = await db.get_balance(user_id)
-
-    try:
-        # ✅ РЕДАКТИРУЕМ ТЕКУЩЕЕ МЕНЮ НА ВЫБОР СТИЛЕЙ
-        # Переходим в состояние выбора стиля
-        await state.set_state(CreationStates.choose_style_1)
-        
-        # Формируем текст меню со стилями
-        text = f"🎨 **Выберите стиль дизайна**"
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
-        
-        # 🔥 [2026-01-01 17:35] РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ - БЕЗ ФОТО!
-        await callback.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=menu_message_id,
-            text=text,
-            reply_markup=get_choose_style_1_keyboard(),
-            parse_mode="Markdown"
-        )
-        
-        # ✅ Сохраняем в БД (обновляем screen_code)
-        await db.save_chat_menu(chat_id, user_id, menu_message_id, 'choose_style_1')
-        
-        logger.info(f"✅ [CHANGE_STYLE] Menu edited: msg_id={menu_message_id}, user_id={user_id}")
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] CHANGE_STYLE failed: {e}", exc_info=True)
-        await callback.answer(
-            "❌ Ошибка при смене стиля. Попробуйте еще раз.",
-            show_alert=True
-        )
