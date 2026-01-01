@@ -462,6 +462,7 @@ def get_room_choice_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+# ЭКРАН ВЫБОРА СТИЛЯ_1
 def get_choose_style_1_keyboard() -> InlineKeyboardMarkup:
     """
     Клавиатура выбора стиля 1 (ЭКРАН 4: CHOOSE_STYLE_1)
@@ -483,14 +484,14 @@ def get_choose_style_1_keyboard() -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="⬅️ К комнате", callback_data="room_choice"),
         InlineKeyboardButton(text="▶️ Ещё", callback_data="choose_style_2"),
-        InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
+        #InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
     
     )
         # ✅ ПРАВИЛЬНЫЙ ADJUST: 2 для стилей, 1 для последнего ряда
     builder.adjust(2, 2, 2, 2, 2, 2, 2, 1)  # 6 рядов со стилями (по 2) + 1 ряд с 3 кнопками
     return builder.as_markup()
 
-
+# ЭКРАН ВЫБОРА СТИЛЯ_2
 def get_choose_style_2_keyboard() -> InlineKeyboardMarkup:
     """
     Клавиатура выбора стиля 2 (ЭКРАН 5: CHOOSE_STYLE_2)
@@ -511,10 +512,10 @@ def get_choose_style_2_keyboard() -> InlineKeyboardMarkup:
     
     builder.row(
         InlineKeyboardButton(text="⬅️ Назад", callback_data="styles_page_1"),
-        InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
+        #InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
     )
     # ✅ ПРАВИЛЬНЫЙ ADJUST: 2 для каждого ряда стилей + 2 для навигации
-    builder.adjust(2, 2, 2, 2, 2, 2, 2)  # 6 рядов стилей (по 2) + 1 ряд навигации (по 2)
+    builder.adjust(2, 2, 2, 2, 2, 2, 1)  # 6 рядов стилей (по 2) + 1 ряд навигации (по 2)
     return builder.as_markup()
 
 
