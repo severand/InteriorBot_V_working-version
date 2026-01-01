@@ -772,21 +772,6 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     
     try:
         if current_msg.photo:
-            # ❌ [СТАРЫЙ КОД - ЗАКОММЕНТИРОВАН]
-            # try:
-            #     await callback.message.delete()
-            #     logger.warning(f"📊 [DIAG] request_id={request_id} STEP_1: Deleted style menu msg_id={menu_message_id}")
-            # except Exception as e:
-            #     logger.warning(f"⚠️ [DIAG] request_id={request_id} Failed to delete style menu: {e}")
-            # 
-            # progress_msg = None
-            # try:
-            #     progress_msg = await callback.message.answer(
-            #         text=balance_text,
-            #         parse_mode="Markdown"
-            #     )
-            
-            # ✅ [НОВЫЙ КОД - ОПТИМИЗИРОВАННЫЙ]
             # Текущее сообщение содержит ФОТО → удаляем его и создаем НОВОЕ для прогресса
             await callback.message.delete()
             logger.warning(f"📊 [DIAG] request_id={request_id} STEP_1: Deleted media msg_id={menu_message_id}")
@@ -798,23 +783,8 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             logger.warning(f"📊 [DIAG] request_id={request_id} STEP_2: Progress msg sent, msg_id={progress_msg.message_id}")
             
         else:
-            # ❌ [СТАРЫЙ КОД - ЗАКОММЕНТИРОВАН]
-            # try:
-            #     await callback.message.delete()
-            #     logger.warning(f"📊 [DIAG] request_id={request_id} STEP_1: Deleted style menu msg_id={menu_message_id}")
-            # except Exception as e:
-            #     logger.warning(f"⚠️ [DIAG] request_id={request_id} Failed to delete style menu: {e}")
-            # 
-            # progress_msg = None
-            # try:
-            #     progress_msg = await callback.message.answer(
-            #         text=balance_text,
-            #         parse_mode="Markdown"
-            #     )
-            
-            # ✅ [НОВЫЙ КОД - ОПТИМИЗИРОВАННЫЙ]
-            # Текущее сообщение - ТЕКСТ → редактируем его в ПРОГРЕСС (экономим место)
-            progress_msg = await callback.message.edit_text(
+                # Текущее сообщение - ТЕКСТ → редактируем его в ПРОГРЕСС (экономим место)
+                progress_msg = await callback.message.edit_text(
                 text=balance_text,
                 parse_mode="Markdown"
             )
