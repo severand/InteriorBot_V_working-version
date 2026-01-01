@@ -487,7 +487,7 @@ def get_choose_style_1_keyboard() -> InlineKeyboardMarkup:
     
     )
         # ✅ ПРАВИЛЬНЫЙ ADJUST: 2 для стилей, 1 для последнего ряда
-    builder.adjust(2, 2, 2, 2, 2, 2, 1)  # 6 рядов со стилями (по 2) + 1 ряд с 3 кнопками
+    builder.adjust(2, 2, 2, 2, 2, 2, 2, 1)  # 6 рядов со стилями (по 2) + 1 ряд с 3 кнопками
     return builder.as_markup()
 
 
