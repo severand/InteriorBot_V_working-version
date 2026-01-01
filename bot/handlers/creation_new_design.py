@@ -32,7 +32,8 @@ from utils.texts import (
     ROOM_CHOICE_TEXT,
     CHOOSE_STYLE_TEXT,
     ERROR_INSUFFICIENT_BALANCE,
-    POST_GENERATION_MENU_TEXT,  # ✅ [2025-12-31 16:50] ДОБАВЛЕН ИМПОРТ
+    ROOM_TYPES,
+    STYLE_TYPES,
 )
 
 from utils.helpers import add_balance_and_mode_to_text
@@ -356,6 +357,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 # [2025-12-31 16:40] 🔥 HOTFIX: ИСПРАВИТЬ callback.message.bot → callback.bot для get_message!
 # [2025-12-31 16:50] 🔥 HOTFIX: ИСПОЛЬЗОВАТЬ POST_GENERATION_MENU_TEXT для caption дизайна!
 # [2026-01-01 16:47] 🔥 CRITICAL FIX: ИСПОЛЬЗОВАТЬ HTML вместо Markdown в caption для избежания ошибок парсинга!
+# [2026-01-01 17:02] 🔥 CRITICAL FIX: Сообщение должно быть ДИНАМИЧЕСКИМ - название комнаты и стиля!
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -363,6 +365,12 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
     """
     SCREEN 4-5→6: Обработчик выбора стиля и генерация дизайна
+    
+    [2026-01-01 17:02] 🔥 CRITICAL FIX:
+    Сообщение ДИНАМИЧЕСКОЕ - выводится:
+    "✨ Ваш новый дизайн в стиле LOFT готов! 🎨 Кухня преобразилась!"
+    вместо:
+    "✨ Ваш новый дизайн готов! 🎨 Кухня преобразилась!"
     
     🔥 CRITICAL REWRITE [2025-12-31 16:30]:
     АРХИТЕКТУРА ПРАВИЛЬНАЯ:
@@ -483,14 +491,23 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     )
 
     if result_image_url:
-        # 🔥 [2026-01-01 16:47] ИСПОЛЬЗОВАТЬ HTML ВМЕСТО MARKDOWN!
+        # 🔥 [2026-01-01 17:02] ДИНАМИЧЕСКОЕ СООБЩЕНИЕ!
         # Получаем баланс и режим для вывода
         balance = await db.get_balance(user_id)
         
-        # Формируем caption в HTML формате (безопасно парсится Telegram)
-        post_gen_caption = f"""✨ <b>Ваш новый дизайн готов!</b>
+        # Получаем красивые названия из словарей
+        room_display = ROOM_TYPES.get(room, room.replace('_', ' ').title())
+        style_display = STYLE_TYPES.get(style, style.replace('_', ' ').title())
+        
+        # 🔥 [2026-01-01 17:02] ДИНАМИЧЕСКОЕ СООБЩЕНИЕ:
+        # Вместо: "Ваш новый дизайн готов!"
+        # Пишем:  "Ваш новый дизайн в стиле LOFT готов!"
+        design_caption = f"""✨ <b>Ваш новый дизайн в стиле {style_display} готов!</b>
 
-🎨 Что дальше?
+🎨 {room_display} преобразилась!"""
+        
+        # Отдельное сообщение с кнопками
+        menu_caption = f"""🎨 <b>Что дальше?</b>
 
 Выберите действие:
 🔄 Другой стиль - примеря другой стиль на эту комнату
@@ -504,12 +521,11 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         try:
             logger.warning(f"📊 [DIAG] request_id={request_id} ATTEMPT_1: answer_photo (new design)")
             
-            # ОТПРАВЛЯЕМ НОВОЕ ФОТО (не редактируем старое!)
+            # 1️⃣ ОТПРАВЛЯЕМ ДИЗАЙН
             photo_msg = await callback.message.answer_photo(
                 photo=result_image_url,
-                caption=post_gen_caption,
+                caption=design_caption,
                 parse_mode="HTML",  # 🔥 HTML вместо Markdown!
-                reply_markup=get_post_generation_keyboard()
             )
             
             photo_sent = True
@@ -519,6 +535,23 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             # 🔥 [2025-12-31 10:19] CRITICAL: Сохраняем в БД СРАЗУ после успешной отправки
             await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation')
             logger.warning(f"📊 [DIAG] request_id={request_id} SAVED_TO_DB after ATTEMPT_1")
+            
+            # 2️⃣ ОТПРАВЛЯЕМ ОТДЕЛЬНОЕ МЕНЮ С КНОПКАМИ
+            try:
+                menu_msg = await callback.message.answer(
+                    text=menu_caption,
+                    parse_mode="HTML",
+                    reply_markup=get_post_generation_keyboard()
+                )
+                logger.warning(f"📊 [DIAG] request_id={request_id} MENU_SENT: msg_id={menu_msg.message_id}")
+                
+                # Сохраняем menu message_id (используется при change_style)
+                await state.update_data(menu_message_id=menu_msg.message_id)
+                await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_menu')
+                
+            except Exception as menu_error:
+                logger.warning(f"⚠️ [DIAG] Failed to send menu: {menu_error}")
+                # Даже если меню не отправилось, дизайн уже есть
             
             # Удаляем прогресс-сообщение
             if progress_msg:
@@ -542,9 +575,8 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
                             photo_msg = await callback.message.answer_photo(
                                 photo=BufferedInputFile(photo_data, filename="design.jpg"),
-                                caption=post_gen_caption,
+                                caption=design_caption,
                                 parse_mode="HTML",  # 🔥 HTML вместо Markdown!
-                                reply_markup=get_post_generation_keyboard()
                             )
                             
                             logger.warning(f"📊 [DIAG] request_id={request_id} ATTEMPT_2_PHOTO_SENT: msg_id={photo_msg.message_id}")
@@ -556,6 +588,21 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                             # 🔥 [2025-12-31 10:19] CRITICAL: Сохраняем в БД СРАЗУ после успешной отправки
                             await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation')
                             logger.warning(f"📊 [DIAG] request_id={request_id} SAVED_TO_DB after ATTEMPT_2")
+                            
+                            # 2️⃣ ОТПРАВЛЯЕМ ОТДЕЛЬНОЕ МЕНЮ С КНОПКАМИ
+                            try:
+                                menu_msg = await callback.message.answer(
+                                    text=menu_caption,
+                                    parse_mode="HTML",
+                                    reply_markup=get_post_generation_keyboard()
+                                )
+                                logger.warning(f"📊 [DIAG] request_id={request_id} MENU_SENT: msg_id={menu_msg.message_id}")
+                                
+                                await state.update_data(menu_message_id=menu_msg.message_id)
+                                await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_menu')
+                                
+                            except Exception as menu_error:
+                                logger.warning(f"⚠️ [DIAG] Failed to send menu: {menu_error}")
                             
                             # Удаляем прогресс-сообщение
                             if progress_msg:
@@ -648,9 +695,7 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
         await state.set_state(CreationStates.post_generation)
         
         # 🔥 [2026-01-01 16:47] Используем HTML для caption
-        text = f"""✨ <b>Ваш новый дизайн готов!</b>
-
-🎨 Что дальше?
+        text = f"""🎨 <b>Что дальше?</b>
 
 Выберите действие:
 🔄 Другой стиль - примеря другой стиль на эту комнату
