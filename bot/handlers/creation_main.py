@@ -14,7 +14,6 @@ from database.db import db
 from keyboards.inline import (
     get_work_mode_selection_keyboard,
     get_uploading_photo_keyboard,
-    get_what_is_in_photo_keyboard,
     get_payment_keyboard,
     get_room_choice_keyboard,
     get_edit_design_keyboard,
