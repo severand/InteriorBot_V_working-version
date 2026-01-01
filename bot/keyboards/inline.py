@@ -121,19 +121,19 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
 
     # Ряд 1: Создать дизайн
     builder.row(InlineKeyboardButton(
-        text="🎨 Создать дизайн",
+        text="      🎨 Создать дизайн      ",
         callback_data="create_design"
     ))
     
     # Ряд 2: Личный кабинет
     builder.row(InlineKeyboardButton(
-        text="👤 Личный кабинет",
+        text="     👤 Личный кабинет        ",
         callback_data="show_profile"
     ))
     
     # Ряд 3: Админ панель (только для админов)
     builder.row(InlineKeyboardButton(
-        text="⚙️ Админ",
+        text="        ⚙️ Админ           ",
         callback_data="admin_panel"
     ))
 
@@ -167,7 +167,7 @@ def get_mode_selection_keyboard() -> InlineKeyboardMarkup:
 
     # Ряд 1: Создать новый дизайн
     builder.row(InlineKeyboardButton(
-        text="📋 Создать новый дизайн",
+        text="        📋 Создать новый дизайн       ",
         callback_data="select_mode_new_design"
     ))
     
@@ -196,10 +196,10 @@ def get_mode_selection_keyboard() -> InlineKeyboardMarkup:
     ))
 
     # Ряд 6: Личный кабинет (разделитель)
-    builder.row(InlineKeyboardButton(
-        text="👤 Личный кабинет",
-        callback_data="show_profile"
-    ))
+    #builder.row(InlineKeyboardButton(
+        #text="👤 Личный кабинет",
+        #callback_data="show_profile"
+    #))
 
     builder.adjust(1)
     return builder.as_markup()
