@@ -484,15 +484,14 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         room_display = ROOM_TYPES.get(room, room.replace('_', ' ').title())
         style_display = STYLE_TYPES.get(style, style.replace('_', ' ').title())
         
-        design_caption = f"""✨ <b>Ваш новый дизайн в стиле {style_display} готов!</b>
-
-🎨 {room_display} преобразилась!"""
+        design_caption = f"""✨ <b>Ваш новый {room_display} дизайн в стиле {style_display} готов!</b>
+        """
         
         menu_caption = f"""🎨 <b>Что дальше?</b>
 
 Выберите действие:
-🔄 Другой стиль - примеря другой стиль на эту комнату
-🏠 Главное меню - вернуться в главное меню
+🔄 Создать другой стиль.
+🏠 Выбрать режим работы.
 
 📊 Баланс: <b>{balance}</b> генераций | 🔧 Режим: <b>{work_mode}</b>"""
         
@@ -654,7 +653,7 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
         
         await state.set_state(CreationStates.post_generation)
         
-        text = f"""🎨 <b>Что дальше?</b>
+        text = f"""🎨 <b>Что дальше? 22222</b>
 
 Выберите действие:
 🔄 Другой стиль - примеря другой стиль на эту комнату
