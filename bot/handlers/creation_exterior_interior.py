@@ -80,7 +80,6 @@ from database.db import db
 from keyboards.inline import (
     get_uploading_photo_keyboard,
     get_room_keyboard,
-    get_style_keyboard,
     get_payment_keyboard,
     get_post_generation_keyboard,
     get_clear_space_confirm_keyboard,
