@@ -6,6 +6,7 @@
 # [2025-12-07 10:43] Добавлен await db.migrate_add_chat_menus_table() для создания таблицы единого меню
 # [2025-11-22 11:35] Исправление: Уровень логирования изменен на DEBUG
 # [2025-12-03] Добавлен роутер referral для реферальной системы
+# [2026-01-01 22:24] ДОБАВЛЕНА КОМАНДА /start В МЕНЮ (кнопка слева внизу)
 
 import asyncio
 import logging
@@ -14,6 +15,7 @@ import aiosqlite  # В начало файла
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand
 #from aiohttp import web
 from config import ADMIN_IDS
 from config import config
@@ -50,6 +52,12 @@ async def main():
     # Initialize database
     await db.init_db()
     logger.info("База данных инициализирована")
+
+    # [2026-01-01 22:24] Устанавливаем команду /start в меню бота
+    await bot.set_my_commands([
+        BotCommand(command="start", description="🔄 Перезагрузить бота")
+    ])
+    logger.info("Команда /start добавлена в меню")
 
     # Initialize dispatcher
     dp = Dispatcher()
