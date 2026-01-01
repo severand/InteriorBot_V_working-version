@@ -281,7 +281,7 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1),
-    F.data == "styles_page_2"
+    F.data == "choose_style_2"
 )
 async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
     """
