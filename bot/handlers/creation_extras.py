@@ -1,9 +1,3 @@
-# ===== PHASE 4: EXTRA FEATURES =====
-# [2025-12-30] UNIVERSAL FILE CLEANUP HANDLER
-# Обрабатывает и удаляет любые файлы если они не находятся в нужном стейте
-# Поддерживает: фото, видео, документы, аудио, файлы и т.д.
-# [2025-12-30 23:49] 🔥 CRITICAL FIX: SILENT DELETE - БЕЗ СООБЩЕНИЙ ОБ ОШИБКЕ! Просто удалить!
-
 import logging
 import asyncio
 
@@ -20,33 +14,38 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-# ===== CRITICAL FIX: 🔒 StateFilter for PHOTO uploads =====
-# Эти хендлеры ПРОПУСКАЮТ сообщения в правильных стейтах (pass)
+# ══════════════════════════════════════════════════════════════════
+# ✅ [VALID STATES] Photo uploads in expected states (pass-through)
+# ══════════════════════════════════════════════════════════════════
+
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def handle_photo_in_uploading_photo_state(message: Message, state: FSMContext):
-    """VALID STATE: uploading_photo - обработка в creation_main.py"""
+    """✅ [SCREEN 2] uploading_photo - handled by creation_main.py"""
     pass
 
 
 @router.message(StateFilter(CreationStates.uploading_furniture), F.photo)
 async def handle_photo_in_uploading_furniture_state(message: Message, state: FSMContext):
-    """VALID STATE: uploading_furniture - обработка в других обработчиках"""
+    """✅ [SCREEN X] uploading_furniture - handled elsewhere"""
     pass
 
 
 @router.message(StateFilter(CreationStates.loading_facade_sample), F.photo)
 async def handle_photo_in_loading_facade_sample_state(message: Message, state: FSMContext):
-    """VALID STATE: loading_facade_sample - обработка в других обработчиках"""
+    """✅ [SCREEN X] loading_facade_sample - handled elsewhere"""
     pass
 
 
 @router.message(StateFilter(CreationStates.text_input), F.text)
 async def handle_text_in_text_input_state(message: Message, state: FSMContext):
-    """VALID STATE: text_input - обработка текстового промпта в других хендлерах"""
+    """✅ [SCREEN X] text_input - handled elsewhere"""
     pass
 
 
-# ===== 🔥 MEDIA GROUP (ALBUM) - SILENT DELETE =====
+# ══════════════════════════════════════════════════════════════════
+# 🗑️ [INVALID STATES] Unexpected files - silent delete
+# ══════════════════════════════════════════════════════════════════
+
 @router.message(
     ~StateFilter(CreationStates.uploading_photo),
     ~StateFilter(CreationStates.uploading_furniture),
@@ -55,19 +54,16 @@ async def handle_text_in_text_input_state(message: Message, state: FSMContext):
     F.media_group_id
 )
 async def handle_unexpected_media_group(message: Message, state: FSMContext):
-    """
-    🔥 SILENT DELETE - Удаляем групповые фото БЕЗ СООБЩЕНИЙ!
-    """
+    """🗑️ [CLEANUP] Album in wrong state - delete silently"""
     try:
         await message.delete()
-        logger.info(f"🗑️ [ALBUM_DELETED] user={message.from_user.id}, msg_id={message.message_id}")
+        logger.info(f"🗑️ [ALBUM_DELETED] user={message.from_user.id}")
     except TelegramBadRequest:
         pass
     except Exception as e:
         logger.error(f"❌ [ALBUM_DELETE_ERROR] {e}")
 
 
-# ===== 🔥 SINGLE FILE - SILENT DELETE =====
 @router.message(
     ~StateFilter(CreationStates.uploading_photo),
     ~StateFilter(CreationStates.uploading_furniture),
@@ -76,30 +72,25 @@ async def handle_unexpected_media_group(message: Message, state: FSMContext):
     ~F.media_group_id
 )
 async def handle_unexpected_files(message: Message, state: FSMContext):
-    """
-    🔥 SILENT DELETE - Удаляем одиночные файлы БЕЗ СООБЩЕНИЙ!
-    """
+    """🗑️ [CLEANUP] File in wrong state - delete silently"""
     try:
         await message.delete()
-        logger.info(f"🗑️ [FILE_DELETED] user={message.from_user.id}, msg_id={message.message_id}")
+        logger.info(f"🗑️ [FILE_DELETED] user={message.from_user.id}")
     except TelegramBadRequest:
         pass
     except Exception as e:
         logger.error(f"❌ [FILE_DELETE_ERROR] {e}")
 
 
-# ===== 🔥 TEXT - SILENT DELETE =====
 @router.message(
     ~StateFilter(CreationStates.text_input),
     F.text
 )
 async def handle_unexpected_text(message: Message, state: FSMContext):
-    """
-    🔥 SILENT DELETE - Удаляем текст БЕЗ СООБЩЕНИЙ!
-    """
+    """🗑️ [CLEANUP] Text in wrong state - delete silently"""
     try:
         await message.delete()
-        logger.info(f"🗑️ [TEXT_DELETED] user={message.from_user.id}, msg_id={message.message_id}")
+        logger.info(f"🗑️ [TEXT_DELETED] user={message.from_user.id}")
     except TelegramBadRequest:
         pass
     except Exception as e:
