@@ -87,7 +87,7 @@ def log_photo_send(user_id: int, method: str, message_id: int, request_id: str =
 
 # ===== SCREEN 3: ROOM_CHOICE (NEW_DESIGN только) =====
 # [2025-12-29] НОВОЕ (V3)
-# [2025-12-30 17:00] 🔥 FIX: НЕ редактируем медиа-сообщение, создаеем новое текстовое меню
+# [2025-12-30 17:00] 🔥 FIX: НЕ редактируем медиа-сообщение, создаем новое текстовое меню
 @router.callback_query(F.data == "room_choice")
 async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
     """
@@ -351,10 +351,11 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 # [2025-12-30 01:47] 🔍 CRITICAL DIAGNOSTICS: Добавить логирование для трекинга двойной отправки
 # [2025-12-30 17:00] 🔥 MAJOR FIX: Правильная обработка медиа, удаление старых при fallback
 # [2025-12-31 10:19] 🔥 CRITICAL HOTFIX: Добавить save_chat_menu() после КАЖДОЙ успешной отправки фото
-# [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НИКОГДА НЕ удаляем старый дизайн! СОЗДАЕЕМ новое сообщение!
+# [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НИКОГДА НЕ удаляем старый дизайн! СОЗДАЕМ новое сообщение!
 # [2025-12-31 16:30] 🔥 CRITICAL FIX: УДАЛЯЕМ старое меню со стилями ПЕРЕД созданием нового!
 # [2025-12-31 16:40] 🔥 HOTFIX: ИСПРАВИТЬ callback.message.bot → callback.bot для get_message!
 # [2025-12-31 16:50] 🔥 HOTFIX: ИСПОЛЬЗОВАТЬ POST_GENERATION_MENU_TEXT для caption дизайна!
+# [2026-01-01 16:47] 🔥 CRITICAL FIX: ИСПОЛЬЗОВАТЬ HTML вместо Markdown в caption для избежания ошибок парсинга!
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -370,16 +371,16 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     3️⃣ СРАЗУ УДАЛЯЕМ ТЕКСТОВОЕ МЕНЮ СО СТИЛЯМИ (msg_id=7487)
     4️⃣ Отправляем НОВОЕ сообщение "⏳ Генерируем modern..."
     5️⃣ Генерируем изображение
-    6️⃣ Отправляем НОВОЕ сообщение с дизайном + кнопки + ТЕКСТ СВЕРХУ
+    6️⃣ Отправляем НОВОЕ сообщение с дизайном + кнопки
     
     ✅ РЕЗУЛЬТАТ: 
        - СТАРЫЕ дизайны остаются в истории
        - НОВЫЙ дизайн создается отдельно
        - Меню со стилями удаляется (чистый интерфейс)
     
-    [2025-12-31 16:50] 🔥 HOTFIX:
-    - Использовать POST_GENERATION_MENU_TEXT для caption дизайна
-    - Правильное форматирование: ФОТО + ТЕКСТ СВЕРХУ + 3 КНОПКИ
+    [2026-01-01 16:47] 🔥 CRITICAL FIX:
+    - Использовать HTML вместо Markdown для caption
+    - Это избегает ошибок парсинга markdown
     
     ❌ НИКОГДА НЕ удаляем сгенерированные дизайны!
     
@@ -482,12 +483,20 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     )
 
     if result_image_url:
-        # 🔥 [2025-12-31 16:50] Подготовка подписи с использованием POST_GENERATION_MENU_TEXT
-        post_gen_caption = await add_balance_and_mode_to_text(
-            POST_GENERATION_MENU_TEXT,
-            user_id,
-            work_mode
-        )
+        # 🔥 [2026-01-01 16:47] ИСПОЛЬЗОВАТЬ HTML ВМЕСТО MARKDOWN!
+        # Получаем баланс и режим для вывода
+        balance = await db.get_balance(user_id)
+        
+        # Формируем caption в HTML формате (безопасно парсится Telegram)
+        post_gen_caption = f"""✨ <b>Ваш новый дизайн готов!</b>
+
+🎨 Что дальше?
+
+Выберите действие:
+🔄 Другой стиль - примеря другой стиль на эту комнату
+🏠 Главное меню - вернуться в главное меню
+
+📊 Баланс: <b>{balance}</b> генераций | 🔧 Режим: <b>{work_mode}</b>"""
         
         photo_sent = False
 
@@ -499,7 +508,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             photo_msg = await callback.message.answer_photo(
                 photo=result_image_url,
                 caption=post_gen_caption,
-                parse_mode="Markdown",
+                parse_mode="HTML",  # 🔥 HTML вместо Markdown!
                 reply_markup=get_post_generation_keyboard()
             )
             
@@ -534,7 +543,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                             photo_msg = await callback.message.answer_photo(
                                 photo=BufferedInputFile(photo_data, filename="design.jpg"),
                                 caption=post_gen_caption,
-                                parse_mode="Markdown",
+                                parse_mode="HTML",  # 🔥 HTML вместо Markdown!
                                 reply_markup=get_post_generation_keyboard()
                             )
                             
@@ -638,11 +647,16 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
         # Будем на этом экране
         await state.set_state(CreationStates.post_generation)
         
-        text = await add_balance_and_mode_to_text(
-            POST_GENERATION_MENU_TEXT,
-            user_id,
-            work_mode
-        )
+        # 🔥 [2026-01-01 16:47] Используем HTML для caption
+        text = f"""✨ <b>Ваш новый дизайн готов!</b>
+
+🎨 Что дальше?
+
+Выберите действие:
+🔄 Другой стиль - примеря другой стиль на эту комнату
+🏠 Главное меню - вернуться в главное меню
+
+📊 Баланс: <b>{balance}</b> генераций | 🔧 Режим: <b>{work_mode}</b>"""
         
         # ✅ Проверяем медиа перед edit_menu
         current_msg = callback.message
@@ -655,7 +669,7 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
                     message_id=current_msg.message_id,
                     caption=text,
                     reply_markup=get_post_generation_keyboard(),
-                    parse_mode="Markdown"
+                    parse_mode="HTML"  # 🔥 HTML вместо Markdown!
                 )
                 logger.info(f"✅ [POST_GENERATION] Caption edited for media msg_id={current_msg.message_id}")
                 
@@ -665,10 +679,11 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
                 
             except Exception as e:
                 logger.warning(f"⚠️ [POST_GENERATION] Failed to edit caption: {e}, trying edit_menu")
+                # Fallback на текстовое меню
                 await edit_menu(
                     callback=callback,
                     state=state,
-                    text=text,
+                    text="✅ Выбери что дальше",
                     keyboard=get_post_generation_keyboard(),
                     screen_code='post_generation'
                 )
@@ -677,7 +692,7 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
             await edit_menu(
                 callback=callback,
                 state=state,
-                text=text,
+                text="✅ Выбери что дальше",
                 keyboard=get_post_generation_keyboard(),
                 screen_code='post_generation'
             )
@@ -693,7 +708,7 @@ async def post_generation_menu(callback: CallbackQuery, state: FSMContext):
 # ===== POST-GENERATION: CHANGE_STYLE (Смена стиля после генерации) =====
 # [2025-12-29] НОВОЕ (V3)
 # [2025-12-30 17:00] 🔥 FIX: Проверка медиа перед edit_menu
-# [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НЕ редактируем фото, создаеем НОВОЕ меню!
+# [2025-12-31 16:00] 🔥 CRITICAL REWRITE: НЕ редактируем фото, создаем НОВОЕ меню!
 # [2025-12-31 16:30] 🔥 CRITICAL FIX: УДАЛЯЕМ старое меню со стилями ДО создания нового!
 # [2025-12-31 16:40] 🔥 HOTFIX: ИСПРАВИТЬ callback.message.bot.get_message → callback.bot.get_message!
 @router.callback_query(F.data == "change_style")
