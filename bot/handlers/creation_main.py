@@ -40,75 +40,78 @@ from utils.navigation import edit_menu, show_main_menu
 logger = logging.getLogger(__name__)
 router = Router()
 
-# 🔥 [2025-12-31 15:06] Tracking альбомов для параллельного удаления
-# Structure: {user_id: {media_group_id: {'message_ids': [7435, 7436, 7437], 'collected': True}}}
+# 📊 Отслеживание альбомов для удаления
 media_group_cache = {}
 
 
 async def collect_all_media_group_photos(user_id: int, media_group_id: str, message_id: int):
     """
-    🔥 [2025-12-31 15:06] СОБРАТЬ ВСЕ ФОТО АЛЬБОМА ЗА 1 СЕКУНДУ
+    📊 Отслеживание всех фото альбома и удаление всех сразу
     
-    Когда приходит первое фото:
-    1. Регистрируем его
-    2. ЖДЁМ 1000мс
-    3. За это время приходят ВСЕ остальные фото
-    4. Возвращаем ВСЕ message_ids
-    
-    Все остальные handlers видят что уже collected=True → выходят
+    Процесс:
+    1. Первое фото → регистрируем
+    2. Ждём 1сек - приходят остальные
+    3. Отмечаем как собранные
+    4. Возвращаем все message_ids для удаления
     """
     if user_id not in media_group_cache:
         media_group_cache[user_id] = {}
     
-    # Если первое фото - создаём запись
     if media_group_id not in media_group_cache[user_id]:
         media_group_cache[user_id][media_group_id] = {
             'message_ids': [message_id],
             'collected': False
         }
-        logger.info(f"📸 [COLLECT] user={user_id}, group={media_group_id}, photo #1 registered")
+        logger.info(f"📊 [COLLECT] user={user_id}, group={media_group_id}, photo #1")
         
-        # ЖДЁМ 1 СЕКУНДУ для прихода остальных фото
         await asyncio.sleep(1.0)
         
-        # Помечаем что собрали
         media_group_cache[user_id][media_group_id]['collected'] = True
         
         final_ids = media_group_cache[user_id][media_group_id]['message_ids'].copy()
-        logger.info(f"📸 [COLLECT] user={user_id}, group={media_group_id}, COLLECTED {len(final_ids)} photos")
+        logger.info(f"📊 [COLLECT] DONE: {len(final_ids)} photos")
         return final_ids
     else:
-        # Если уже идёт сбор - добавляем фото к существующему
         if not media_group_cache[user_id][media_group_id]['collected']:
             media_group_cache[user_id][media_group_id]['message_ids'].append(message_id)
             count = len(media_group_cache[user_id][media_group_id]['message_ids'])
-            logger.info(f"📸 [COLLECT] user={user_id}, group={media_group_id}, photo #{count} added")
+            logger.info(f"📊 [COLLECT] photo #{count} added")
         
-        return None  # Не первое фото - не нужно собирать
+        return None
 
 
-# ===== SCREEN 0: MAIN MENU =====
+# ════════════════════════════════════════════════════════════
+# 🏠 [SCREEN 0] ГЛАВНОЕ МЕНЮ
+# ════════════════════════════════════════════════════════════
+
 @router.callback_query(F.data == "main_menu")
 async def go_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
-    """Return to main menu"""
+    """
+    🏠 [SCREEN 0] Вернуться в главное меню
+    """
     user_id = callback.from_user.id
     await db.log_activity(user_id, 'main_menu')
     await show_main_menu(callback, state, admins)
     await callback.answer()
 
 
-# ===== SCREEN 1: SELECT_MODE (Work mode selection) =====
+# ════════════════════════════════════════════════════════════
+# 📋 [SCREEN 1] ВЫБОР МОДИ РАБОТЫ
+# ════════════════════════════════════════════════════════════
+
 @router.callback_query(F.data == "select_mode")
 async def select_mode(callback: CallbackQuery, state: FSMContext):
     """
-    SCREEN 1: Select work mode (5 options)
+    📋 [SCREEN 1] Выбор режима работы
     
-    Main flow entry point:
-    - 📋 Create new design (NEW_DESIGN)
-    - ✏️ Edit design (EDIT_DESIGN)
-    - 🎁 Try on design (SAMPLE_DESIGN)
-    - 🛋️ Arrange furniture (ARRANGE_FURNITURE)
-    - 🏠 Design facade (FACADE_DESIGN)
+    📍 ПУТЬ: [SCREEN 0] → "🎨 Создать дизайн" → [SCREEN 1]
+    
+    🔍 5 МОДОВ:
+    - 📋 Новый дизайн (NEW_DESIGN)
+    - ✏️ Редактирование (EDIT_DESIGN)
+    - 🎁 Примерка (SAMPLE_DESIGN)
+    - 🛋️ Мебель (ARRANGE_FURNITURE)
+    - 🏠 Фасад (FACADE_DESIGN)
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -126,18 +129,23 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
             screen_code='select_mode'
         )
         
-        logger.info(f"[V3] SELECT_MODE - user_id={user_id}, showing 5 work modes")
+        logger.info(f"[SCREEN 1] Showing 5 modes, user_id={user_id}")
         
     except Exception as e:
-        logger.error(f"[ERROR] SELECT_MODE failed: {e}", exc_info=True)
+        logger.error(f"[ERROR] SCREEN 1 failed: {e}", exc_info=True)
         await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
 
 
-# ===== HANDLER: SET_WORK_MODE (Handle mode selection) =====
+# ════════════════════════════════════════════════════════════
+# 📋 [SCREEN 1→2] ОБРАБОТКА ВЫБОРА МОДОВ
+# ════════════════════════════════════════════════════════════
+
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
-    SCREEN 1→2: Handle work mode selection
+    📋 [SCREEN 1→2] Обработта выбора режима
+    
+    📍 ПУТЬ: [SCREEN 1] → выбрал режим → [SCREEN 2: загружка фото]
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -156,7 +164,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         
         work_mode = mode_map.get(mode_str)
         if not work_mode:
-            logger.warning(f"[WARNING] Unknown mode_str: {mode_str}")
+            logger.warning(f"[WARNING] Unknown mode: {mode_str}")
             await callback.answer("❌ Неизвестный режим", show_alert=True)
             return
         
@@ -177,70 +185,65 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             screen_code='uploading_photo'
         )
         
-        logger.info(f"[V3] {work_mode.value.upper()}_MODE_SELECTED - screen updated for user {user_id}")
+        logger.info(f"[SCREEN 1→2] Mode selected: {work_mode.value}, user_id={user_id}")
         await callback.answer()
         
     except Exception as e:
-        logger.error(f"[ERROR] SET_WORK_MODE failed: {e}", exc_info=True)
+        logger.error(f"[ERROR] SCREEN 1→2 failed: {e}", exc_info=True)
         await callback.answer("❌ Ошибка при выборе режима", show_alert=True)
 
 
-# ===== SCREEN 2: PHOTO_HANDLER (Photo upload for all modes) =====
+# ════════════════════════════════════════════════════════════
+# 📸 [SCREEN 2] ЗАГРУЗКА ФОТО
+# ════════════════════════════════════════════════════════════
+
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
-    SCREEN 2: Photo upload (UPLOADING_PHOTO)
+    📸 [SCREEN 2] Обработка загруженного фото
     
-    [2025-12-31 15:06] 🔥 УДАЛЯЕМ ВСЕ ФОТО АЛЬБОМА ОДНОВРЕМЕННО!
+    📍 ПУТЬ: [SCREEN 2] → загружен фото → [SCREEN 3+] (выбор режима)
     
-    ЛОГИКА:
-    1. Фото приходит → если media_group_id:
-       - Собираем ВСЕ фото за 1сек
-       - УДАЛЯЕМ ВСЕ ОДНОВРЕМЕННО (параллельно)
-       - RETURN (не показываем ничего)
-    2. Если одиночное фото → обрабатываем нормально
+    📊 ЛОГИКА:
+    1. Если альбом → собрать, удалить все, выксести
+    2. Одиночное фото → Обработать нормально
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # 🔥 [2025-12-31 15:06] АЛЬБОМ - УДАЛИТЬ ВСЕ ФОТО
+    # 📊 АЛЬБОМ ФОТО - Удалить все
     if message.media_group_id:
-        logger.info(f"📸 [ALBUM] Detected media_group_id={message.media_group_id}")
+        logger.info(f"📊 [ALBUM] media_group_id={message.media_group_id}")
         
-        # СОБРАТЬ ВСЕ ФОТО за 1сек
         collected_ids = await collect_all_media_group_photos(
             user_id,
             message.media_group_id,
             message.message_id
         )
         
-        # Если это ПЕРВОЕ фото в альбоме - collected_ids будут
         if collected_ids:
-            logger.warning(f"❌ ALBUM with {len(collected_ids)} photos detected!")
+            logger.warning(f"❌ [ALBUM] {len(collected_ids)} фото детектировано!")
             
-            # 🔥 УДАЛИТЬ ВСЕ ФОТО ОДНОВРЕМЕННО (параллельно)
             delete_tasks = []
             for msg_id in collected_ids:
                 delete_tasks.append(
                     message.bot.delete_message(chat_id=chat_id, message_id=msg_id)
                 )
             
-            # Жди пока все удалятся
             results = await asyncio.gather(*delete_tasks, return_exceptions=True)
             success_count = sum(1 for r in results if not isinstance(r, Exception))
-            logger.info(f"🗑️ [DELETE] Deleted {success_count}/{len(collected_ids)} photos")
+            logger.info(f"🗑️ [ALBUM] Удалено {success_count}/{len(collected_ids)} фото")
         
-        # ВЫХОД - не обрабатываем альбом дальше
         return
     
-    # 🔥 ОДИНОЧНОЕ ФОТО - обрабатываем нормально
-    logger.info(f"📸 [SINGLE] Single photo detected")
+    # 📸 ОДИНОЧНОЕ ФОТО - Обработать
+    logger.info(f"📸 [SINGLE] Одиночное фото")
     
     data = await state.get_data()
     work_mode = data.get('work_mode')
     
     if not message.photo:
-        error_msg = await message.answer("❌ Пожалуйста, отправьте фото помещения:")
+        error_msg = await message.answer("❌ Пожалуйста, отправьте фото:")
         await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'uploading_photo')
         asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
         return
@@ -254,7 +257,7 @@ async def photo_handler(message: Message, state: FSMContext):
         return
     
     photo_id = message.photo[-1].file_id
-    logger.info(f"💾 [PHOTO_HANDLER] Photo saved - photo_id={photo_id[:20]}...")
+    logger.info(f"💳 [SCREEN 2] Фото сохранено")
     
     await state.update_data(
         photo_id=photo_id,
@@ -268,11 +271,11 @@ async def photo_handler(message: Message, state: FSMContext):
     if old_menu_message_id:
         try:
             await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
-            logger.info(f"🗑️ [PHOTO_HANDLER] Deleted old menu {old_menu_message_id}")
+            logger.info(f"🗑️ [SCREEN 2] Удалено старое меню")
         except Exception as e:
-            logger.debug(f"⚠️ Could not delete old menu: {e}")
+            logger.debug(f"⚠️ Не удалось удалить: {e}")
     
-    # DETERMINE NEXT SCREEN
+    # ОПРЕДЕЛЯЕМ СЛЕДУЮЩИЙ ЭКРАН
     if work_mode == WorkMode.NEW_DESIGN.value:
         await state.set_state(CreationStates.room_choice)
         text = f"🏠 **Выберите комнату**"
@@ -289,56 +292,60 @@ async def photo_handler(message: Message, state: FSMContext):
         
     elif work_mode == WorkMode.SAMPLE_DESIGN.value:
         await state.set_state(CreationStates.download_sample)
-        text = f"📥 **Скачать примеры**"
+        text = f"📄 **Скачать примеры**"
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
         keyboard = get_download_sample_keyboard()
         screen = 'download_sample'
         
     elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
         await state.set_state(CreationStates.uploading_furniture)
-        text = f"🛋️ **Расстановка мебели**"
+        text = f"🛋️ **Расставка мебели**"
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='arrange_furniture')
         keyboard = get_uploading_furniture_keyboard()
         screen = 'uploading_furniture'
         
     elif work_mode == WorkMode.FACADE_DESIGN.value:
         await state.set_state(CreationStates.loading_facade_sample)
-        text = f"🏘️ **Дизайн фасада**"
+        text = f"🏠 **Дизайн фасада**"
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
         keyboard = get_loading_facade_sample_keyboard()
         screen = 'loading_facade_sample'
     else:
-        logger.error(f"[ERROR] Unknown work_mode: {work_mode}")
+        logger.error(f"[ERROR] Неизвестный work_mode: {work_mode}")
         await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
         return
     
-    logger.info(f"📤 [PHOTO_HANDLER] Sending menu - screen={screen}")
+    logger.info(f"📸 [SCREEN 2] Отправлям меню - screen={screen}")
     menu_msg = await message.answer(
         text=text,
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
-    logger.info(f"✅ [PHOTO_HANDLER] Menu sent, msg_id={menu_msg.message_id}")
+    logger.info(f"✅ [SCREEN 2] Меню отправлено")
     
     await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, screen)
     await state.update_data(menu_message_id=menu_msg.message_id)
     
-    logger.info(f"📊 [PHOTO_HANDLER] COMPLETE - user_id={user_id}, transitioned to {screen}")
+    logger.info(f"📊 [SCREEN 2] COMPLETED - переход на {screen}")
 
 
 async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int):
-    """Delete message after N seconds"""
+    """Удалить сообщение через N секунд"""
     try:
         await asyncio.sleep(delay)
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
-        logger.debug(f"✅ Удалено сообщение {message_id} в чате {chat_id}")
+        logger.debug(f"✅ Удалено сообщение {message_id}")
     except Exception as e:
-        logger.debug(f"⚠️ Не удалось удалить сообщение {message_id}: {e}")
+        logger.debug(f"⚠️ Не удалось удалить: {e}")
 
+
+# ════════════════════════════════════════════════════════════
+# 📋 [СТАРАЯ СИСТЕМА] что-то
+# ════════════════════════════════════════════════════════════
 
 @router.callback_query(F.data == "create_design")
 async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
-    """Start creating design (old system)"""
+    """Начать создание дизайна (старая система)"""
     user_id = callback.from_user.id
     await db.log_activity(user_id, 'create_design')
 
