@@ -1,4 +1,3 @@
-
 # ========================================
 # bot/handlers/edit_design.py
 # EDIT_DESIGN MODE HANDLERS
@@ -181,19 +180,19 @@ async def receive_text_prompt(
     use_pro = data.get('use_pro', False)
     menu_message_id = data.get('menu_message_id')
     
-    # ШАГ 3: Показываем прогресс
+    # ШАГ 3: Показываем прогресс с текстом пользователя
     try:
         if menu_message_id:
             progress_msg = await message.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=menu_message_id,
-                text="⏳ **Применяю ваше описание...**"
+                text=f"⏳ **Применяю ваше описание...**\n\n_{user_text}_"
             )
         else:
-            progress_msg = await message.answer("⏳ **Применяю ваше описание...** ")
+            progress_msg = await message.answer(f"⏳ **Применяю ваше описание...**\n\n_{user_text}_")
     except Exception as e:
         logger.error(f"Error showing progress: {e}")
-        progress_msg = await message.answer("⏳ **Применяю ваше описание...** ")
+        progress_msg = await message.answer(f"⏳ **Применяю ваше описание...**\n\n_{user_text}_")
     
     try:
         # [2026-01-02 20:50] ИСПРАВЛЕНО: Отправляем ТОЛЬКО user_text!
