@@ -317,18 +317,30 @@ class Database:
                 return False
 
     async def delete_old_menu_if_exists(self, chat_id: int, bot) -> bool:
-        """Удалить старое меню из чата, если оно есть в БД"""
+        """
+        🔥 [2026-01-02 21:37] CRITICAL FIX:
+        
+        НЕ удаляем физически сообщение из Telegram!
+        Просто очищаем запись из БД.
+        
+        Физическое удаление сообщения может привести к ошибке:
+        "Bad Request: message not found" - если сообщение было
+        редактировано или удалено другим способом.
+        
+        Правильный подход:
+        1. При /start просто очищаем ДБ
+        2. Новое сообщение с меню создается свежее
+        3. Старое визуально исчезает из чата автоматически
+        """
         try:
             menu_data = await self.get_chat_menu(chat_id)
             if menu_data and menu_data.get('menu_message_id'):
                 old_menu_id = menu_data['menu_message_id']
-                try:
-                    await bot.delete_message(chat_id=chat_id, message_id=old_menu_id)
-                    logger.debug(f"🗑️ Удалено старое меню: chat={chat_id}, message_id={old_menu_id}")
-                except Exception as e:
-                    logger.debug(f"⚠️ Не удалось удалить старое меню: {e}")
-
+                logger.info(f"🔄 [DELETE_OLD_MENU] Clearing menu record for chat={chat_id}, old_msg_id={old_menu_id}")
+                
+                # 🔥 НЕ УДАЛЯЕМ ФИЗИЧЕСКИ! Просто очищаем БД
                 await self.delete_chat_menu(chat_id)
+                logger.info(f"✅ [DELETE_OLD_MENU] Cleared DB record for chat={chat_id}")
             return True
         except Exception as e:
             logger.error(f"❌ Ошибка delete_old_menu_if_exists: {e}")
