@@ -144,12 +144,13 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
     📋 [SCREEN 1→2] Обработка выбора режима
     
-    🔍 ПУТЬ: [SCREEN 1] → выбрал режим → [SCREEN 2: загрузка фото]
+    🔍 ПУТЬ: [SCREEN 1] → выбрал режим → [SCREEN 2: загружка фото]
     
-    🎯 КРИТИЧЕСКАЯ ЛОГИКА (2026-01-02 v2):
-    - Проверяем флаг session_started (установлен только при /start)
-    - Если session_started=True → has_previous_photo=False (БД ИГНОРИРУЕТСЯ)
-    - Если session_started=False → проверяем FSM + БД
+    🎯 КРИТИЧЕСКАЯ ЛОГИКА (2026-01-02 v3 - ПО ФСМ):
+    - Проверяем дВА условия:
+      1. photo_id есть в FSM (не потеряна при перезагрузке бота)
+      2. session_started = False (прошла загрузка после /start)
+    - Если одно из условий не соблюдено → has_previous_photo=False (БД ПОЛНОСТЬЮ ИГНОРИРУЕТСЯ!)
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -172,40 +173,43 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Неизвестный режим", show_alert=True)
             return
         
-        # 📌 КРИТИЧНО: Проверяем флаг session_started (только от /start)
+        # 🔴 КРИТИЧЕСКАЯ ЛОГИКА: Проверяем photo_id В FSM
         data = await state.get_data()
+        photo_id_in_fsm = data.get('photo_id')  # КЛЮЧЕВОЕ: ГОВОрим В FSM, НЕ в БД!
         session_started = data.get('session_started', False)
-        photo_uploaded_in_session = data.get('photo_uploaded', False)
         
-        # 🔴 КЛЮЧЕВАЯ ЛОГИКА:
-        # - Если session_started=True (от /start) → has_previous_photo=False (БД игнорируется!)
-        # - Если session_started=False (нормальный режим) → проверяем фото
-        if session_started:
+        # 🎯 ДВА УСЛОВИЯ ОДНОВРЕМЕННО:
+        # 1. photo_id должно быть в FSM (не потеряно при перезагрузке)
+        # 2. session_started должно быть False (прошла в этой сессии загружка)
+        
+        if session_started or not photo_id_in_fsm:
+            # ❌ photo_id НЕТ в FSM ИЛИ сессия новая
+            # БД ИГНОРИРУЕТСЯ ПОЛНОстью!
             has_previous_photo = False
-            logger.info(f"[SCREEN 1→2] session_started=True (от /start), has_previous_photo=False, БД ИГНОРИРУЕТСЯ")
+            logger.info(
+                f"[SCREEN 1→2] FSM проверка: "
+                f"session_started={session_started}, photo_id_in_fsm={bool(photo_id_in_fsm)} "
+                f"-> has_previous_photo=FALSE, БД ИГНОРИРУЕТСЯ"
+            )
         else:
-            # Нормальный режим - проверяем фото в этой сессии или БД
-            if photo_uploaded_in_session:
-                has_previous_photo = True
-                logger.info(f"[SCREEN 1→2] session_started=False, фото в FSM, has_previous_photo=True")
-            else:
-                last_photo_id = await db.get_last_user_photo(user_id)
-                has_previous_photo = last_photo_id is not None
-                if has_previous_photo:
-                    logger.info(f"[SCREEN 1→2] session_started=False, фото в БД, has_previous_photo=True")
-                else:
-                    logger.info(f"[SCREEN 1→2] session_started=False, нет фото, has_previous_photo=False")
+            # ✅ photo_id ЕСТЬ в FSM И session_started=False
+            # Можно показать кнопку
+            has_previous_photo = True
+            logger.info(
+                f"[SCREEN 1→2] FSM проверка: "
+                f"photo_id_in_fsm={photo_id_in_fsm[:20] if photo_id_in_fsm else None}..., "
+                f"session_started={session_started} -> has_previous_photo=TRUE"
+            )
         
         logger.info(f"[SCREEN 1→2] Режим {work_mode.value}, has_previous_photo={has_previous_photo}, user_id={user_id}")
         
         await state.update_data(
             work_mode=work_mode.value,
-            photo_uploaded=photo_uploaded_in_session,
             has_previous_photo=has_previous_photo
         )
         await state.set_state(CreationStates.uploading_photo)
         
-        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загрузка фото")
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загружка фото")
         
         await edit_menu(
             callback=callback,
@@ -228,13 +232,13 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "use_current_photo")
 async def use_current_photo(callback: CallbackQuery, state: FSMContext):
     """
-    📄 [SCREEN 2] Использовать сохраненную фото из БД
+    📄 [SCREEN 2] Использовать сохраненную фото из бд
     
     🔍 ПУТЬ: [SCREEN 2] → кнопка использовать → [SCREEN 3+]
     
     КРИТИЧНО:
-    - Получаем photo_id из БД (НО НЕ из state!)
-    - Обновляем FSM state
+    - Получаем photo_id из FSM (НО НЕ из БД!)
+    - Обновляем состояние
     - Отправляем К СЛЕДУЮЩЕМУ экрану
     """
     user_id = callback.from_user.id
@@ -243,27 +247,20 @@ async def use_current_photo(callback: CallbackQuery, state: FSMContext):
     try:
         data = await state.get_data()
         work_mode = data.get('work_mode')
-        
-        # Получаем photo_id из БД (НО НЕ из state!)
-        photo_id = await db.get_last_user_photo(user_id)
+        photo_id = data.get('photo_id')  # ГОВОРИМ В FSM!
         
         if not photo_id:
-            logger.warning(f"⚠️ Фото не найдена в БД для user_id={user_id}")
+            logger.warning(f"⚠️ photo_id не найдена в FSM для user_id={user_id}")
             await callback.answer(
                 "❌ Фото не найдена. Загрузите новую.",
                 show_alert=True
             )
             return
         
-        # Сохраняем фото в FSM
-        await state.update_data(
-            photo_id=photo_id,
-            photo_uploaded=True,
-            new_photo=False,  # НЕ новая - все старая
-            session_started=False  # 🔴 КЛЮЧЕВАЯ СТРОКА: отключаем флаг /start
-        )
+        # Отключаем флаг /start
+        await state.update_data(session_started=False)
         
-        logger.info(f"📄 Опытная фото выбрана: {photo_id[:20]}... (user_id={user_id})")
+        logger.info(f"📄 Опытная фото выбрана из FSM: {photo_id[:20]}... (user_id={user_id})")
         
         # ПЕРЕХОДИМ К СЛЕДУЮЩЕМУ ЭКРАНУ ПО РЕЖИМУ
         if work_mode == WorkMode.NEW_DESIGN.value:
@@ -343,7 +340,7 @@ async def back_to_photo_upload(callback: CallbackQuery, state: FSMContext):
     """
     ⬅️ [SCREEN 3-5, EDIT, SAMPLE, FURNITURE, FACADE] ВЕРНУТЬСЯ НА ЗАГРУЗКУ ФОТО
     
-    📍 ПУТЬ: [SCREEN 3+] → кнопка "⬅️ Новое фото" → [SCREEN 2: загрузка фото]
+    📍 ПУТЬ: [SCREEN 3+] → кнопка "⬅️ Новое фото" → [SCREEN 2: загружка фото]
     
     ✅ РАБОТАЕТ НА ВСЕХ ЭКРАНАХ ДИЗАЙНА, КРОМЕ SCREEN 6!
     ❌ SCREEN 6 (post_generation) использует свой обработчик: new_photo_after_gen() в creation_new_design.py
@@ -351,9 +348,7 @@ async def back_to_photo_upload(callback: CallbackQuery, state: FSMContext):
     📍 ЛОГИКА:
     - Переходим в CreationStates.uploading_photo
     - Передаём has_previous_photo=True (юзер уже загружал фото!)
-    - Показываем ОБЕ кнопки:
-      * 📷 Использовать текущую фото
-      * 🏠 Главное меню
+    - Отключаем флаг session_started
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -362,18 +357,16 @@ async def back_to_photo_upload(callback: CallbackQuery, state: FSMContext):
         data = await state.get_data()
         work_mode = data.get('work_mode', 'new_design')
         
-        # 🔴 КРИТИЧНО: Юзер уже загружал фото, чтобы попасть на SCREEN 3+
-        # Поэтому has_previous_photo = True - показываем обе кнопки
-        has_previous_photo = True
-        
-        # 🔴 КЛЮЧЕВАЯ СТРОКА: отключаем флаг session_started
+        # Отключаем флаг /start
         await state.update_data(session_started=False)
+        
+        # КНОПКА ДОЛЖНА ПОКАЗЫВАТЬСЯ (юзер уже загружал фото!)
+        has_previous_photo = True
         
         await state.set_state(CreationStates.uploading_photo)
         
         text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📄 Загрузите фото помещения")
         
-        # ПЕРЕДАЁМ has_previous_photo=True - это КРИТИЧНО!
         await edit_menu(
             callback=callback,
             state=state,
@@ -383,12 +376,12 @@ async def back_to_photo_upload(callback: CallbackQuery, state: FSMContext):
             screen_code='uploading_photo'
         )
         
-        logger.info(f"✅ [BACK_TO_PHOTO] Вернулись на загрузку фото, user_id={user_id}")
+        logger.info(f"✅ [BACK_TO_PHOTO] Вернулись на загружку фото, user_id={user_id}")
         await callback.answer()
         
     except Exception as e:
         logger.error(f"[ERROR] back_to_photo_upload failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка при переходе на загрузку фото", show_alert=True)
+        await callback.answer("❌ Ошибка при переходе на загружку фото", show_alert=True)
 
 
 # ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
@@ -398,16 +391,15 @@ async def back_to_photo_upload(callback: CallbackQuery, state: FSMContext):
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
-    📄 [SCREEN 2] Обработка загрузки фото
+    📄 [SCREEN 2] Обработка загружки фото
     
-    🔍 ПУТЬ: [SCREEN 2] → загрузка фото → [SCREEN 3+] (в зависимости от режима)
+    🔍 ПУТЬ: [SCREEN 2] → загружка фото → [SCREEN 3+] (в зависимости от режима)
     
     📄 ЛОГИКА:
     1. Если альбом → собрать, удалить все, выйти
     2. Одиночное фото → Обрабатывать нормально
     
-    🔴 НОВОЕ (2026-01-02): Сохраняем photo_id в БД!
-    🔴 КЛЮЧЕВАЯ СТРОКА: session_started=False при успешной загрузке!
+    🎯 НОВОЕ (2026-01-02): Сохраняем photo_id в ФСМ (НЕ только в БД!)
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -459,7 +451,7 @@ async def photo_handler(message: Message, state: FSMContext):
     
     photo_id = message.photo[-1].file_id
     
-    # 🔴 НОВОЕ (2026-01-02): Сохраняем в БД!
+    # 🎯 ОснОВНОЕ: Сохраняем photo_id В ФСМ
     save_success = await db.save_user_photo(user_id, photo_id)
     if save_success:
         logger.info(f"📄 Фото сохранена в БД")
@@ -468,11 +460,10 @@ async def photo_handler(message: Message, state: FSMContext):
     
     logger.info(f"📋 [SCREEN 2] Фото сохранено")
     
+    # 🎯 КЛЮЧЕВОЕ: Сохраняем photo_id в FSM
     await state.update_data(
-        photo_id=photo_id,
-        new_photo=True,
-        photo_uploaded=True,
-        session_started=False  # 🔴 КЛЮЧЕВАЯ СТРОКА: отключаем флаг /start!
+        photo_id=photo_id,  # ОсНОВНОМУ!
+        session_started=False  # Отключаем флаг /start
     )
     
     old_menu_data = await db.get_chat_menu(chat_id)
