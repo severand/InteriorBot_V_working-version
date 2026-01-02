@@ -1,4 +1,5 @@
 # bot/database/db.py
+# --- ОБНОВЛЕН: 2026-01-02 11:53 - НОВОЕ: Добавлены методы save_user_photo/get_last_user_photo ---
 # --- ОБНОВЛЕН: 2025-12-30 23:59 - Добавлена функция increase_balance() для возврата баланса ---
 # --- ОБНОВЛЕН: 2025-12-24 20:25 - Добавлены методы get_setting/set_setting ---
 # --- ОБНОВЛЕН: 2025-12-24 12:35 - Добавлены методы для PRO MODE функционала ---
@@ -19,6 +20,8 @@ from database.models import (
     CREATE_GENERATIONS_TABLE, CREATE_USER_ACTIVITY_TABLE,
     CREATE_ADMIN_NOTIFICATIONS_TABLE, CREATE_USER_SOURCES_TABLE,
     CREATE_CHAT_MENUS_TABLE,  # ← НОВАЯ СТРОКА
+    CREATE_USER_PHOTOS_TABLE,  # ← НОВАЯ ТАБЛИЦА ДЛЯ ФОТО (2026-01-02)
+    CREATE_USER_SESSION_MODES_TABLE,  # ← Эта таблица есть
     DEFAULT_SETTINGS,
     # Пользователи
     GET_USER, CREATE_USER, UPDATE_BALANCE, DECREASE_BALANCE, GET_BALANCE, UPDATE_LAST_ACTIVITY,
@@ -44,6 +47,8 @@ from database.models import (
     GET_SETTING, SET_SETTING, GET_ALL_SETTINGS,
     # Единое меню (НОВОЕ)
     SAVE_CHAT_MENU, GET_CHAT_MENU, DELETE_CHAT_MENU,  # ← НОВАЯ СТРОКА
+    # ФОТО (НОВОЕ)
+    SAVE_USER_PHOTO, GET_LAST_USER_PHOTO,  # ← НОВОЕ (2026-01-02)
     # PRO MODE (НОВОЕ)
     GET_USER_PRO_SETTINGS, SET_USER_PRO_MODE, SET_PRO_ASPECT_RATIO, SET_PRO_RESOLUTION  # ← НОВАЯ СТРОКА
 )
@@ -66,6 +71,8 @@ class Database:
             await db.execute(CREATE_ADMIN_NOTIFICATIONS_TABLE)
             await db.execute(CREATE_USER_SOURCES_TABLE)
             await db.execute(CREATE_CHAT_MENUS_TABLE)  # ← НОВАЯ ТАБЛИЦА
+            await db.execute(CREATE_USER_PHOTOS_TABLE)  # ← НОВАЯ ТАБЛИЦА ФОТО (2026-01-02)
+            await db.execute(CREATE_USER_SESSION_MODES_TABLE)
             await db.execute(CREATE_REFERRAL_EARNINGS_TABLE)
             await db.execute(CREATE_REFERRAL_EXCHANGES_TABLE)
             await db.execute(CREATE_REFERRAL_PAYOUTS_TABLE)
@@ -108,6 +115,54 @@ class Database:
             logger.info("✅ Миграция PRO MODE завершена")
         except Exception as e:
             logger.error(f"❌ Ошибка миграции PRO MODE: {e}")
+
+    # ===== НОВОЕ: МЕТОДЫ ДЛЯ ЦУЧЕНИЯ ФОТО (2026-01-02) =====
+
+    async def save_user_photo(self, user_id: int, photo_id: str) -> bool:
+        """
+        📄 Сохранить фото пользователя в БД.
+        
+        Параметры:
+        - user_id: ID пользователя
+        - photo_id: Telegram file_id фото (из message.photo[-1].file_id)
+        
+        Возвращает:
+        - True если успешно сохранено, False при ошибке
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                await db.execute(SAVE_USER_PHOTO, (user_id, photo_id))
+                await db.commit()
+                logger.info(f"📄 Фото сохранена для user_id={user_id}, photo_id={photo_id[:20]}...")
+                return True
+            except Exception as e:
+                logger.error(f"❌ Ошибка save_user_photo: {e}")
+                return False
+
+    async def get_last_user_photo(self, user_id: int) -> Optional[str]:
+        """
+        📄 Получить последнюю сохраненную фото пользователя.
+        
+        Параметры:
+        - user_id: ID пользователя
+        
+        Возвращает:
+        - photo_id (str) если есть, None если нет
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                async with db.execute(GET_LAST_USER_PHOTO, (user_id,)) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        photo_id = row[0]
+                        logger.info(f"✅ Найдена фото для user_id={user_id}, photo_id={photo_id[:20]}...")
+                        return photo_id
+                    
+                    logger.debug(f"⚠️ Фото не найдена для user_id={user_id}")
+                    return None
+            except Exception as e:
+                logger.error(f"❌ Ошибка get_last_user_photo: {e}")
+                return None
 
     # ===== PRO MODE FUNCTIONS (НОВОЕ) =====
 
@@ -233,7 +288,7 @@ class Database:
                 await db.execute(SAVE_CHAT_MENU,
                                  (chat_id, user_id, menu_message_id, screen_code))
                 await db.commit()
-                logger.debug(f"💾 Saved menu: chat={chat_id}, msgid={menu_message_id}, screen={screen_code}")
+                logger.debug(f"📃 Saved menu: chat={chat_id}, msgid={menu_message_id}, screen={screen_code}")
                 return True
             except Exception as e:
                 logger.error(f"❌ Ошибка save_chat_menu: {e}")
@@ -325,7 +380,7 @@ class Database:
             # Связываем пользователя с реферером
             await db.execute(UPDATE_REFERRED_BY, (referrer_id, user_id))
 
-            # Увеличиваем счетчик рефералов
+            # Увеличиваем счетчик рефалов
             await db.execute(INCREMENT_REFERRALS_COUNT, (referrer_id,))
 
             # Начисляем бонусы
@@ -519,7 +574,7 @@ class Database:
 
     async def get_conversion_rate(self) -> float:
         """
-        Рассчитать конверсию (генераций на пользователя).
+        Орассчитать конверсию (генераций на пользователя).
         Возвращает среднее количество генераций на пользователя.
         """
         async with aiosqlite.connect(self.db_path) as db:
