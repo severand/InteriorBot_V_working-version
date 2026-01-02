@@ -130,7 +130,7 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
         
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 3 failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
+        await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -205,9 +205,68 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 🎨 [SCREEN 5→4] ВЕРНУТЬСЯ НА ПЕРВУЮ СТРАНИЦУ СТИЛЕЙ
+# 🎨 [SCREEN 4] ВЫБОР СТИЛЯ (страница 1)
 # ═════════════════════════════════════════════════════════════════════════════
 
+# КНОПКА: Показать вторую страницу стилей
+@router.callback_query(
+    StateFilter(CreationStates.choose_style_1),
+    F.data == "choose_style_2"
+)
+async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
+    """
+    🎨 [SCREEN 4→5] Показать вторую страницу стилей
+    
+    📍 ПУТЬ: [SCREEN 4: стили стр. 1] → "▶️ Ещё" → [SCREEN 5: стили стр. 2]
+    """
+    user_id = callback.from_user.id
+    
+    try:
+        data = await state.get_data()
+        work_mode = data.get('work_mode')
+        balance = await db.get_balance(user_id)
+        
+        await state.set_state(CreationStates.choose_style_2)
+        
+        text = CHOOSE_STYLE_TEXT
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
+        
+        current_msg = callback.message
+        
+        if current_msg.photo:
+            logger.warning(f"⚠️ [SCREEN 5] Current msg has PHOTO, creating NEW text menu")
+            
+            new_msg = await callback.message.answer(
+                text=text,
+                reply_markup=get_choose_style_2_keyboard(),
+                parse_mode="Markdown"
+            )
+            
+            await state.update_data(menu_message_id=new_msg.message_id)
+            await db.save_chat_menu(callback.message.chat.id, user_id, new_msg.message_id, 'choose_style_2')
+        else:
+            await edit_menu(
+                callback=callback,
+                state=state,
+                text=text,
+                keyboard=get_choose_style_2_keyboard(),
+                show_balance=False,
+                screen_code='choose_style_2'
+            )
+        
+        logger.info(f"[SCREEN 4→5] Page 2 shown, user_id={user_id}")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] SCREEN 4→5 failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 🎨 [SCREEN 5] ВЫБОР СТИЛЯ (страница 2)
+# ═════════════════════════════════════════════════════════════════════════════
+
+# КНОПКА: Вернуться на первую страницу
 @router.callback_query(
     StateFilter(CreationStates.choose_style_2),
     F.data == "styles_page_1"
@@ -259,64 +318,7 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
         
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 5→4 failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 🎨 [SCREEN 4→5] ПОКАЗАТЬ ВТОРУЮ СТРАНИЦУ СТИЛЕЙ
-# ═════════════════════════════════════════════════════════════════════════════
-
-@router.callback_query(
-    StateFilter(CreationStates.choose_style_1),
-    F.data == "choose_style_2"
-)
-async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
-    """
-    🎨 [SCREEN 4→5] Показать вторую страницу стилей
-    
-    📍 ПУТЬ: [SCREEN 4: стили стр. 1] → "▶️ Ещё" → [SCREEN 5: стили стр. 2]
-    """
-    user_id = callback.from_user.id
-    
-    try:
-        data = await state.get_data()
-        work_mode = data.get('work_mode')
-        balance = await db.get_balance(user_id)
-        
-        await state.set_state(CreationStates.choose_style_2)
-        
-        text = CHOOSE_STYLE_TEXT
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
-        
-        current_msg = callback.message
-        
-        if current_msg.photo:
-            logger.warning(f"⚠️ [SCREEN 5] Current msg has PHOTO, creating NEW text menu")
-            
-            new_msg = await callback.message.answer(
-                text=text,
-                reply_markup=get_choose_style_2_keyboard(),
-                parse_mode="Markdown"
-            )
-            
-            await state.update_data(menu_message_id=new_msg.message_id)
-            await db.save_chat_menu(callback.message.chat.id, user_id, new_msg.message_id, 'choose_style_2')
-        else:
-            await edit_menu(
-                callback=callback,
-                state=state,
-                text=text,
-                keyboard=get_choose_style_2_keyboard(),
-                show_balance=False,
-                screen_code='choose_style_2'
-            )
-        
-        logger.info(f"[SCREEN 4→5] Page 2 shown, user_id={user_id}")
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] SCREEN 4→5 failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
+        await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -402,7 +404,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         await db.decrease_balance(user_id)
 
     # ═════════════════════════════════════════════════════════════════════════
-    # РЕДАКТИРОВАНИЕ МЕНЮ / ОТПРАВКА ПРОГРЕссА
+    # Отправка прогресса
     # ═════════════════════════════════════════════════════════════════════════
     
     progress_msg = None
@@ -438,7 +440,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     await callback.answer()
 
     # ═════════════════════════════════════════════════════════════════════════
-    # ГЕНЕРАЦИЯ ДИЗАЙНА
+    # ГЕНЕРАЦИЯ
     # ═════════════════════════════════════════════════════════════════════════
     
     pro_settings = await db.get_user_pro_settings(user_id)
@@ -464,7 +466,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     )
 
     # ═════════════════════════════════════════════════════════════════════════
-    # # 🎨 [SCREEN 6] МЕНЮ ПОСЛЕ ГЕНЕРАЦИИ
+    # ✅ [SCREEN 6] МЕНЮ ПОСЛЕ ГЕНЕРАЦИИ
     # ═════════════════════════════════════════════════════════════════════════
 
     if result_image_url:
@@ -585,7 +587,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                     pass
             
             await callback.message.answer(
-                text="❌ Ошибка при отправке изображения. Баланс возвращен. Попробуйте еще раз.",
+                text="❌ Ошибка при отправке изображения. Баланс возвращен. Попробуйте ещё раз.",
                 parse_mode="Markdown"
             )
             return
@@ -610,11 +612,9 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                 pass
         
         await callback.message.answer(
-            text="❌ Ошибка генерации. Баланс возвращен. Попробуйте еще раз.",
+            text="❌ Ошибка генерации. Баланс возвращен. Попробуйте ещё раз.",
             parse_mode="Markdown"
         )
-
-
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -667,13 +667,13 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 6→4 failed: {e}", exc_info=True)
         await callback.answer(
-            "❌ Ошибка при смене стиля. Попробуйте еще раз.",
+            "❌ Ошибка при смене стиля. Попробуйте ещё раз.",
             show_alert=True
         )
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 📸 [SCREEN 6→2] ЗАГРУЗКА НОВОГО ФОТО ПОСЛЕ ГЕНЕРАЦИИ
+# 📈 [SCREEN 6→2] ЗАГРУЗКА НОВОГО ФОТО ПОСЛЕ ГЕНЕРАЦИИ
 # ═════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(
@@ -682,9 +682,9 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
 )
 async def new_photo_after_gen(callback: CallbackQuery, state: FSMContext):
     """
-    📸 [SCREEN 6→2] Загружка нового фото после генерации
+    📈 [SCREEN 6→2] Загружка нового фото после генерации
     
-    📍 ПУТЬ: [SCREEN 6] → "📸 Новое фото" → [SCREEN 2: загружка фото]
+    📍 ПУТЬ: [SCREEN 6] → "📈 Новое фото" → [SCREEN 2: загружка фото]
     
     📊 НОВОЕ СОСТОЯНИЕ: CreationStates.uploading_photo
     
@@ -732,6 +732,6 @@ async def new_photo_after_gen(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 6→2 failed: {e}", exc_info=True)
         await callback.answer(
-            "❌ Ошибка при переходе на загрузку фото. Попробуйте еще раз.",
+            "❌ Ошибка при переходе на загружку фото. Попробуйте ещё раз.",
             show_alert=True
         )
