@@ -146,10 +146,10 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     
     🔍 ПУТЬ: [SCREEN 1] → выбрал режим → [SCREEN 2: загрузка фото]
     
-    📄 КРИТИЧНО (2026-01-02): 
-    - При выборе режима с SCREEN 1 → has_previous_photo = False
-    - Кнопка "Использовать текущую" НЕ показывается
-    - Это происходит при КАЖДОМ нажатии кнопки режима, даже при /start
+    📄 НОВАЯ ЛОГИКА (2026-01-02 исправлено):
+    - Если photo_uploaded=True в FSM → показываем кнопку (фото уже загружено в этой сессии)
+    - Или если фото есть в БД → показываем кнопку
+    - Только при /start (state пуста) → кнопка скрыта
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -172,22 +172,35 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Неизвестный режим", show_alert=True)
             return
         
-        # 🔴 КРИТИЧНО: При выборе режима ВСЕГДА has_previous_photo = False!
-        # Это скроет кнопку "Использовать текущую фото"
-        has_previous_photo = False
+        # 📄 НОВАЯ ЛОГИКА: Проверяем наличие фото в ТЕКУЩЕЙ СЕССИИ или в БД
+        data = await state.get_data()
+        photo_uploaded_in_session = data.get('photo_uploaded', False)
+        
+        # Если в этой сессии фото уже загружено → показываем кнопку
+        if photo_uploaded_in_session:
+            has_previous_photo = True
+            logger.info(f"[SCREEN 1→2] Фото загружено в этой сессии, has_previous_photo=True")
+        else:
+            # Иначе проверяем БД
+            last_photo_id = await db.get_last_user_photo(user_id)
+            has_previous_photo = last_photo_id is not None
+            if has_previous_photo:
+                logger.info(f"[SCREEN 1→2] Фото найдено в БД, has_previous_photo=True")
+            else:
+                logger.info(f"[SCREEN 1→2] Фото не найдено (новая сессия), has_previous_photo=False")
         
         logger.info(f"[SCREEN 1→2] Режим {work_mode.value}, has_previous_photo={has_previous_photo}, user_id={user_id}")
         
         await state.update_data(
             work_mode=work_mode.value,
-            photo_uploaded=False,
+            photo_uploaded=photo_uploaded_in_session,  # Сохраняем статус загрузки в этой сессии
             has_previous_photo=has_previous_photo
         )
         await state.set_state(CreationStates.uploading_photo)
         
         text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загрузка фото")
         
-        # Передаём has_previous_photo=False - кнопка не будет показана!
+        # Передаём флаг в клавиатуру
         await edit_menu(
             callback=callback,
             state=state,
