@@ -300,6 +300,61 @@ async def use_current_photo(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Ошибка. Попробуйте ещё.", show_alert=True)
 
 
+# 🆕 [2026-01-02] НОВЫЙ ОБРАБОТЧИК: callback "uploading_photo" из любого состояния
+@router.callback_query(
+    StateFilter(
+        CreationStates.room_choice,
+        CreationStates.choose_style_1,
+        CreationStates.choose_style_2,
+        CreationStates.edit_design,
+        CreationStates.download_sample,
+        CreationStates.uploading_furniture,
+        CreationStates.loading_facade_sample,
+        CreationStates.post_generation
+    ),
+    F.data == "uploading_photo"
+)
+async def back_to_photo_upload(callback: CallbackQuery, state: FSMContext):
+    """
+    🆕 [2026-01-02] HANDLER для callback "uploading_photo" из любого экрана дизайна
+    
+    📍 ПУТЬ: [SCREEN 3+] → "⬅️ Новое фото" → [SCREEN 2: загрузка фото]
+    
+    КРИТИЧНО: Нужен флаг has_previous_photo=True, потому что юзер уже загружал фото!
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+
+    try:
+        data = await state.get_data()
+        work_mode = data.get('work_mode', 'new_design')
+        
+        # КРИТИЧНО: Проверяем есть ли фото в БД (да, она есть!)
+        # Потому что юзер уже загружал фото, чтобы попасть на SCREEN 3+
+        has_previous_photo = True
+        
+        await state.set_state(CreationStates.uploading_photo)
+        
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📄 Загрузите фото помещения")
+        
+        # ПЕРЕДАЕМ has_previous_photo=True - это КРИТИЧНО!
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_uploading_photo_keyboard(has_previous_photo=has_previous_photo),
+            show_balance=False,
+            screen_code='uploading_photo'
+        )
+        
+        logger.info(f"✅ [BACK_TO_PHOTO] Вернулись на загрузку фото, user_id={user_id}")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] back_to_photo_upload failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при переходе на загрузку фото", show_alert=True)
+
+
 # ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
 # 📄 [SCREEN 2] ЛОАДЖКА ФОТО
 # ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
