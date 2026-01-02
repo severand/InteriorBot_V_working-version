@@ -79,7 +79,7 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
     """
     🏠 [SCREEN 3] Меню выбора типа помещения
     
-    📍 ПУТЬ: [SCREEN 2: загрузка фото] → "Далее" → [SCREEN 3: выбор комнаты]
+    📍 ПУТЬ: [SCREEN 2: загружка фото] → "Далее" → [SCREEN 3: выбор комнаты]
     
     ✅ ЕСЛИ ТЕКУЩЕЕ СООБЩЕНИЕ - МЕДИА → Создаём НОВОЕ текстовое меню
     ✅ ЕСЛИ ТЕКУЩЕЕ СООБЩЕНИЕ - ТЕКСТ → Редактируем через edit_menu()
@@ -166,7 +166,7 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
         await state.update_data(selected_room=room)
         await state.set_state(CreationStates.choose_style_1)
         
-        text = f"🎨 **Выберите стиль дизайна**"
+        text = CHOOSE_STYLE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode)
         
         current_msg = callback.message
@@ -228,7 +228,7 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
         
         await state.set_state(CreationStates.choose_style_1)
         
-        text = f"🎨 **Выберите стиль дизайна (страница 1)**"
+        text = CHOOSE_STYLE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode)
         
         current_msg = callback.message
@@ -285,7 +285,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
         
         await state.set_state(CreationStates.choose_style_2)
         
-        text = f"🎨 **Выберите стиль дизайна (страница 2)**"
+        text = CHOOSE_STYLE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode)
         
         current_msg = callback.message
@@ -402,7 +402,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         await db.decrease_balance(user_id)
 
     # ═════════════════════════════════════════════════════════════════════════
-    # РЕДАКТИРОВАНИЕ МЕНЮ / ОТПРАВКА ПРОГРЕССА
+    # РЕДАКТИРОВАНИЕ МЕНЮ / ОТПРАВКА ПРОГРЕссА
     # ═════════════════════════════════════════════════════════════════════════
     
     progress_msg = None
@@ -648,7 +648,7 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
     try:
         await state.set_state(CreationStates.choose_style_1)
         
-        text = f"🎨 **Выберите стиль дизайна**"
+        text = CHOOSE_STYLE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode)
         
         await callback.bot.edit_message_text(
@@ -682,16 +682,16 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
 )
 async def new_photo_after_gen(callback: CallbackQuery, state: FSMContext):
     """
-    📸 [SCREEN 6→2] Загрузка нового фото после генерации
+    📸 [SCREEN 6→2] Загружка нового фото после генерации
     
-    📍 ПУТЬ: [SCREEN 6] → "📸 Новое фото" → [SCREEN 2: загрузка фото]
+    📍 ПУТЬ: [SCREEN 6] → "📸 Новое фото" → [SCREEN 2: загружка фото]
     
     📊 НОВОЕ СОСТОЯНИЕ: CreationStates.uploading_photo
     
     📋 ЛОГИКА:
     - РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ (не генерируем дизайн)
     - ФОТО СТАРОГО дизайна остается для истории
-    - При загрузке нового фото → процесс начнется заново
+    - При загружке нового фото → процесс начнется заново
     
     🔏 НОВОЕ (2026-01-02): Передаём has_previous_photo=True в клавиатуру!
     """
