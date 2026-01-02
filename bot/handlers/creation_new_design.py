@@ -94,7 +94,7 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
         
         await state.set_state(CreationStates.room_choice)
         
-        text = f"🏠 **Выберите тип помещения**"
+        text = ROOM_CHOICE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode)
         
         current_msg = callback.message
