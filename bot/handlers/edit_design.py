@@ -30,20 +30,20 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 
-from states.creation import CreationStates
-from keyboards.inline import (
+from ..states.creation import CreationStates
+from ..keyboards.inline import (
     get_edit_design_keyboard,
     get_text_input_keyboard,
     get_clear_space_confirm_keyboard,
 )
-from utils.texts import (
+from ..utils.texts import (
     POST_GENERATION_MENU_TEXT,
 )
-from services.api_fallback import (
+from ..services.api_fallback import (
     smart_generate_with_text,
     smart_clear_space,
 )
-from services.prompts import build_design_prompt
+from ..services.prompts import build_design_prompt
 
 logger = logging.getLogger(__name__)
 router = Router()
