@@ -1,5 +1,4 @@
 # bot/handlers/user_start.py
-# --- ОБНОВЛЕН: 2026-01-02 22:04 - ФИКС: Убрал delete_old_menu_if_exists ---
 # --- ОБНОВЛЕН: 2025-12-30 23:50 - ИСПРАВЛЕНИЕ SCREEN 0 и SCREEN 1 ---
 # [2025-12-30 23:50] ИСПРАВЛЕНИЕ: cmd_start теперь показывает SCREEN 0 (главное меню, 3 кнопки)
 # [2025-12-30 23:50] ИСПРАВЛЕНИЕ: create_design показывает SCREEN 1 (режимы, 5 кнопок)
@@ -29,7 +28,7 @@ router = Router()
 async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     """
     SCREEN 0: ГЛАВНОЕ МЕНИ с 3 кнопками
-    Просто создаём НОВОЕ меню, старое остается в чате.
+    Безопасно удаляет старое меню, создает новое и сохраняет в БД.
     
     🔴 КРИТИЧЕСКОЕ: Устанавливаем session_started=True
     Это обеспечивает правильную логику видимости кнопки загружения фото
@@ -43,6 +42,9 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
 
     # ===== 2️⃣ ПРОВЕРЯЕМ - УСПЕШНЫЙ ПЛАТЕЖ? =====
     if start_param == "payment_success":
+        # Удаляем старое меню
+        await db.delete_old_menu_if_exists(chat_id, message.bot)
+
         # Показываем личный кабинет
         user_data = await db.get_user_data(user_id)
         if user_data:
@@ -51,7 +53,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
 
             from keyboards.inline import get_profile_keyboard
 
-            # Сохраняем в стате и БД
+            # Сохраняем в FSM + БД
             menu_msg = await message.answer(
                 text,
                 reply_markup=get_profile_keyboard(),
@@ -71,16 +73,19 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
             logger.info(f"✅ [PAYMENT_SUCCESS] User {user_id} redirected to profile, msg_id={menu_msg.message_id}")
             return
 
-    # ===== 3️⃣ ОЧИЩАЕМ FSM STATE =====
+    # ===== 3️⃣ БЕЗОПАСНО УДАЛЯЕМ СТАРОЕ МЕНУ =====
+    await db.delete_old_menu_if_exists(chat_id, message.bot)
+
+    # ===== 4️⃣ ОЧИЩАЕМ FSM STATE =====
     await state.clear()
 
-    # ===== 🔴 КРИТИЧЕСКОЕ: УСТАНАВЛиВАЕМ session_started=True =====
+    # ===== 🔴 КРИТИЧЕСКОЕ: УСТАНАВЛИВАЕМ session_started=True =====
     # Это указывает на то, что пользователь только что нажал /start
     # Флаг будет отключен после загружки первого фото в этой сессии
     await state.update_data(session_started=True)
     logger.info(f"🔴 [/START] Установлен флаг session_started=True для user_id={user_id}")
 
-    # ===== 4️⃣ ПРОВЕРЯЕМ - НОВЫЙ ПОЛЬЗОВАТЕЛЬ? =====
+    # ===== 5️⃣ ПРОВЕРЯЕМ - НОВЫЙ ПОЛЬЗОВАТЕЛЬ? =====
     user_data = await db.get_user_data(user_id)
     is_new_user = user_data is None
 
@@ -114,13 +119,13 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
         except Exception as e:
             logger.error(f"Ошибка при отправке уведомлений: {e}")
 
-    # ===== 5️⃣ УДАЛЯЕМ КОМАНДУ /start ИЗ ЧАТА =====
+    # ===== 6️⃣ УДАЛЯЕМ КОМАНДУ /start ИЗ ЧАТА =====
     try:
         await message.delete()
     except:
         pass
 
-    # ===== 6️⃣ ОТПРАВЛЯЕМ SCREEN 0: ГЛАВНОЕ МЕНИ С БАЛАНСОМ =====
+    # ===== 7️⃣ ОТПРАВЛЯЕМ SCREEN 0: ГЛАВНОЕ МЕНИ С БАЛАНСОМ =====
     text = await add_balance_to_text(START_TEXT, user_id)
     menu_msg = await message.answer(
         text,
@@ -128,7 +133,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
         parse_mode="Markdown"
     )
 
-    # ===== 7️⃣ 📔 СОХРАНЯЕМ В FSM + БД =====
+    # ===== 8️⃣ 📔 СОХРАНЯЕМ В FSM + БД =====
     await state.update_data(menu_message_id=menu_msg.message_id)
     await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'main_menu')
 
@@ -140,7 +145,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
 async def back_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
     Возврат в SCREEN 0 (главное меню) из любого места.
-    МОНОПОЛЬЗУЕТ state.set_state(None) вместо state.clear()!
+    МОНОПОЛЬзУЕТ state.set_state(None) вместо state.clear()!
     """
     await show_main_menu(callback, state, admins)
     await callback.answer()
@@ -226,7 +231,7 @@ async def start_creation(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
 
-    # ВОССТАНАВЛИВАЕМ menu_message_id
+    # ВОссТАНАВЛИВАЕМ menu_message_id
     if menu_message_id:
         await state.update_data(menu_message_id=menu_message_id)
 
@@ -317,7 +322,7 @@ async def show_referral_program(callback: CallbackQuery, state: FSMContext):
         elif 2 <= count % 10 <= 4 and (count % 100 < 10 or count % 100 >= 20):
             return "друга"
         else:
-            return "друзей"
+            return "дружей"
 
     referrals_word = get_word_form(referrals_count)
 
