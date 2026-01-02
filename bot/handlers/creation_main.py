@@ -80,24 +80,9 @@ async def collect_all_media_group_photos(user_id: int, media_group_id: str, mess
         return None
 
 
-# ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
-# 🏪 [SCREEN 0] ГЛАВНОЕ МЕНЮ
-# ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
-
-@router.callback_query(F.data == "main_menu")
-async def go_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
-    """
-    🏪 [SCREEN 0] Вернуться в главное меню
-    """
-    user_id = callback.from_user.id
-    await db.log_activity(user_id, 'main_menu')
-    await show_main_menu(callback, state, admins)
-    await callback.answer()
-
-
-# ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
+# ═════════════════════════════════════════════════════════════════════════════
 # 📋 [SCREEN 1] ВЫБОР РЕЖИМА РАБОТЫ
-# ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
+# ═════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(F.data == "select_mode")
 async def select_mode(callback: CallbackQuery, state: FSMContext):
@@ -136,9 +121,9 @@ async def select_mode(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
 
 
-# ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
+# ═════════════════════════════════════════════════════════════════════════════
 # 📋 [SCREEN 1→2] ОБРАБОТКА ВЫБОРА РЕЖИМОВ
-# ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
+# ═════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(F.data.startswith("select_mode_"))
 async def set_work_mode(callback: CallbackQuery, state: FSMContext):
@@ -229,165 +214,9 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Ошибка при выборе режима", show_alert=True)
 
 
-# 📄 ОБРАБОТЧИК КНОПКИ "ИСПОЛЬЗОВАТЬ ТЕКУЩУЮ ФОТО"
-@router.callback_query(F.data == "use_current_photo")
-async def use_current_photo(callback: CallbackQuery, state: FSMContext):
-    """
-    📄 [SCREEN 2] Использовать сохраненную фото из бд
-    
-    🔍 ПУТЬ: [SCREEN 2] → кнопка использовать → [SCREEN 3+]
-    
-    КРИТИЧНО:
-    - Получаем photo_id из FSM (НО НЕ из БД!)
-    - Обновляем состояние
-    - Отправляем К СЛЕДУЮЩЕМУ экрану
-    """
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-
-    try:
-        data = await state.get_data()
-        work_mode = data.get('work_mode')
-        photo_id = data.get('photo_id')  # ГОВОРИМ В FSM!
-        
-        if not photo_id:
-            logger.warning(f"⚠️ photo_id не найдена в FSM для user_id={user_id}")
-            await callback.answer(
-                "❌ Фото не найдена. Загрузите новую.",
-                show_alert=True
-            )
-            return
-        
-        # Отключаем флаг /start
-        await state.update_data(session_started=False)
-        
-        logger.info(f"📄 Опытная фото выбрана из FSM: {photo_id[:20]}... (user_id={user_id})")
-        
-        # ПЕРЕХОДИМ К СЛЕДУЮЩЕМУ ЭКРАНУ ПО РЕЖИМУ
-        if work_mode == WorkMode.NEW_DESIGN.value:
-            await state.set_state(CreationStates.room_choice)
-            text = ROOM_CHOICE_TEXT
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='new_design')
-            keyboard = get_room_choice_keyboard()
-            screen = 'room_choice'
-            
-        elif work_mode == WorkMode.EDIT_DESIGN.value:
-            await state.set_state(CreationStates.edit_design)
-            text = f"✏️ **Редактируем дизайн**"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='edit_design')
-            keyboard = get_edit_design_keyboard()
-            screen = 'edit_design'
-            
-        elif work_mode == WorkMode.SAMPLE_DESIGN.value:
-            await state.set_state(CreationStates.download_sample)
-            text = f"📄 **Скачать примеры**"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
-            keyboard = get_download_sample_keyboard()
-            screen = 'download_sample'
-            
-        elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
-            await state.set_state(CreationStates.uploading_furniture)
-            text = f"📋 **Расстановка мебели**"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='arrange_furniture')
-            keyboard = get_uploading_furniture_keyboard()
-            screen = 'uploading_furniture'
-            
-        elif work_mode == WorkMode.FACADE_DESIGN.value:
-            await state.set_state(CreationStates.loading_facade_sample)
-            text = f"🏠 **Дизайн фасада**"
-            text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
-            keyboard = get_loading_facade_sample_keyboard()
-            screen = 'loading_facade_sample'
-        else:
-            logger.error(f"[ERROR] Неизвестный work_mode: {work_mode}")
-            await callback.answer("❌ Неизвестный режим")
-            return
-        
-        # Отправляем меню
-        await edit_menu(
-            callback=callback,
-            state=state,
-            text=text,
-            keyboard=keyboard,
-            show_balance=False,
-            screen_code=screen
-        )
-        
-        logger.info(f"📄 Опытная фото использована, переход на {screen}")
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] use_current_photo failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
-
-
-# ⬅️ [SCREEN 3-5, EDIT, SAMPLE, FURNITURE, FACADE] ВЕРНУТЬСЯ НА ЗАГРУЗКУ ФОТО
-# ❌ УДАЛЕНО: CreationStates.post_generation из StateFilter!
-# REASON: SCREEN 6 (post_generation) обрабатывается отдельно в creation_new_design.py → new_photo_after_gen()
-@router.callback_query(
-    StateFilter(
-        CreationStates.room_choice,                    # SCREEN 3
-        CreationStates.choose_style_1,                 # SCREEN 4
-        CreationStates.choose_style_2,                 # SCREEN 5
-        CreationStates.edit_design,                    # Edit режим
-        CreationStates.download_sample,                # Sample режим
-        CreationStates.uploading_furniture,            # Furniture режим
-        CreationStates.loading_facade_sample,          # Facade режим
-        # ❌ УДАЛЕНО: CreationStates.post_generation
-    ),
-    F.data == "uploading_photo"
-)
-async def back_to_photo_upload(callback: CallbackQuery, state: FSMContext):
-    """
-    ⬅️ [SCREEN 3-5, EDIT, SAMPLE, FURNITURE, FACADE] ВЕРНУТЬСЯ НА ЗАГРУЗКУ ФОТО
-    
-    📍 ПУТЬ: [SCREEN 3+] → кнопка "⬅️ Новое фото" → [SCREEN 2: загружка фото]
-    
-    ✅ РАБОТАЕТ НА ВСЕХ ЭКРАНАХ ДИЗАЙНА, КРОМЕ SCREEN 6!
-    ❌ SCREEN 6 (post_generation) использует свой обработчик: new_photo_after_gen() в creation_new_design.py
-    
-    📍 ЛОГИКА:
-    - Переходим в CreationStates.uploading_photo
-    - Передаём has_previous_photo=True (юзер уже загружал фото!)
-    - Отключаем флаг session_started
-    """
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-
-    try:
-        data = await state.get_data()
-        work_mode = data.get('work_mode', 'new_design')
-        
-        # Отключаем флаг /start
-        await state.update_data(session_started=False)
-        
-        # КНОПКА ДОЛЖНА ПОКАЗЫВАТЬСЯ (юзер уже загружал фото!)
-        has_previous_photo = True
-        
-        await state.set_state(CreationStates.uploading_photo)
-        
-        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📄 Загрузите фото помещения")
-        
-        await edit_menu(
-            callback=callback,
-            state=state,
-            text=text,
-            keyboard=get_uploading_photo_keyboard(has_previous_photo=has_previous_photo),
-            show_balance=False,
-            screen_code='uploading_photo'
-        )
-        
-        logger.info(f"✅ [BACK_TO_PHOTO] Вернулись на загружку фото, user_id={user_id}")
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] back_to_photo_upload failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка при переходе на загружку фото", show_alert=True)
-
-
-# ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
+# ═════════════════════════════════════════════════════════════════════════════
 # 📄 [SCREEN 2] ЗАГРУЗКА ФОТО
-# ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
+# ═════════════════════════════════════════════════════════════════════════════
 
 @router.message(StateFilter(CreationStates.uploading_photo), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
@@ -531,6 +360,162 @@ async def photo_handler(message: Message, state: FSMContext):
     logger.info(f"📄 [SCREEN 2] COMPLETED - переход на {screen}")
 
 
+# 📄 ОБРАБОТЧИК КНОПКИ "ИСПОЛЬЗОВАТЬ ТЕКУЩУЮ ФОТО"
+@router.callback_query(F.data == "use_current_photo")
+async def use_current_photo(callback: CallbackQuery, state: FSMContext):
+    """
+    📄 [SCREEN 2] Использовать сохраненную фото из бд
+    
+    🔍 ПУТЬ: [SCREEN 2] → кнопка использовать → [SCREEN 3+]
+    
+    КРИТИЧНО:
+    - Получаем photo_id из FSM (НО НЕ из БД!)
+    - Обновляем состояние
+    - Отправляем К СЛЕДУЮЩЕМУ экрану
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+
+    try:
+        data = await state.get_data()
+        work_mode = data.get('work_mode')
+        photo_id = data.get('photo_id')  # ГОВОРИМ В FSM!
+        
+        if not photo_id:
+            logger.warning(f"⚠️ photo_id не найдена в FSM для user_id={user_id}")
+            await callback.answer(
+                "❌ Фото не найдена. Загрузите новую.",
+                show_alert=True
+            )
+            return
+        
+        # Отключаем флаг /start
+        await state.update_data(session_started=False)
+        
+        logger.info(f"📄 Опытная фото выбрана из FSM: {photo_id[:20]}... (user_id={user_id})")
+        
+        # ПЕРЕХОДИМ К СЛЕДУЮЩЕМУ ЭКРАНУ ПО РЕЖИМУ
+        if work_mode == WorkMode.NEW_DESIGN.value:
+            await state.set_state(CreationStates.room_choice)
+            text = ROOM_CHOICE_TEXT
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode='new_design')
+            keyboard = get_room_choice_keyboard()
+            screen = 'room_choice'
+            
+        elif work_mode == WorkMode.EDIT_DESIGN.value:
+            await state.set_state(CreationStates.edit_design)
+            text = f"✏️ **Редактируем дизайн**"
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode='edit_design')
+            keyboard = get_edit_design_keyboard()
+            screen = 'edit_design'
+            
+        elif work_mode == WorkMode.SAMPLE_DESIGN.value:
+            await state.set_state(CreationStates.download_sample)
+            text = f"📄 **Скачать примеры**"
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
+            keyboard = get_download_sample_keyboard()
+            screen = 'download_sample'
+            
+        elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
+            await state.set_state(CreationStates.uploading_furniture)
+            text = f"📋 **Расстановка мебели**"
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode='arrange_furniture')
+            keyboard = get_uploading_furniture_keyboard()
+            screen = 'uploading_furniture'
+            
+        elif work_mode == WorkMode.FACADE_DESIGN.value:
+            await state.set_state(CreationStates.loading_facade_sample)
+            text = f"🏠 **Дизайн фасада**"
+            text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
+            keyboard = get_loading_facade_sample_keyboard()
+            screen = 'loading_facade_sample'
+        else:
+            logger.error(f"[ERROR] Неизвестный work_mode: {work_mode}")
+            await callback.answer("❌ Неизвестный режим")
+            return
+        
+        # Отправляем меню
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=keyboard,
+            show_balance=False,
+            screen_code=screen
+        )
+        
+        logger.info(f"📄 Опытная фото использована, переход на {screen}")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] use_current_photo failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ⬅️ [SCREEN 3→2] ВЕРНУТЬСЯ НА ЗАГРУЗКУ ФОТО
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.callback_query(
+    StateFilter(
+        CreationStates.room_choice,                    # SCREEN 3
+        CreationStates.choose_style_1,                 # SCREEN 4
+        CreationStates.choose_style_2,                 # SCREEN 5
+        CreationStates.edit_design,                    # Edit режим
+        CreationStates.download_sample,                # Sample режим
+        CreationStates.uploading_furniture,            # Furniture режим
+        CreationStates.loading_facade_sample,          # Facade режим
+    ),
+    F.data == "uploading_photo"
+)
+async def back_to_photo_upload(callback: CallbackQuery, state: FSMContext):
+    """
+    ⬅️ [SCREEN 3-5, EDIT, SAMPLE, FURNITURE, FACADE] ВЕРНУТЬСЯ НА ЗАГРУЗКУ ФОТО
+    
+    📍 ПУТЬ: [SCREEN 3+] → кнопка "⬅️ Новое фото" → [SCREEN 2: загружка фото]
+    
+    ✅ РАБОТАЕТ НА ВСЕХ ЭКРАНАХ ДИЗАЙНА, КРОМЕ SCREEN 6!
+    ❌ SCREEN 6 (post_generation) использует свой обработчик: new_photo_after_gen() в creation_new_design.py
+    
+    📍 ЛОГИКА:
+    - Переходим в CreationStates.uploading_photo
+    - Передаём has_previous_photo=True (юзер уже загружал фото!)
+    - Отключаем флаг session_started
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+
+    try:
+        data = await state.get_data()
+        work_mode = data.get('work_mode', 'new_design')
+        
+        # Отключаем флаг /start
+        await state.update_data(session_started=False)
+        
+        # КНОПКА ДОЛЖНА ПОКАЗЫВАТЬСЯ (юзер уже загружал фото!)
+        has_previous_photo = True
+        
+        await state.set_state(CreationStates.uploading_photo)
+        
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📄 Загрузите фото помещения")
+        
+        await edit_menu(
+            callback=callback,
+            state=state,
+            text=text,
+            keyboard=get_uploading_photo_keyboard(has_previous_photo=has_previous_photo),
+            show_balance=False,
+            screen_code='uploading_photo'
+        )
+        
+        logger.info(f"✅ [BACK_TO_PHOTO] Вернулись на загружку фото, user_id={user_id}")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] back_to_photo_upload failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при переходе на загружку фото", show_alert=True)
+
+
 async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int):
     """Удалить сообщение через N секунд"""
     try:
@@ -541,9 +526,20 @@ async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay:
         logger.debug(f"⚠️ Не удалось удалить: {e}")
 
 
-# ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
-# 📋 [СТАРАЯ СИСТЕМА] что-то
-# ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
+# ═════════════════════════════════════════════════════════════════════════════
+# 🏪 [SCREEN 0] ГЛАВНОЕ МЕНЮ + СТАРАЯ СИСТЕМА
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.callback_query(F.data == "main_menu")
+async def go_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
+    """
+    🏪 [SCREEN 0] Вернуться в главное меню
+    """
+    user_id = callback.from_user.id
+    await db.log_activity(user_id, 'main_menu')
+    await show_main_menu(callback, state, admins)
+    await callback.answer()
+
 
 @router.callback_query(F.data == "create_design")
 async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
