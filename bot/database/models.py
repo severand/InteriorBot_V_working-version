@@ -1,4 +1,5 @@
 # bot/database/models.py
+# --- ОБНОВЛЕН: 2026-01-02 11:53 - НОВОЕ: Добавлена таблица user_photos для сохранения фото ---
 # --- ОБНОВЛЕН: 2025-12-27 21:45 - КРИТИЧНО: Добавлена таблица для сохранения current_mode ---
 # [2025-12-24 12:35] Добавлены поля для PRO MODE функционала ---
 # [2025-12-07 09:58] Добавлена таблица chat_menus для системы единого меню ---
@@ -82,6 +83,21 @@ CREATE TABLE IF NOT EXISTS user_activity (
     user_id INTEGER NOT NULL,
     action_type TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (user_id)
+)
+"""
+
+# ===== НОВОЕ: ТАБЛИЦА ПОСЛЕДНИХ ФОТО ПОЛЬЗОВАТЕЛЕЙ (2026-01-02) =====
+# Сохраняет photo_id (Telegram file_id) каждого пользователя
+# Используется для показа кнопки "Использовать текущую фото" на SCREEN 2
+
+CREATE_USER_PHOTOS_TABLE = """
+CREATE TABLE IF NOT EXISTS user_photos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL UNIQUE,
+    photo_id TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (user_id)
 )
 """
@@ -242,6 +258,19 @@ INCREMENT_TOTAL_GENERATIONS = "UPDATE users SET total_generations = total_genera
 LOG_USER_ACTIVITY = """
 INSERT INTO user_activity (user_id, action_type)
 VALUES (?, ?)
+"""
+
+# --- НОВОЕ: ФОТО ПОЛЬЗОВАТЕЛЕЙ (2026-01-02) ---
+SAVE_USER_PHOTO = """
+INSERT INTO user_photos (user_id, photo_id, created_at, updated_at)
+VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT(user_id) DO UPDATE SET
+    photo_id = excluded.photo_id,
+    updated_at = CURRENT_TIMESTAMP
+"""
+GET_LAST_USER_PHOTO = """
+SELECT photo_id FROM user_photos 
+WHERE user_id = ?
 """
 
 # --- 🚨 ТЕКУЩИЙ РЕЖИМ ПОЛЬЗОВАТЕЛЯ (НОВОЕ) ---

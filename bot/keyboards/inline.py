@@ -14,6 +14,13 @@
 # [2026-01-02 21:28] ↩️ REVERT: Вернул callback_data="select_mode" для 'Главное меню' кнопки в get_post_generation_keyboard()
 #                    - Было неправильное исправление select_mode → to_main_menu
 #                    - Восстановлено оригинальное значение select_mode
+# [2026-01-02 22:00] 🆕 UPDATE: get_uploading_photo_keyboard() → добавлены 2 кнопки (ДИНАМИЧЕСКИЕ)
+#                    - has_previous_photo: bool - показать ли кнопку переиспользования
+#                    - Кнопка: "📸 Использовать текущую фото" (callback_data="use_current_photo")
+#                    - Кнопка: "🏠 Главное меню" (callback_data="select_mode")
+# [2026-01-02 22:47] 🔧 FIX: Hide 'Use current photo' button on first bot start
+#                    - Only show if has_previous_photo=True (user uploaded before)
+#                    - Hide on fresh start when /start command is used
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -94,7 +101,7 @@ ROOMS_WITH_EMOJI = [
 # РЕЖИМ ПРО _ НАСТПРОЙКИ
 # --- Параметры PRO MODE ---
 ASPECT_RATIOS = ["16:9", "4:3", "1:1", "9:16"]
-RESOLUTIONS = ["1K", "2K", "4K"]
+RESolutions = ["1K", "2K", "4K"]
 
 
 
@@ -217,25 +224,58 @@ def get_work_mode_selection_keyboard() -> InlineKeyboardMarkup:
 
 # ========================================
 # SCREEN 2: UPLOADING_PHOTO - КЛАВИАТУРА
-# 🔥 [2025-12-31 12:39] ФУНКЦИЯ ВОССТАНОВЛЕНА
+# 🆕 [2026-01-02 22:00] ОБНОВЛЕНА С ДВУМЯ КНОПКАМИ
+# 🔧 [2026-01-02 22:47] ИСПРАВЛЕНА - скрываем при первом старте
 # ========================================
 
-def get_uploading_photo_keyboard() -> InlineKeyboardMarkup:
+def get_uploading_photo_keyboard(has_previous_photo: bool = False) -> InlineKeyboardMarkup:
     """
-    🔥 [2025-12-31 12:39] SCREEN 2: ПУСТАЯ КЛАВИАТУРА (БЕЗ КНОПОК)
+    🔧 [2026-01-02 22:47] SCREEN 2: ОБНОВЛЕНА ЛОГИКА КНОПОК
     
-    SCREEN 2 (uploading_photo) должен быть чистым:
-    - Только текст с инструкциями
-    - БЕЗ кнопок навигации
-    - Юзер должен загрузить фото или закрыть Telegram
-    - Нет способа вернуться назад
+    НОВОЕ:
+    - Кнопка "📸 Использовать текущую фото" - ТОЛЬКО если has_previous_photo=True
+    - Кнопка "🏠 Главное меню" - ВСЕГДА
     
-    Это сфокусирует юзера на загрузке фото.
+    Параметры:
+    - has_previous_photo: bool - есть ли сохраненная фото в БД?
     
-    Функция существует для совместимости с creation_main.py
+    ВАЖНО:
+    При первом старте бота (свежая сессия):
+    - has_previous_photo = False
+    - Показываем ТОЛЬКО "🏠 Главное меню"
+    
+    После загрузки первой фото или повторного использования:
+    - has_previous_photo = True
+    - Показываем ОБРАЯЕ кнопки:
+      * 📸 Использовать текущую фото
+      * 🏠 Главное меню
+    
+    Вызов:
+    1. [SCREEN 1→2] set_work_mode() → db.get_last_user_photo(user_id)
+    2. Передает has_previous_photo в get_uploading_photo_keyboard(has_previous_photo=...)
+    3. Клавиатура выстраивается динамически
+    
+    Обработчики callback:
+    - "use_current_photo" → use_current_photo() в creation_main.py
+    - "select_mode" → вернуться на SCREEN 1 выбора режимов
     """
-    # ✅ Возвращаем пустую клавиатуру (без кнопок)
-    return InlineKeyboardMarkup(inline_keyboard=[])
+    builder = InlineKeyboardBuilder()
+    
+    # 🔧 ТОЛЬКО если есть сохраненная фото в БД!
+    if has_previous_photo:
+        builder.row(InlineKeyboardButton(
+            text="📸 Использовать текущую фото",
+            callback_data="use_current_photo"
+        ))
+    
+    # Кнопка "Главное меню" - ВСЕГДА показываем
+    builder.row(InlineKeyboardButton(
+        text="🏠 Главное меню",
+        callback_data="select_mode"
+    ))
+    
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 
