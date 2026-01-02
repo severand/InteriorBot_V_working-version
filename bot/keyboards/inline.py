@@ -451,14 +451,14 @@ def get_edit_design_keyboard() -> InlineKeyboardMarkup:
     
     # Первый ряд
     builder.row(
-        InlineKeyboardButton(text="📁 Очистить фото", callback_data="clear_space_confirm"),
-        InlineKeyboardButton(text="📑 Ввести текст", callback_data="text_input")
+        InlineKeyboardButton(text="Очистить фото", callback_data="clear_space_confirm_keyboard"),
+        InlineKeyboardButton(text="Текстовый редактор", callback_data="text_input")
     )
     
     # Второй ряд
     builder.row(
         InlineKeyboardButton(text="⬅️ Новое фото", callback_data="uploading_photo"),
-        InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
+        InlineKeyboardButton(text="🏠 Режим работы", callback_data="select_mode")
     )
     
     builder.adjust(2, 2)
