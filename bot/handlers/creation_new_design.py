@@ -1,19 +1,3 @@
-# ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                   📋 BOT V3 - NEW_DESIGN HANDLERS                         ║
-# ║                     Управление экранами SCREEN 3-6                        ║
-# ╚═══════════════════════════════════════════════════════════════════════════╝
-#
-# 📍 МАРШРУТЫ:
-#    SCREEN 3 (room_choice) → SCREEN 4 (choose_style_1) → 
-#    SCREEN 5 (choose_style_2) → SCREEN 6 (post_generation)
-#
-# 📊 FSM STATES: CreationStates.room_choice → choose_style_1 → choose_style_2 → post_generation
-#
-# 🔥 ГЛАВНАЯ ФУНКЦИЯ: style_choice_handler() - Генерирует дизайн
-#
-# 📅 ВЕРСИЯ: 3.0
-# ════════════════════════════════════════════════════════════════════════════
-
 import asyncio
 import logging
 import html
@@ -704,6 +688,8 @@ async def new_photo_after_gen(callback: CallbackQuery, state: FSMContext):
     - РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ (не генерируем дизайн)
     - ФОТО СТАРОГО дизайна остается для истории
     - При загрузке нового фото → процесс начнется заново
+    
+    🔏 НОВОЕ (2026-01-02): Передаём has_previous_photo=True в клавиатуру!
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -723,7 +709,7 @@ async def new_photo_after_gen(callback: CallbackQuery, state: FSMContext):
             chat_id=chat_id,
             message_id=menu_message_id,
             text=text,
-            reply_markup=get_uploading_photo_keyboard(),
+            reply_markup=get_uploading_photo_keyboard(has_previous_photo=True),
             parse_mode="Markdown"
         )
         
