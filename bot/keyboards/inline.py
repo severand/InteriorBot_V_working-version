@@ -264,13 +264,13 @@ def get_uploading_photo_keyboard(has_previous_photo: bool = False) -> InlineKeyb
     # 🔧 ТОЛЬКО если есть сохраненная фото в БД!
     if has_previous_photo:
         builder.row(InlineKeyboardButton(
-            text="📸 Использовать текущую фото",
+            text="📸 Использовать текущее фото",
             callback_data="use_current_photo"
         ))
     
     # Кнопка "Главное меню" - ВСЕГДА показываем
     builder.row(InlineKeyboardButton(
-        text="🏠 Главное меню",
+        text="🏠 Выбрать режим работы",
         callback_data="select_mode"
     ))
     
