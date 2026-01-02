@@ -30,7 +30,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 
-from states.creation import CreationStates
+from states.fsm import CreationStates
 from keyboards.inline import (
     get_edit_design_keyboard,
     get_text_input_keyboard,
@@ -439,7 +439,7 @@ async def execute_clear_space(
         logger.error(f"❌ Error executing clear space: {e}", exc_info=True)
         error_text = (
             "❌ Техническая ошибка.\n\n"
-            "Пожалуйста, попробуйте позже."
+            "Пожалуйсте, попробуйте позже."
         )
         try:
             if progress_msg:
