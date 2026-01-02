@@ -144,12 +144,11 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     """
     📋 [SCREEN 1→2] Обработка выбора режима
     
-    🔍 ПУТЬ: [SCREEN 1] → выбрал режим → [SCREEN 2: загрузка фото]
+    🔍 ПУТЬ: [SCREEN 1] → выбрал режим → [SCREEN 2: загружка фото]
     
-    📄 НОВАЯ ЛОГИКА (2026-01-02 исправлено):
-    - Если photo_uploaded=True в FSM → показываем кнопку (фото уже загружено в этой сессии)
-    - Или если фото есть в БД → показываем кнопку
-    - Только при /start (state пуста) → кнопка скрыта
+    📄 КРИТИЧНАЯ ЛОГИКА (2026-01-02 МОНИОРОВАНО):
+    - Если work_mode НЕ в state (НОВАЯ сессия /start) → has_previous_photo=False (ИГНОРИРУЕМ БД!)
+    - Если work_mode УЖЕ в state (ВОЗВРАТ из работы) → проверяем FSM + БД
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -172,35 +171,42 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Неизвестный режим", show_alert=True)
             return
         
-        # 📄 НОВАЯ ЛОГИКА: Проверяем наличие фото в ТЕКУЩЕЙ СЕССИИ или в БД
+        # 📄 КРИТИЧНО: Проверяем, НОВАЯ ЛИ Это сессия
         data = await state.get_data()
+        existing_work_mode = data.get('work_mode')
         photo_uploaded_in_session = data.get('photo_uploaded', False)
         
-        # Если в этой сессии фото уже загружено → показываем кнопку
-        if photo_uploaded_in_session:
-            has_previous_photo = True
-            logger.info(f"[SCREEN 1→2] Фото загружено в этой сессии, has_previous_photo=True")
+        # Если это /start (в state нет work_mode) → НИКОГДА has_previous_photo=False
+        # ИГНОРИРУЕМ БД ПОЛНОстью!
+        if existing_work_mode is None:
+            # НОВАЯ сессия (/start) - КНОПКА НЕ ПОКАЗЫВАЕТСЯ
+            has_previous_photo = False
+            logger.info(f"[SCREEN 1→2] /start КОМАНДА (НОВАЯ сессия), has_previous_photo=False, БД ИГНОРИРУЕТСЯ")
         else:
-            # Иначе проверяем БД
-            last_photo_id = await db.get_last_user_photo(user_id)
-            has_previous_photo = last_photo_id is not None
-            if has_previous_photo:
-                logger.info(f"[SCREEN 1→2] Фото найдено в БД, has_previous_photo=True")
+            # НЕ /start, а возврат из работы - проверяем фото
+            if photo_uploaded_in_session:
+                has_previous_photo = True
+                logger.info(f"[SCREEN 1→2] Возврат из работы - фото в FSM, has_previous_photo=True")
             else:
-                logger.info(f"[SCREEN 1→2] Фото не найдено (новая сессия), has_previous_photo=False")
+                # Нет в FSM - проверяем БД
+                last_photo_id = await db.get_last_user_photo(user_id)
+                has_previous_photo = last_photo_id is not None
+                if has_previous_photo:
+                    logger.info(f"[SCREEN 1→2] Возврат из работы - фото в БД, has_previous_photo=True")
+                else:
+                    logger.info(f"[SCREEN 1→2] Нет фото, has_previous_photo=False")
         
         logger.info(f"[SCREEN 1→2] Режим {work_mode.value}, has_previous_photo={has_previous_photo}, user_id={user_id}")
         
         await state.update_data(
             work_mode=work_mode.value,
-            photo_uploaded=photo_uploaded_in_session,  # Сохраняем статус загрузки в этой сессии
+            photo_uploaded=photo_uploaded_in_session,
             has_previous_photo=has_previous_photo
         )
         await state.set_state(CreationStates.uploading_photo)
         
-        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загрузка фото")
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загружка фото")
         
-        # Передаём флаг в клавиатуру
         await edit_menu(
             callback=callback,
             state=state,
@@ -336,7 +342,7 @@ async def back_to_photo_upload(callback: CallbackQuery, state: FSMContext):
     """
     ⬅️ [SCREEN 3-5, EDIT, SAMPLE, FURNITURE, FACADE] ВЕРНУТЬСЯ НА ЗАГРУЗКУ ФОТО
     
-    📍 ПУТЬ: [SCREEN 3+] → кнопка "⬅️ Новое фото" → [SCREEN 2: загрузка фото]
+    📍 ПУТЬ: [SCREEN 3+] → кнопка "⬅️ Новое фото" → [SCREEN 2: загружка фото]
     
     ✅ РАБОТАЕТ НА ВСЕХ ЭКРАНАХ ДИЗАЙНА, КРОМЕ SCREEN 6!
     ❌ SCREEN 6 (post_generation) использует свой обработчик: new_photo_after_gen() в creation_new_design.py
@@ -390,7 +396,7 @@ async def photo_handler(message: Message, state: FSMContext):
     """
     📄 [SCREEN 2] Обработка загрузки фото
     
-    🔍 ПУТЬ: [SCREEN 2] → загрузка фото → [SCREEN 3+] (в зависимости от режима)
+    🔍 ПУТЬ: [SCREEN 2] → загружка фото → [SCREEN 3+] (в зависимости от режима)
     
     📀 ЛОГИКА:
     1. Если альбом → собрать, удалить все, выйти
