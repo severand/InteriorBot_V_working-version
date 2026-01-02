@@ -98,7 +98,7 @@ ROOMS_WITH_EMOJI = [
 # РЕЖИМ ПРО _ НАСТПРОЙКИ
 # --- Параметры PRO MODE ---
 ASPECT_RATIOS = ["16:9", "4:3", "1:1", "9:16"]
-RESO LUTIONS = ["1K", "2K", "4K"]
+RESOLUTIONS = ["1K", "2K", "4K"]
 
 
 
