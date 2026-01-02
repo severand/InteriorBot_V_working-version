@@ -31,6 +31,7 @@ from utils.texts import (
     UPLOAD_PHOTO_TEXT,
     WHAT_IS_IN_PHOTO_TEXT,
     ERROR_INSUFFICIENT_BALANCE,
+    ROOM_CHOICE_TEXT,
 )
 
 from utils.helpers import add_balance_and_mode_to_text
@@ -265,7 +266,7 @@ async def use_current_photo(callback: CallbackQuery, state: FSMContext):
         # ПЕРЕХОДИМ К СЛЕДУЮЩЕМУ ЭКРАНУ ПО РЕЖИМУ
         if work_mode == WorkMode.NEW_DESIGN.value:
             await state.set_state(CreationStates.room_choice)
-            text = f"🏠 **Выберите комнату**"
+            text = ROOM_CHOICE_TEXT
             text = await add_balance_and_mode_to_text(text, user_id, work_mode='new_design')
             keyboard = get_room_choice_keyboard()
             screen = 'room_choice'
@@ -479,7 +480,7 @@ async def photo_handler(message: Message, state: FSMContext):
     # ПЕРЕХОДИМ К СЛЕДУЮЩЕМУ ЭКРАНУ ПО РЕЖИМУ
     if work_mode == WorkMode.NEW_DESIGN.value:
         await state.set_state(CreationStates.room_choice)
-        text = f"🏠 **Выберите комнату**"
+        text = ROOM_CHOICE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='new_design')
         keyboard = get_room_choice_keyboard()
         screen = 'room_choice'
