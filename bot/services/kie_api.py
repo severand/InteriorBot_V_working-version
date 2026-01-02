@@ -1,7 +1,7 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.5 (2025-12-30 10:36) - REVERT HOTFIX SSL
+# ВЕРСИЯ: 3.6 (2026-01-02 20:55) - CRITICAL FIX: Убрать контекст scene_type в text editor
 # АВТОР: Project Owner
 # https://docs.kie.ai/market/google/nano-banana
 # https://docs.kie.ai/market/google/nano-banana-edit
@@ -12,6 +12,7 @@
 # [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт translate_to_english в начало файла
 # [2025-12-24 08:18] ДОБАВЛЕНО: Поддержка KIE.AI PRO режима (nano-banana-pro)
 # [2025-12-30 10:36] 🔙 REVERT: Отменить HOTFIX SSL проверку (проблема была в VPN, не в коде)
+# [2026-01-02 20:55] 🔥 CRITICAL FIX: В текстовом редакторе отправлять ТОЛЬКО user_prompt БЕЗ добавления контекста
 
 import os
 import logging
@@ -491,17 +492,18 @@ async def generate_interior_with_text_nano_banana(
     [2025-12-23 23:02] ДОБАВЛЕНО: Новая функция для поддержки текстовых промптов
     [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт в начало файла
     [НОВОЕ 2025-12-24] ДОБАВЛена поддержка PRO режима
+    [2026-01-02 20:55] 🔥 CRITICAL FIX: Отправлять ТОЛЬКО user_prompt БЕЗ добавления контекста
     
     Используется для:
-    - "Другого помещения"
-    - Экстерьера (дом, участок)
-    - Любого кастомного текстового введения
+    - ТЕКСТОВЫЙ РЕДАКТОР (edit_design режим) - ТОЛЬКО user_prompt!
+    - "Другого помещения" - с контекстом scene_type
+    - Экстерьера (дом, участок) - с контекстом scene_type
     
     Args:
         photo_file_id: ID фото из Telegram
         user_prompt: Текстовый промпт от пользователя (ВАЖНО!)
         bot_token: Токен бота Telegram
-        scene_type: Тип сцены (house_exterior, plot_exterior, other_room, custom)
+        scene_type: Тип сцены (НЕ используется в текстовом редакторе!)
         use_pro: Использовать PRO режим [НОВОЕ 2025-12-24]
     
     Returns:
@@ -509,7 +511,6 @@ async def generate_interior_with_text_nano_banana(
     """
     logger.info("="*70)
     logger.info("✍️  ГЕНЕРАЦИЯ С ТЕКСТОВЫМ ПРОМПТОМ [NANO BANANA via Kie.ai]")
-    logger.info(f"   Сцена: {scene_type}")
     logger.info(f"   Пользовательский промпт: {user_prompt[:100]}...")
     logger.info("="*70)
 
@@ -530,11 +531,14 @@ async def generate_interior_with_text_nano_banana(
             logger.warning(f"⚠️  Не удалось перевести, используем оригинальный: {translate_error}")
             english_prompt = user_prompt
 
-        # Добавляем контекст генерации к промпту
-        full_prompt = f"Create a photorealistic {scene_type} design based on the user's request: {english_prompt}"
+        # [2026-01-02 20:55] 🔥 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ:
+        # Отправляем ТОЛЬКО пользовательский промпт БЕЗ добавления контекста!
+        # Ранее было: f"Create a photorealistic {scene_type} design based on the user's request: {english_prompt}"
+        # Теперь: просто english_prompt
+        final_prompt = english_prompt
         
-        logger.info(f"📄 Полный промпт для KIE.AI:")
-        logger.info(f"   {full_prompt}")
+        logger.info(f"📄 Финальный промпт для KIE.AI (БЕЗ контекста):")
+        logger.info(f"   {final_prompt}")
 
         # [НОВОЕ 2025-12-24] Передать режим PRO в клиент
         use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
@@ -542,7 +546,7 @@ async def generate_interior_with_text_nano_banana(
         client = NanoBananaClient(use_pro=use_pro_mode)
         result = await client.edit_image(
             image_urls=[image_url],
-            prompt=full_prompt,
+            prompt=final_prompt,  # ✅ ТОЛЬКО пользовательский промпт!
             output_format="png",
             image_size="auto",
             use_pro=use_pro_mode,  # [НОВОЕ 2025-12-24]
