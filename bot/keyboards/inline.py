@@ -1,7 +1,32 @@
 # keyboards/inline.py
+# Дата объединения: 05.12.2025
+# --- ОБНОВЛЕН: 2026-01-02 17:30 ---
+# [2026-01-02 17:30] 🔧 FIX: Добавлена отсутствующая функция get_room_keyboard() для совместимости
+# [2026-01-02 17:18] 🔧 REFACTOR: Переформатирование по порядку SCREEN'ов (SCREEN 0-18)
+# [2025-12-30 23:45] ИСПРАВЛЕНИЕ: РАЗДЕЛЕНЫ SCREEN 0 и SCREEN 1 согласно QUICK-REFERENCE.md
+# [2025-12-30 23:45] НОВАЯ: get_main_menu_keyboard() для SCREEN 0 (3 кнопки)
+# [2025-12-30 23:45] ПЕРЕИМЕНОВАНА: get_work_mode_selection_keyboard() → get_mode_selection_keyboard()
+# [2025-12-30 15:20] 🔧 CRITICAL FIX: get_mode_selection_keyboard(current_mode_is_pro) → get_pro_mode_selection_keyboard()
+#                    - Удален конфликт имён
+#                    - Теперь get_work_mode_selection_keyboard() вызывает правильную функцию
+# [2025-12-31 12:36] 🔥 CRITICAL: Remove back button from SCREEN 2
+#                    - get_uploading_photo_keyboard() now has NO buttons
+#                    - User must upload photo to proceed
+# [2025-12-31 12:39] 🔧 RESTORE: Function still needed for compatibility
+# [2026-01-02 21:28] ↩️ REVERT: Вернул callback_data="select_mode" для 'Главное меню' кнопки в get_post_generation_keyboard()
+#                    - Было неправильное исправление select_mode → to_main_menu
+#                    - Восстановлено оригинальное значение select_mode
+# [2026-01-02 22:00] 🆕 UPDATE: get_uploading_photo_keyboard() → добавлены 2 кнопки (ДИНАМИЧЕСКИЕ)
+#                    - has_previous_photo: bool - показать ли кнопку переиспользования
+#                    - Кнопка: "📸 Использовать текущую фото" (callback_data="use_current_photo")
+#                    - Кнопка: "🏠 Главное меню" (callback_data="select_mode")
+# [2026-01-02 22:47] 🔧 FIX: Hide 'Use current photo' button on first bot start
+#                    - Only show if has_previous_photo=True (user uploaded before)
+#                    - Hide on fresh start when /start command is used
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
+
 
 
 # --- Настройки пакетов для покупки ---
@@ -254,6 +279,33 @@ def get_uploading_photo_keyboard(has_previous_photo: bool = False) -> InlineKeyb
     builder.adjust(1)
     return builder.as_markup()
 
+
+# ========================================
+# [LEGACY] get_room_keyboard() - ДЛЯ СОВМЕСТИМОСТИ
+# Используется в creation_exterior_interior.py
+# ========================================
+
+def get_room_keyboard() -> InlineKeyboardMarkup:
+    """
+    🔧 [2026-01-02 17:30] ВОССТАНОВЛЕНА ДЛЯ СОВМЕСТИМОСТИ
+    
+    Старая функция выбора комнаты после генерации или очистки
+    Используется в legacy обработчике creation_exterior_interior.py
+    
+    ВНИМАНИЕ: Это устаревшая функция!
+    В новой архитектуре используйте get_room_choice_keyboard()
+    """
+    builder = InlineKeyboardBuilder()
+
+    # ЗАКОММЕНТИРОВАНО 2025-12-08 согласно ТЗ:
+    #builder.row(InlineKeyboardButton(text="🧭 Очистить пространство", callback_data="clear_space_confirm"))
+
+    # Комнаты
+    for key, text in ROOM_TYPES.items():
+        builder.row(InlineKeyboardButton(text=text, callback_data=f"room_{key}"))
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode"))
+    builder.adjust(2)
+    return builder.as_markup()
 
 
 # ========================================
