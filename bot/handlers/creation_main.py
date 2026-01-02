@@ -146,7 +146,10 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     
     🔍 ПУТЬ: [SCREEN 1] → выбрал режим → [SCREEN 2: загрузка фото]
     
-    📄 НОВОЕ (2026-01-02): Проверяем в БД есть ли последняя фото
+    📄 КРИТИЧНО (2026-01-02): 
+    - При выборе режима с SCREEN 1 → has_previous_photo = False
+    - Кнопка "Использовать текущую" НЕ показывается
+    - Это происходит при КАЖДОМ нажатии кнопки режима, даже при /start
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -169,11 +172,11 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Неизвестный режим", show_alert=True)
             return
         
-        # 📄 НОВОЕ: Проверяем опытную фото в БД
-        last_photo_id = await db.get_last_user_photo(user_id)
-        has_previous_photo = last_photo_id is not None
+        # 🔴 КРИТИЧНО: При выборе режима ВСЕГДА has_previous_photo = False!
+        # Это скроет кнопку "Использовать текущую фото"
+        has_previous_photo = False
         
-        logger.info(f"[SCREEN 1→2] Режим {work_mode.value}, фото в БД: {has_previous_photo}, user_id={user_id}")
+        logger.info(f"[SCREEN 1→2] Режим {work_mode.value}, has_previous_photo={has_previous_photo}, user_id={user_id}")
         
         await state.update_data(
             work_mode=work_mode.value,
@@ -184,7 +187,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         
         text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загрузка фото")
         
-        # 📄 НОВОЕ: Передаём флаг в клавиатуру
+        # Передаём has_previous_photo=False - кнопка не будет показана!
         await edit_menu(
             callback=callback,
             state=state,
@@ -340,6 +343,7 @@ async def back_to_photo_upload(callback: CallbackQuery, state: FSMContext):
         work_mode = data.get('work_mode', 'new_design')
         
         # КРИТИЧНО: Юзер уже загружал фото, чтобы попасть на SCREEN 3+
+        # Поэтому has_previous_photo = True - показываем обе кнопки
         has_previous_photo = True
         
         await state.set_state(CreationStates.uploading_photo)
