@@ -43,7 +43,7 @@ from services.api_fallback import (
     smart_generate_with_text,
     smart_clear_space,
 )
-from services.prompts import build_design_prompt
+from services.design_styles import get_room_name
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -134,24 +134,20 @@ async def receive_text_prompt(
     """
     SCREEN 7: Получить текстовый промпт и СРАЗУ отправить в модель
     
+    [2026-01-02 20:50] ИСПРАВЛЕНО: Отправляем ТОЛЬКО пользовательский текст!
+    
     Логика:
     1. Валидация текста (минимум 3 символа)
-    2. Сохраняем текст в промпт (НЕ в additional_text!)
-    3. Получаем текущие параметры дизайна (фото, room_type, style_type)
-    4. Собираем полный промпт = base_prompt + user_text
-    5. Вызываем API: smart_generate_with_text()
-    6. Отправляем новое фото
-    7. Сохраняем новый photo_id
-    8. ОЧИЩАЕМ дополнительный текст (additional_text)
-    9. Возвращаемся на SCREEN 8
+    2. Получаем текущие параметры дизайна (фото, room_type, style_type)
+    3. ОТПРАВЛЯЕМ ТОЛЬКО user_text в smart_generate_with_text()
+    4. Функция kie_api.py сама добавит контекст "Create a photorealistic living_room..."
+    5. Отправляем новое фото
+    6. Сохраняем новый photo_id
+    7. Возвращаемся на SCREEN 8
     
-    [2026-01-02 20:45] ИСПРАВЛЕНО: 
-    ✅ Очистка additional_text после отправки в API
-    ✅ Каждый ввод начинается с чистого листа
-    ✅ Нет накопления текста между вводами
-    
-    ❌ НЕ повторяем ввод
-    ✅ ОДИН ввод = ОДИН API вызов
+    ✅ smart_generate_with_text() УЖЕ имеет логику добавления контекста
+    ✅ БОЛЬШЕ НЕ нужно добавлять base_prompt вручную
+    ✅ Передаем ТОЛЬКО пользовательское пожелание
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -198,25 +194,23 @@ async def receive_text_prompt(
         progress_msg = await message.answer("⏳ **Применяю ваше описание...** ")
     
     try:
-        # ШАГ 4: Собираем полный промпт
-        # [2026-01-02 20:45] ИСПРАВЛЕНО: Используем ТОЛЬКО user_text, не additional_text!
-        base_prompt = await build_design_prompt(style_type, room_type, translate=True)
-        full_prompt = f"{base_prompt}\n\nДополнительные пожелания клиента:\n{user_text}"
-        
+        # [2026-01-02 20:50] ИСПРАВЛЕНО: Отправляем ТОЛЬКО user_text!
+        # smart_generate_with_text() сама позаботится о контексте генерации
         logger.info(f"🎨 [USER {user_id}] Text editing started")
         logger.info(f"   Room: {room_type} | Style: {style_type}")
-        logger.info(f"   Custom text: {user_text[:50]}...")
+        logger.info(f"   User text: {user_text[:50]}...")
+        logger.info(f"   ✅ Отправляем ТОЛЬКО пользовательский текст (без base_prompt)")
         
-        # ШАГ 5: Вызываем API
+        # ШАГ 4: Вызываем API с ТОЛЬКО пользовательским текстом
         result_image_url = await smart_generate_with_text(
             photo_file_id=photo_id,
-            user_prompt=full_prompt,
+            user_prompt=user_text,  # ✅ ТОЛЬКО ЭТО! БЕЗ base_prompt!
             bot_token=bot_token,
-            scene_type=room_type,
+            scene_type=room_type,  # Передаем room_type как scene_type
             use_pro=use_pro
         )
         
-        # ШАГ 6: Отправляем новое фото
+        # ШАГ 5: Отправляем новое фото
         if result_image_url:
             # Удаляем прогресс-сообщение
             try:
@@ -234,20 +228,16 @@ async def receive_text_prompt(
                 caption="✨ **Дизайн обновлен с учетом ваших пожеланий!**"
             )
             
-            # ШАГ 7: Сохраняем новый photo_id
+            # ШАГ 6: Сохраняем новый photo_id
             new_file_id = sent_photo.photo[-1].file_id
             await state.update_data(photo_id=new_file_id)
             
             logger.info(f"✅ [USER {user_id}] Text design updated successfully")
             
-            # [2026-01-02 20:45] ИСПРАВЛЕНО: ОЧИЩАЕМ additional_text!
-            await state.update_data(additional_text='')
-            logger.info(f"🧹 [USER {user_id}] Cleared additional_text for next input")
-            
             # Небольшая пауза для лучшего UX
             await asyncio.sleep(1)
             
-            # ШАГ 8: Возвращаемся на SCREEN 8
+            # ШАГ 7: Возвращаемся на SCREEN 8
             await state.set_state(CreationStates.edit_design)
             menu_msg = await message.answer(
                 text=EDIT_DESIGN_MENU_TEXT,
@@ -303,14 +293,8 @@ async def back_from_text_input(callback: CallbackQuery, state: FSMContext):
     
     Пользователь может передумать и вернуться на меню редактирования,
     не отправляя описание в модель.
-    
-    [2026-01-02 20:45] ДОБАВЛЕНО: Очистка additional_text при возврате
     """
     await callback.answer()
-    
-    # [2026-01-02 20:45] НОВОЕ: Очищаем дополнительный текст при возврате
-    await state.update_data(additional_text='')
-    logger.info(f"🧹 [USER {callback.from_user.id}] Cleared additional_text on back")
     
     # Перейти обратно в режим edit_design
     await state.set_state(CreationStates.edit_design)
