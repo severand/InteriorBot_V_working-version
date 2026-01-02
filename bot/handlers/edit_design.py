@@ -1,3 +1,4 @@
+
 # ========================================
 # bot/handlers/edit_design.py
 # EDIT_DESIGN MODE HANDLERS
@@ -223,10 +224,10 @@ async def receive_text_prompt(
             except Exception as e:
                 logger.debug(f"Could not delete progress message: {e}")
             
-            # Отправить новое фото
+            # Отправить новое фото с обновленным caption
             sent_photo = await message.answer_photo(
                 photo=result_image_url,
-                caption="✨ **Дизайн обновлен с учетом ваших пожеланий!**"
+                caption=f"✨ **Дизайн обновлен с учетом ваших пожеланий!**\n\nВаше задание - {user_text}"
             )
             
             # ШАГ 6: Сохраняем новый photo_id
