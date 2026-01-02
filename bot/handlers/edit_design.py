@@ -30,6 +30,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 
+from database.db import db
 from states.fsm import CreationStates
 from keyboards.inline import (
     get_edit_design_keyboard,
@@ -244,6 +245,7 @@ async def receive_text_prompt(
                 reply_markup=get_edit_design_keyboard()
             )
             await state.update_data(menu_message_id=menu_msg.message_id)
+            await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'edit_design')
         else:
             logger.error(f"❌ [USER {user_id}] Text design generation failed")
             error_text = (
@@ -411,6 +413,7 @@ async def execute_clear_space(
                 reply_markup=get_edit_design_keyboard()
             )
             await state.update_data(menu_message_id=menu_msg.message_id)
+            await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'edit_design')
         else:
             logger.error(f"❌ [USER {user_id}] Clear space API failed")
             error_text = (
