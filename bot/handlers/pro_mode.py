@@ -33,6 +33,11 @@ PHASE 3 TASK 10: ИСПРАВЛЕНЫ FSM STATES (2025-12-24 20:41)
 - ✅ Остаемся в ProModeStates.choosing_mode при переключении режимов
 - ✅ state.set_state(None) вызываем ТОЛЬКО при выходе в профиль
 - ✅ Это позволяет повторно нажимать кнопки СТАНДАРТ и PRO
+
+[2026-01-02 15:34] STANDARDIZED edit_menu USAGE:
+- Added add_balance_and_mode_to_text() to all 3 edit_menu calls
+- Changed show_balance=True to show_balance=False (consistent with other modules)
+- Ensures uniform footer display across entire bot
 """
 
 from aiogram import Router, F
@@ -46,6 +51,7 @@ from keyboards.inline import (
     get_pro_params_keyboard
 )
 from utils.navigation import edit_menu
+from utils.helpers import add_balance_and_mode_to_text
 from database.db import db
 from config import logger
 
@@ -99,6 +105,9 @@ async def show_mode_selection(callback: CallbackQuery, state: FSMContext):
 • Выбирайте разрешение: 1K, 2K, 4K
 """
         
+        # 🔥 [2026-01-02] FIX: Add balance and mode to text BEFORE edit_menu()
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode='profile_settings')
+        
         # 5. Редактируем меню через edit_menu()
         await edit_menu(
             callback=callback,
@@ -107,7 +116,7 @@ async def show_mode_selection(callback: CallbackQuery, state: FSMContext):
             keyboard=get_mode_selection_keyboard(
                 current_mode_is_pro=current_mode_is_pro
             ),
-            show_balance=True,
+            show_balance=False,  # 🔥 Changed from True to False
             screen_code='profile_settings'
         )
         
@@ -156,13 +165,16 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
 
 При создании дизайна будут использоваться эти параметры."""
         
+        # 🔥 [2026-01-02] FIX: Add balance and mode to text BEFORE edit_menu()
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode='profile_settings')
+        
         # Редактируем меню
         await edit_menu(
             callback=callback,
             state=state,
             text=text,
             keyboard=get_mode_selection_keyboard(current_mode_is_pro=False),
-            show_balance=True,
+            show_balance=False,  # 🔥 Changed from True to False
             screen_code='profile_settings'
         )
         
@@ -432,6 +444,9 @@ async def back_to_mode_selection(callback: CallbackQuery, state: FSMContext):
 • Выбирайте разрешение: 1K, 2K, 4K
 """
         
+        # 🔥 [2026-01-02] FIX: Add balance and mode to text BEFORE edit_menu()
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode='profile_settings')
+        
         # 5. Редактируем меню
         await edit_menu(
             callback=callback,
@@ -440,7 +455,7 @@ async def back_to_mode_selection(callback: CallbackQuery, state: FSMContext):
             keyboard=get_mode_selection_keyboard(
                 current_mode_is_pro=current_mode_is_pro
             ),
-            show_balance=True,
+            show_balance=False,  # 🔥 Changed from True to False
             screen_code='profile_settings'
         )
         
