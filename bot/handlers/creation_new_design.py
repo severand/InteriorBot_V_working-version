@@ -120,6 +120,7 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
                 state=state,
                 text=text,
                 keyboard=get_room_choice_keyboard(),
+                show_balance=False,
                 screen_code='room_choice'
             )
             
@@ -189,6 +190,7 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
                 state=state,
                 text=text,
                 keyboard=get_choose_style_1_keyboard(),
+                show_balance=False,
                 screen_code='choose_style_1'
             )
             
@@ -248,6 +250,7 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
                 state=state,
                 text=text,
                 keyboard=get_choose_style_1_keyboard(),
+                show_balance=False,
                 screen_code='choose_style_1'
             )
         
@@ -304,6 +307,7 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
                 state=state,
                 text=text,
                 keyboard=get_choose_style_2_keyboard(),
+                show_balance=False,
                 screen_code='choose_style_2'
             )
         
@@ -385,6 +389,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                 state=state,
                 text=ERROR_INSUFFICIENT_BALANCE,
                 keyboard=get_payment_keyboard(),
+                show_balance=False,
                 screen_code='no_balance'
             )
             return
@@ -608,7 +613,6 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             text="❌ Ошибка генерации. Баланс возвращен. Попробуйте еще раз.",
             parse_mode="Markdown"
         )
-
 
 
 
