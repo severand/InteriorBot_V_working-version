@@ -11,6 +11,7 @@ from database.db import db
 from keyboards.inline import get_generation_try_on_keyboard
 from states.fsm import CreationStates
 from utils.helpers import add_balance_and_mode_to_text
+from utils.texts import GENERATION_TRY_ON_TEXT  # 🔧 [2026-01-03] НОВОЕ
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -31,16 +32,17 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
 
     📍 ПУТЬ: [SCREEN 10: download_sample] → "🎨 Примерить дизайн" → [SCREEN 11: generation_try_on]
 
-    🔧 [2026-01-03] ИСПРАВЛЕНО:
-    - Редактирует ТЕКУЩЕЕ сообщение SCREEN 10 (не создаёт новое!)
-    - Отправляет клавиатуру SCREEN 11
-    - Сохраняет menu_message_id в БД
+    🔧 [2026-01-03] ОСНОВНОЕ:
+    - ТЕКСТ из texts.py: GENERATION_TRY_ON_TEXT
+    - КЛАВИАТУРА из inline.py: get_generation_try_on_keyboard()
+    - РЕДАКТИРУЕМ текущее сообщение
 
     📋 АЛГОРИТМ:
     1️⃣ Получаем данные из FSM
     2️⃣ Переходим в состояние generation_try_on
-    3️⃣ РЕДАКТИРУЕМ текущее сообщение на экран 11
-    4️⃣ Сохраняем menu_message_id в БД
+    3️⃣ Получаем текст с балансом и режимом
+    4️⃣ РЕДАКТИРУЕМ текущее сообщение
+    5️⃣ Сохраняем menu_message_id в БД
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -54,9 +56,9 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         # ✅ Переходим на SCREEN 11
         await state.set_state(CreationStates.generation_try_on)
 
-        # 📝 Текст экрана 11
+        # 📝 Получаем текст из texts.py и добавляем баланс/режим
         balance_text = await add_balance_and_mode_to_text(
-            "🎨 **Примерить дизайн**\n\nКликните кнопку ниже для генерации примерки:",
+            GENERATION_TRY_ON_TEXT,
             user_id,
             work_mode='sample_design'
         )
@@ -68,7 +70,7 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             parse_mode="Markdown"
         )
 
-        # 📋 Сохраняем в БД (message_id остаётся прежним)
+        # 📋 Сохраняем в БД (message_id остается прежним)
         await db.save_chat_menu(
             chat_id,
             user_id,
