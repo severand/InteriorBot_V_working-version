@@ -51,7 +51,7 @@ from database.models import (
     # Единое меню (НОВОЕ)
     SAVE_CHAT_MENU, GET_CHAT_MENU, DELETE_CHAT_MENU,  # ← НОВАЯ СТРОКА
     # ФОТО (НОВОЕ) - 🔧 ОБНОВЛЕНО 2026-01-03
-    SAVE_USER_PHOTO, GET_LAST_USER_PHOTO, SAVE_PHOTO_ID, SAVE_SAMPLE_PHOTO, GET_USER_PHOTOS,  # ← НОВОЕ (2026-01-02)
+    SAVE_USER_PHOTO, GET_LAST_USER_PHOTO, SAVE_SAMPLE_PHOTO, GET_USER_PHOTOS,  # ← НОВОЕ (2026-01-02)
     # PRO MODE (НОВОЕ)
     GET_USER_PRO_SETTINGS, SET_USER_PRO_MODE, SET_PRO_ASPECT_RATIO, SET_PRO_RESOLUTION  # ← НОВАЯ СТРОКА
 )
