@@ -53,7 +53,8 @@ MODELS = {
 }
 
 # [2026-01-02 21:04] ✨ ПРЕФИКС ДЛЯ ТЕКСТОВОГО РЕДАКТОРА
-TEXT_EDITOR_PROMPT_PREFIX = "Create ultra-photorealistic image. Apply the following prompt: "
+#TEXT_EDITOR_PROMPT_PREFIX = "Create ultra-photorealistic image. Apply the following prompt: "
+TEXT_EDITOR_PROMPT_PREFIX = "Create an ultra-photorealistic image just like you'd find in a glossy magazine, preserving all the details and settings of the original photo. Follow the next prompt: "
 
 
 class KieApiClient:
