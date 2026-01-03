@@ -19,7 +19,7 @@ router = Router()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 🎁 [SCREEN 10] ЗАГРУЗКА ОБРАЗЦА ФОТО (SAMPLE_DESIGN)
-# 🔧 [2026-01-03] ДОБАВЛЕН ОБРАБОТЧИК ДЛЯ ЗАГРУЗКИ ВТОРОГО ФОТО!
+# 🔧 [2026-01-03 17:51] КРИТИЧНО: ДОБАВЛЕНО СОХРАНЕНИЕ ОБРАЗЦА В БД!
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.message(StateFilter(CreationStates.download_sample), F.photo)
@@ -29,9 +29,11 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
     
     📍 ПУТЬ: [SCREEN 10: download_sample] → загружка фото образца → [SCREEN 11: generation_try_on]
     
-    🔧 [2026-01-03] ИСПРАВЛЕНИЕ:
-    - Добавлен обработчик для загрузки образца в состояние download_sample
-    - После загрузки → переход на SCREEN 11 с кнопкой "🎨 Примерить дизайн"
+    🔧 [2026-01-03 17:51] КРИТИЧНО:
+    - Образец сохраняется в FSM (для текущей сессии)
+    - Образец сохраняется в БД (для повторного использования)
+    - Может заменяться многократно
+    - Основное фото (main_photo_id) НЕ трогается
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -43,13 +45,17 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
         work_mode = data.get('work_mode')
         photo_id = message.photo[-1].file_id
         
-        # 🎯 Сохраняем photo_id образца в FSM (второе фото для примерки)
+        # 🎯 Сохраняем photo_id образца В ДВУХ МЕСТАХ:
+        # 1️⃣ В FSM (для текущей сессии)
         await state.update_data(
             sample_photo_id=photo_id,  # ОБРАЗЕЦ фото
             session_started=False
         )
+        logger.info(f"📄 [FSM] Образец фото сохранено в FSM: {photo_id[:30]}...")
         
-        logger.info(f"🎁 [SCREEN 10] Образец фото сохранено в FSM: {photo_id[:30]}...")
+        # 2️⃣ В БД (sample_photo_id для повторного использования) - ⭐ НОВОЕ
+        await db.save_sample_photo(user_id, photo_id)
+        logger.info(f"📄 [БД] Образец фото сохранено в user_photos.sample_photo_id")
         
         # Удаляем старое меню (SCREEN 10)
         old_menu_data = await db.get_chat_menu(chat_id)
