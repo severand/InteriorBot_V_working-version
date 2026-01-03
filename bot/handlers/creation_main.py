@@ -325,7 +325,7 @@ async def photo_handler(message: Message, state: FSMContext):
         
     elif work_mode == WorkMode.SAMPLE_DESIGN.value:
         await state.set_state(CreationStates.download_sample)
-        text = f"📄 **Скачать примеры**"
+        text = f"📄 **Загрузите образец дизайна**"
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
         keyboard = get_download_sample_keyboard()
         screen = 'download_sample'
