@@ -126,8 +126,8 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
-# 🔧 [2026-01-03 20:02] КРИТИЧНО FIX: СОХРАНАЕМ ONLY фото, МЕНЮ НЕ сохраняем
-# РЕЗУЛЬТАТ: ФОТО ОСТАНЕТСЯ, МЕНЮ УДАЛИТСЯ ПРИ ПЕРЕЗАГРУЗКЕ
+# 🔧 [2026-01-03 20:08] КРИТИЧНО FIX: СОХРАНАЕМ ОБЕ ID (ФОТО + МЕНЮ) В FSM & ДБ
+# РЕЗУЛЬТАТ: Стандартные месседжи по всему проекту, ничего не делаем
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(
@@ -138,14 +138,13 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
     """
     🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
 
-    📍 ПУТЬ: [SCREEN 11: generation_try_on] → Кнопка → [SCREEN 12]
+    📍 ПУТЬ: [SCREEN 11] → Кнопка → [SCREEN 12: ФОТО + МЕНЮ]
 
-    🔧 [2026-01-03 20:02] КРИТИЧНО FIX:
-    - Отправляем ФОТО без кнопок (caption только)
-    - Отправляем ОТДЕЛЬНОЕ меню с кнопками
-    - СОХРАНАЕМ В ДБ ТОЛЬКО месаж с ФОТО!
-    - Меню НЕ сохраняем в дб!
-    - При перезагрузке: ФОТО ОСТАНЕТсЯ, меню удалится (тк normal telegram behavior)
+    🔧 [2026-01-03 20:08] КРИТИЧНО:
+    - Отправляем ФОТО с caption
+    - Отправляем SCREEN 12 МЕНЮ с КНОПКАМИ
+    - СОХРАНАЕМ ОБЕ ID В FSM & ДБ (as per project standard)
+    - НИЧЕГО НЕ УДАЛАЕМ! ТЕЛЕГРАМ САМ Поставит Отметку дали
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -206,7 +205,6 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             
             if main_photo_id:
                 logger.info(f"   ✅ FSM: photo_id найден (FALLBACK): {main_photo_id[:40]}...")
-                logger.warning(f"   ⚠️  ВНИМАНИЕ: Используется photo_id из FSM (не из БД!)")
             else:
                 logger.error(f"   ❌ FSM: photo_id ОТСУТСТВУЕТ")
         else:
@@ -219,13 +217,12 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             logger.info(f"   ✅ ОСНОВНОЕ ФОТО НАЙДЕНО (источник: {source})")
             logger.info(f"      {main_photo_id[:40]}...")
         else:
-            logger.error(f"   ❌ ОСНОВНОЕ ФОТО НЕ НАЙДЕНО НИ В БД НИ В FSM")
+            logger.error(f"   ❌ ОСНОВНОЕ ФОТО НЕ НАЙДЕНО")
         
         logger.info(f"\n✅ ОБРАЗЕЦ ФОТО: {sample_photo_id[:40]}...")
         logger.info(f"═" * 80)
         
         if not main_photo_id:
-            logger.error("❌ Основное фото не найдено в БД")
             await callback.answer(
                 "❌ Ошибка: основное фото не найдено. Загрузите фото комнаты еще раз.",
                 show_alert=True
@@ -239,7 +236,7 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         # ⏳ ПОКАЗЫВАЕМ СООБЩЕНИЕ О ГЕНЕРАЦИИ
         await callback.answer("⏳ Подождите... генерируем примерку", show_alert=False)
         
-        # 🔄 РЕДАКТИРУЕМ МЕНЮ НА "ГЕНЕРИРУЮ"
+        # 🔄 РЕДАКТИРУЕМ МЕНЮ На "ГЕНЕРИРУю"
         menu_message_id = data.get('menu_message_id')
         if menu_message_id:
             try:
@@ -276,22 +273,17 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         logger.info(f"✅ Результат примерки готов: {result_url[:50]}...")
         log_photo_send(user_id, "answer_photo", 0, request_id, "apply_style_to_room")
         
-        # 🔧 [2026-01-03 20:02] КРИТИЧНО FIX:
-        # 1️⃣ ОТПРАВЛЯЕМ ТОЛЬКО ФОТО (БЕЗ КНОПОК)
+        # 🔧 [2026-01-03 20:08] КРИТИЧНО FIX:
+        # 🎁 ОТПРАВЛЯЕМ ФОТО + МЕНЮ
+        # СОХРАНАЕМ ОБЕ ID В FSM & ДБ
+        # НИЧЕГО НЕ УДАЛАЕМ!
+        
+        # 1️⃣ ОТПРАВЛЯЕМ ФОТО
         photo_caption = (
             "✨ *Примерка готова!*\n\n"
             "Дизайн применен к вашей комнате с сохранением мебели и макета."
         )
         
-        # Удаляем меню генерации
-        if menu_message_id:
-            try:
-                await callback.message.delete()
-                logger.info(f"🗑️ Удалено меню генерации")
-            except TelegramBadRequest:
-                logger.debug("⚠️ Не удалось удалить меню")
-        
-        # 1️⃣ ОТПРАВЛЯЕМ ФОТО БЕЗ КНОПОК
         photo_msg = await callback.message.answer_photo(
             photo=result_url,
             caption=photo_caption,
@@ -300,11 +292,7 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         logger.info(f"📸 [SCREEN 12] ФОТО примерки отправлено (msg_id={photo_msg.message_id})")
         log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id, "apply_style_to_room_success")
         
-        # 🔧 [2026-01-03 20:02] КРИТИЧНО: СОХРАНАЕМ ONLY ФОТО!
-        await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation_sample')
-        logger.info(f"💾 [ДБ] Сохранено (только ФОТО): msg_id={photo_msg.message_id}")
-        
-        # 2️⃣ ОТПРАВЛЯЕМ ОТДЕЛЬНОЕ МЕНЮ С КНОПКАМИ
+        # 2️⃣ ОТПРАВЛЯЕМ SCREEN 12 МЕНЮ С КНОПКАМИ
         data = await state.get_data()
         work_mode = data.get('work_mode', 'sample_design')
         balance = await db.get_balance(user_id)
@@ -324,20 +312,28 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         )
         logger.info(f"📝 [SCREEN 12] МЕНЮ отправлено (msg_id={menu_msg.message_id})")
         
-        # 🔧 [2026-01-03 20:02] НЕ сохраняем меню в дб!
-        # Меню удалится при перезагрузке (normal telegram behavior)
-        # ФОТО ОСТАНЕТСЯ тк сохранено в дб
-        logger.info(f"🔧 [2026-01-03 20:02] МЕНЮ НЕ сохраняем в дб!")
-        logger.info(f"   ✅ ПРИ ПЕРЕЗАГРУЗКЕ:")
-        logger.info(f"      - ФОТО ОСТАНЕТСЯ (т.u043a сохранено в дб)")
-        logger.info(f"      - МЕНЮ УДАЛИТСЯ (normal telegram behavior)")
+        # 3️⃣ СОХРАНАЕМ ОБЕ ID В FSM & ДБ (as per project standard)
+        await state.update_data(
+            photo_message_id=photo_msg.message_id,
+            menu_message_id=menu_msg.message_id
+        )
+        
+        # PHOTO MESSAGE
+        await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation_sample_photo')
+        logger.info(f"💾 [ДБ] Сохранено ФОТО: msg_id={photo_msg.message_id}")
+        
+        # MENU MESSAGE
+        await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_sample')
+        logger.info(f"💾 [ДБ] Сохранено МЕНЮ: msg_id={menu_msg.message_id}")
         
         await state.set_state(CreationStates.post_generation_sample)
         await state.update_data(last_generated_image_url=result_url)
         
-        logger.info(f"✅ [SCREEN 11→12] COMPLETED - примерка готова с ОТДЕЛЬНЫМ меню")
-        logger.info(f"   ✅ ФОТО: сохранено в дб")
-        logger.info(f"   ✅ МЕНЮ: НЕ сохранено (удалится при перезагрузке)")
+        logger.info(f"✅ [SCREEN 11→12] COMPLETED!")
+        logger.info(f"   ✅ ФОТО: msg_id={photo_msg.message_id}")
+        logger.info(f"   ✅ МЕНЮ: msg_id={menu_msg.message_id}")
+        logger.info(f"   ✅ ОБЕ ID сохранены в FSM & ДБ")
+        logger.info(f"   ✅ Пери перезагружке: Телеграм сам удалит МЕНЮ")
         
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 11 кнопка failed: {e}", exc_info=True)
