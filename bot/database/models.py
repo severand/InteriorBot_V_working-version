@@ -1,5 +1,5 @@
 # bot/database/models.py
-# --- ОБНОВЛЕНО: 2026-01-03 17:51 - КРИТИЧЕСКИ: Добавлены отдельные поля main_photo_id И sample_photo_id
+# --- ОБНОВЛЕНО: 2026-01-03 17:58 - HOTFIX: Вернули photo_id вместо main_photo_id для совместимости ---
 # --- ОБНОВЛЕНО: 2026-01-02 11:53 - НОВОЕ: Добавлены методы save_user_photo/get_last_user_photo ---
 # --- ОБНОВЛЕНО: 2025-12-27 21:45 - КРИТИЧНО: Добавлена таблица для сохранения current_mode ---
 # [2025-12-24 12:35] Добавлены поля для PRO MODE функционала ---
@@ -89,16 +89,17 @@ CREATE TABLE IF NOT EXISTS user_activity (
 """
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 🔧 КРИТИЧЕСКИ ОБНОВЛЕНО [2026-01-03 17:51]: ТАБЛИЦА user_photos
+# 🔧 ТАБЛИЦА user_photos [2026-01-03 17:58] HOTFIX
 # ═══════════════════════════════════════════════════════════════════════════════
 # 
-# БЫЛО: Одно поле photo_id - перезаписывалось при загрузке нового фото
-# СТАЛО: ДВА отдельных поля:
-#   - main_photo_id: Основное фото (SCREEN 2) - ОСНОВНОЕ, не меняется
-#   - sample_photo_id: Образец фото (SCREEN 10) - для примерки, может заменяться
+# ⚠️ ВАЖНО: Используем СТАРОЕ имя photo_id для совместимости!
+# 
+# ПОЛЯ:
+#   - photo_id: Основное фото (SCREEN 2) - СТАРОЕ ИМЯ, используется везде
+#   - sample_photo_id: Образец фото (SCREEN 10) - НОВОЕ, для примерки
 # 
 # ИСПОЛЬЗОВАНИЕ:
-# - SAMPLE_DESIGN режим: загружаем основное фото → main_photo_id
+# - SCREEN 2: загружаем основное фото → photo_id
 # - SCREEN 10: загружаем образец фото → sample_photo_id
 # - При генерации: берём ОБА photo_id одновременно
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -107,7 +108,7 @@ CREATE_USER_PHOTOS_TABLE = """
 CREATE TABLE IF NOT EXISTS user_photos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL UNIQUE,
-    main_photo_id TEXT,
+    photo_id TEXT,
     sample_photo_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -274,26 +275,35 @@ VALUES (?, ?)
 """
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 🔧 ОБНОВЛЕНО [2026-01-03 17:51]: SQL QUERIES ДЛЯ ФОТО
+# 🔧 SQL QUERIES ДЛЯ ФОТО [2026-01-03 17:58] HOTFIX
 # ═══════════════════════════════════════════════════════════════════════════════
 # 
-# ДОБАВЛЕНЫ ДВА НОВЫХ МЕТОДА:
-# - SAVE_MAIN_PHOTO: Сохранить основное фото (SCREEN 2)
-# - SAVE_SAMPLE_PHOTO: Сохранить образец фото (SCREEN 10)
-# - GET_USER_PHOTOS: Получить ОБА фото пользователя
+# ⚠️ ВАЖНО: Используем СТАРОЕ имя photo_id для совместимости!
 # 
-# ДЛЯ СОВМЕСТИМОСТИ:
-# - SAVE_USER_PHOTO: Сохраняет в main_photo_id (для старого кода)
+# СТАРЫЕ МЕТОДЫ (работают как раньше):
+# - SAVE_USER_PHOTO: Сохраняет в photo_id (основное фото)
+# - GET_LAST_USER_PHOTO: Получает photo_id
+# 
+# НОВЫЕ МЕТОДЫ:
+# - SAVE_SAMPLE_PHOTO: Сохраняет в sample_photo_id (образец)
+# - GET_USER_PHOTOS: Получает ОБА фото одновременно
 # ═══════════════════════════════════════════════════════════════════════════════
 
-SAVE_MAIN_PHOTO = """
-INSERT INTO user_photos (user_id, main_photo_id, created_at, updated_at)
+# СТАРОЕ - работает как раньше! (основное фото)
+SAVE_USER_PHOTO = """
+INSERT INTO user_photos (user_id, photo_id, created_at, updated_at)
 VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT(user_id) DO UPDATE SET
-    main_photo_id = excluded.main_photo_id,
+    photo_id = excluded.photo_id,
     updated_at = CURRENT_TIMESTAMP
 """
 
+GET_LAST_USER_PHOTO = """
+SELECT photo_id FROM user_photos 
+WHERE user_id = ?
+"""
+
+# НОВОЕ - для образца (sample_photo_id)
 SAVE_SAMPLE_PHOTO = """
 INSERT INTO user_photos (user_id, sample_photo_id, created_at, updated_at)
 VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -302,22 +312,9 @@ ON CONFLICT(user_id) DO UPDATE SET
     updated_at = CURRENT_TIMESTAMP
 """
 
+# НОВОЕ - получить ОБА фото одновременно
 GET_USER_PHOTOS = """
-SELECT main_photo_id, sample_photo_id FROM user_photos 
-WHERE user_id = ?
-"""
-
-# СТАРОЕ (для совместимости)
-SAVE_USER_PHOTO = """
-INSERT INTO user_photos (user_id, main_photo_id, created_at, updated_at)
-VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-ON CONFLICT(user_id) DO UPDATE SET
-    main_photo_id = excluded.main_photo_id,
-    updated_at = CURRENT_TIMESTAMP
-"""
-
-GET_LAST_USER_PHOTO = """
-SELECT main_photo_id FROM user_photos 
+SELECT photo_id, sample_photo_id FROM user_photos 
 WHERE user_id = ?
 """
 
