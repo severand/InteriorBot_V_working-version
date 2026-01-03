@@ -218,7 +218,6 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 
 
 
-
 # ═════════════════════════════════════════════════════════════════════════════
 # 📄 [SCREEN 2] ЗАГРУЗКА ФОТО
 # ═════════════════════════════════════════════════════════════════════════════
@@ -235,6 +234,9 @@ async def photo_handler(message: Message, state: FSMContext):
     2. Одиночное фото → Обрабатывать нормально
     
     🎯 НОВОЕ (2026-01-02): Сохраняем photo_id в ФСМ (НЕ только в БД!)
+    
+    🔧 [2026-01-03] FIX: Правильный поток для sample_design:
+    - SCREEN 2 (загрузка основного фото) → SCREEN 10 (загрузка образца) → SCREEN 11 (примерка)
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -327,12 +329,12 @@ async def photo_handler(message: Message, state: FSMContext):
         screen = 'edit_design'
         
     elif work_mode == WorkMode.SAMPLE_DESIGN.value:
-        # 🔧 FIX: [2026-01-03] После загрузки фото на SCREEN 10 → переходим на SCREEN 11!
-        await state.set_state(CreationStates.generation_try_on)  # ← SCREEN 11!
-        text = GENERATION_TRY_ON_TEXT
+        # 🔧 FIX: [2026-01-03] После загрузки основного фото → SCREEN 10 (загрузка образца)!
+        await state.set_state(CreationStates.download_sample)  # ← SCREEN 10!
+        text = DOWNLOAD_SAMPLE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
-        keyboard = get_generation_try_on_keyboard()
-        screen = 'generation_try_on'  # ← SCREEN 11!
+        keyboard = get_download_sample_keyboard()
+        screen = 'download_sample'  # ← SCREEN 10!
         
     elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
         await state.set_state(CreationStates.uploading_furniture)
@@ -380,6 +382,9 @@ async def use_current_photo(callback: CallbackQuery, state: FSMContext):
     - Получаем photo_id из FSM (НО НЕ из БД!)
     - Обновляем состояние
     - Отправляем К СЛЕДУЮЩЕМУ экрану
+    
+    🔧 [2026-01-03] FIX: Правильный поток для sample_design:
+    - SCREEN 2 (использовать основное фото) → SCREEN 10 (загрузка образца) → SCREEN 11 (примерка)
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -418,12 +423,12 @@ async def use_current_photo(callback: CallbackQuery, state: FSMContext):
             screen = 'edit_design'
             
         elif work_mode == WorkMode.SAMPLE_DESIGN.value:
-            # 🔧 FIX: [2026-01-03] При использовании текущего фото → переходим на SCREEN 11!
-            await state.set_state(CreationStates.generation_try_on)  # ← SCREEN 11!
-            text = GENERATION_TRY_ON_TEXT
+            # 🔧 FIX: [2026-01-03] При использовании текущего фото → SCREEN 10 (загрузка образца)!
+            await state.set_state(CreationStates.download_sample)  # ← SCREEN 10!
+            text = DOWNLOAD_SAMPLE_TEXT
             text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
-            keyboard = get_generation_try_on_keyboard()
-            screen = 'generation_try_on'  # ← SCREEN 11!
+            keyboard = get_download_sample_keyboard()
+            screen = 'download_sample'  # ← SCREEN 10!
             
         elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
             await state.set_state(CreationStates.uploading_furniture)
@@ -471,7 +476,7 @@ async def use_current_photo(callback: CallbackQuery, state: FSMContext):
         CreationStates.choose_style_1,                 # SCREEN 4
         CreationStates.choose_style_2,                 # SCREEN 5
         CreationStates.edit_design,                    # Edit режим
-        CreationStates.download_sample,                # Sample режим
+        CreationStates.download_sample,                # Sample режим - SCREEN 10
         CreationStates.uploading_furniture,            # Furniture режим
         CreationStates.loading_facade_sample,          # Facade режим
     ),
