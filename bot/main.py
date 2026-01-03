@@ -8,6 +8,7 @@
 # [2025-12-03] Добавлен роутер referral для реферальной системы
 # [2026-01-01 22:24] ДОБАВЛЕНА КОМАНДА /start В МЕНУ (кнопка слева внизу)
 # [2026-01-02] ДОБАВЛЕН роутер edit_design для EDIT_DESIGN режима
+# [2026-01-03] 🔧 ДОБАВЛЕН роутер creation_sample_design для SAMPLE_DESIGN режима
 
 import asyncio
 import logging
@@ -29,6 +30,7 @@ from handlers import (
     router_extras,
     router_edit_design,
 )
+from handlers.creation_sample_design import router as router_sample_design  # 🔧 [2026-01-03] НОВОЕ
 from handlers.pro_mode import pro_mode_router
 #from handlers.webhook import yookassa_webhook_handler
 
@@ -73,7 +75,8 @@ async def main():
     # 5. Рефералы
     # 6. Основные сценарии создания дизайна
     # 7. EDIT_DESIGN режим
-    # 8. ПОСЛЕДНО: Фаловые обработчики (катч-элс для всего остального)
+    # 8. SAMPLE_DESIGN режим (🔧 [2026-01-03] НОВОЕ)
+    # 9. ПОСЛЕДНО: Фаловые обработчики (катч-элс для всего остального)
     dp.include_routers(
         admin.router,  # ✅ АДМИН ПЕРВЫМ!
         user_start.router,
@@ -83,8 +86,9 @@ async def main():
         router_main,  # ✅ ОСНОВНОЕ (выбор режима + загрузка фото)
         router_new_design,  # ✅ NEW_DESIGN (режим срежим)
         router_edit_design,  # ✅ EDIT_DESIGN (текстовый редактор + очистка)
+        router_sample_design,  # 🔧 SAMPLE_DESIGN (примерка дизайна)
         router_exterior,  # ✅ EXTERIOR + ОЛД СИСТЕМА
-        router_extras,  # ✅ ПОСЛЕДНЮЩИМ! Фаловые обработчики
+        router_extras,  # ✅ ПОСЛЕДНЮКШИМ! Фаловые обработчики
     )
 
     # Передаем ADMIN_IDS и BOT_TOKEN в контекст
