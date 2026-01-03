@@ -1,4 +1,5 @@
 # bot/database/models.py
+# --- ОБНОВЛЕНО: 2026-01-03 18:56 - CLEAN: Убрано всё про миграции, user_photos создаётся с sample_photo_id ---
 # --- ОБНОВЛЕНО: 2026-01-03 17:58 - HOTFIX: Вернули photo_id вместо main_photo_id для совместимости ---
 # --- ОБНОВЛЕНО: 2026-01-02 11:53 - НОВОЕ: Добавлены методы save_user_photo/get_last_user_photo ---
 # --- ОБНОВЛЕНО: 2025-12-27 21:45 - КРИТИЧНО: Добавлена таблица для сохранения current_mode ---
@@ -89,32 +90,17 @@ CREATE TABLE IF NOT EXISTS user_activity (
 """
 
 
-# ===== НОВОЕ: ТАБЛИЦА ПОСЛЕДНИХ ФОТО ПОЛЬЗОВАТЕЛЕЙ (2026-01-02) =====
-# Сохраняет photo_id (Telegram file_id) каждого пользователя
-# Используется для показа кнопки "Использовать текущую фото" на SCREEN 2
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 🔧 ТАБЛИЦА user_photos [2026-01-03 17:58] HOTFIX
-# ═══════════════════════════════════════════════════════════════════════════════
-# 
-# ⚠️ ВАЖНО: Используем СТАРОЕ имя photo_id для совместимости!
-# 
-# ПОЛЯ:
-#   - photo_id: Основное фото (SCREEN 2) - СТАРОЕ ИМЯ, используется везде
-#   - sample_photo_id: Образец фото (SCREEN 10) - НОВОЕ, для примерки
-# 
-# ИСПОЛЬЗОВАНИЕ:
-# - SCREEN 2: загружаем основное фото → photo_id
-# - SCREEN 10: загружаем образец фото → sample_photo_id
-# - При генерации: берём ОБА photo_id одновременно
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===== ТАБЛИЦА ФОТО ПОЛЬЗОВАТЕЛЕЙ С ПОДДЕРЖКОЙ ОСНОВНОГО ФОТО И ОБРАЗЦА =====
+# SCREEN 2: основное фото → photo_id
+# SCREEN 10: образец фото → sample_photo_id
+# При генерации используем ОБА
 
 CREATE_USER_PHOTOS_TABLE = """
 CREATE TABLE IF NOT EXISTS user_photos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL UNIQUE,
-    photo_id TEXT,
-    sample_photo_id TEXT,
+    photo_id TEXT,                  -- Основное фото (SCREEN 2)
+    sample_photo_id TEXT,           -- Образец фото (SCREEN 10)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (user_id)
@@ -279,22 +265,8 @@ INSERT INTO user_activity (user_id, action_type)
 VALUES (?, ?)
 """
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 🔧 SQL QUERIES ДЛЯ ФОТО [2026-01-03 17:58] HOTFIX
-# ═══════════════════════════════════════════════════════════════════════════════
-# 
-# ⚠️ ВАЖНО: Используем СТАРОЕ имя photo_id для совместимости!
-# 
-# СТАРЫЕ МЕТОДЫ (работают как раньше):
-# - SAVE_USER_PHOTO: Сохраняет в photo_id (основное фото)
-# - GET_LAST_USER_PHOTO: Получает photo_id
-# 
-# НОВЫЕ МЕТОДЫ:
-# - SAVE_SAMPLE_PHOTO: Сохраняет в sample_photo_id (образец)
-# - GET_USER_PHOTOS: Получает ОБА фото одновременно
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# СТАРОЕ - работает как раньше! (основное фото)
+# ===== SQL QUERIES ДЛЯ ФОТО =====
+# Основное фото (SCREEN 2)
 SAVE_USER_PHOTO = """
 INSERT INTO user_photos (user_id, photo_id, created_at, updated_at)
 VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -308,7 +280,7 @@ SELECT photo_id FROM user_photos
 WHERE user_id = ?
 """
 
-# НОВОЕ - для образца (sample_photo_id)
+# Образец фото (SCREEN 10)
 SAVE_SAMPLE_PHOTO = """
 INSERT INTO user_photos (user_id, sample_photo_id, created_at, updated_at)
 VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -317,7 +289,7 @@ ON CONFLICT(user_id) DO UPDATE SET
     updated_at = CURRENT_TIMESTAMP
 """
 
-# НОВОЕ - получить ОБА фото одновременно
+# Получить ОБА фото
 GET_USER_PHOTOS = """
 SELECT photo_id, sample_photo_id FROM user_photos 
 WHERE user_id = ?
