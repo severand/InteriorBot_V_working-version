@@ -74,7 +74,7 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
         work_mode = data.get('work_mode')
         photo_id = message.photo[-1].file_id
         
-        # 🎯 Сохраняем photo_id образца В ДВУХ МЕСТАХ:
+        # 🎯 Сохраняем photo_id образца В ДВУХ МЕСтАХ:
         # 1️⃣ В FSM (для текущей сессии)
         await state.update_data(
             sample_photo_id=photo_id,  # ОБРАЗЕЦ фото
@@ -119,14 +119,16 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
         
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 10 photo handler failed: {e}", exc_info=True)
-        error_msg = await message.answer(f"❌ Ошибка при загрузке образца: {str(e)[:50]}")
+        error_msg = await message.answer(f"❌ Ошибка при загружке образца: {str(e)[:50]}")
         await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'download_sample')
         asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
 
 
-# ════════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # 🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
-# ════════════════════════════════════════════════════════════════════════════════
+# 🔧 [2026-01-03 20:02] КРИТИЧНО FIX: СОХРАНАЕМ ONLY фото, МЕНЮ НЕ сохраняем
+# РЕЗУЛЬТАТ: ФОТО ОСТАНЕТСЯ, МЕНЮ УДАЛИТСЯ ПРИ ПЕРЕЗАГРУЗКЕ
+# ══════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(
     StateFilter(CreationStates.generation_try_on),
@@ -136,24 +138,14 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
     """
     🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
 
-    📍 ПУТЬ: [SCREEN 11: generation_try_on] → Кнопка → [Запуск генерации примерки]
+    📍 ПУТЬ: [SCREEN 11: generation_try_on] → Кнопка → [SCREEN 12]
 
-    🔧 [2026-01-03 21:20] РЕАЛИЗОВАНО:
-    - Получаем основное фото (main_photo_id) из FSM или БД
-    - Получаем образец фото (sample_photo_id) из FSM
-    - Вызываем apply_style_to_room(main_photo_id, sample_photo_id)
-    - Показываем "⏳ Генерируем примерку..."
-    - При готовности показываем результат с клавиатурой SCREEN 12
-    - На ошибку показываем сообщение об ошибке
-    
-    📊 [2026-01-03 19:17] ЛОГИРОВАНИЕ:
-    - ДЕТАЛЬНЫЕ логи источника фото (БД vs FSM)
-    - Для отладки перезагрузки при потере FSM
-    
-    🔧 [2026-01-03 19:40] КРИТИЧНО FIX:
-    - Отправляем ОТДЕЛЬНОЕ текстовое сообщение с кнопками ПОСЛЕ фото
-    - Фото отправляется БЕЗ кнопок (просто с caption)
-    - Это предотвращает удаление меню при перезагрузке бота
+    🔧 [2026-01-03 20:02] КРИТИЧНО FIX:
+    - Отправляем ФОТО без кнопок (caption только)
+    - Отправляем ОТДЕЛЬНОЕ меню с кнопками
+    - СОХРАНАЕМ В ДБ ТОЛЬКО месаж с ФОТО!
+    - Меню НЕ сохраняем в дб!
+    - При перезагрузке: ФОТО ОСТАНЕТсЯ, меню удалится (тк normal telegram behavior)
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -162,7 +154,7 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
     try:
         logger.info(f"🎁 [SCREEN 11] КНОПКА НАЖАТА: user_id={user_id}")
         logger.info(f"═" * 80)
-        logger.info(f"📊 [SCREEN 11] ДИАГНОСТИКА ЗАГРУЗКИ ФОТО")
+        logger.info(f"📊 [SCREEN 11] ДИАГНОСТИКА ЗАГРУЗКи ФОТО")
         logger.info(f"═" * 80)
         
         # 🔄 ЗАГРУЖЕННЫЙ ОБРАЗЕЦ
@@ -215,10 +207,6 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             if main_photo_id:
                 logger.info(f"   ✅ FSM: photo_id найден (FALLBACK): {main_photo_id[:40]}...")
                 logger.warning(f"   ⚠️  ВНИМАНИЕ: Используется photo_id из FSM (не из БД!)")
-                logger.warning(f"   ⚠️  Это может означать:")
-                logger.warning(f"      - Перезагрузка бота (FSM восстановлен из памяти)")
-                logger.warning(f"      - Баг в сохранении в БД")
-                logger.warning(f"      - Первый раз загрузки в этой сессии")
             else:
                 logger.error(f"   ❌ FSM: photo_id ОТСУТСТВУЕТ")
         else:
@@ -288,12 +276,8 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         logger.info(f"✅ Результат примерки готов: {result_url[:50]}...")
         log_photo_send(user_id, "answer_photo", 0, request_id, "apply_style_to_room")
         
-        # ПЕРЕХОД НА SCREEN 12: post_generation_sample
-        await state.set_state(CreationStates.post_generation_sample)
-        await state.update_data(last_generated_image_url=result_url)
-        
-        # 🔧 [2026-01-03 19:40] КРИТИЧНО FIX:
-        # Отправляем ТОЛЬКО ФОТО (БЕЗ КНОПОК)
+        # 🔧 [2026-01-03 20:02] КРИТИЧНО FIX:
+        # 1️⃣ ОТПРАВЛЯЕМ ТОЛЬКО ФОТО (БЕЗ КНОПОК)
         photo_caption = (
             "✨ *Примерка готова!*\n\n"
             "Дизайн применен к вашей комнате с сохранением мебели и макета."
@@ -307,19 +291,20 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             except TelegramBadRequest:
                 logger.debug("⚠️ Не удалось удалить меню")
         
-        # ОТПРАВЛЯЕМ ФОТО БЕЗ КНОПОК
+        # 1️⃣ ОТПРАВЛЯЕМ ФОТО БЕЗ КНОПОК
         photo_msg = await callback.message.answer_photo(
             photo=result_url,
             caption=photo_caption,
             parse_mode="Markdown"
         )
-        logger.info(f"📸 [SCREEN 12] Фото примерки отправлено (msg_id={photo_msg.message_id})")
+        logger.info(f"📸 [SCREEN 12] ФОТО примерки отправлено (msg_id={photo_msg.message_id})")
         log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id, "apply_style_to_room_success")
         
-        await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation_sample_photo')
+        # 🔧 [2026-01-03 20:02] КРИТИЧНО: СОХРАНАЕМ ONLY ФОТО!
+        await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation_sample')
+        logger.info(f"💾 [ДБ] Сохранено (только ФОТО): msg_id={photo_msg.message_id}")
         
-        # 🔧 [2026-01-03 19:40] ОТПРАВЛЯЕМ ОТДЕЛЬНОЕ МЕНЮ СООБЩЕНИЕ С КНОПКАМИ
-        # Как в creation_new_design.py - это предотвращает удаление при перезагрузке
+        # 2️⃣ ОТПРАВЛЯЕМ ОТДЕЛЬНОЕ МЕНЮ С КНОПКАМИ
         data = await state.get_data()
         work_mode = data.get('work_mode', 'sample_design')
         balance = await db.get_balance(user_id)
@@ -329,7 +314,7 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             f"Выберите действие:\n"
             f"🔄 Загрузить новый образец\n"
             f"🏠 Вернуться в меню\n\n"
-            f"📊 Баланс: *{balance}* генераций | 🔧 Режим: *{work_mode}*"
+            f"📊 Баланс: *{balance}* генераций"
         )
         
         menu_msg = await callback.message.answer(
@@ -337,15 +322,22 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             reply_markup=get_post_generation_sample_keyboard(),
             parse_mode="Markdown"
         )
-        logger.info(f"📝 [SCREEN 12] Меню с кнопками отправлено (msg_id={menu_msg.message_id})")
+        logger.info(f"📝 [SCREEN 12] МЕНЮ отправлено (msg_id={menu_msg.message_id})")
         
-        await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_sample_menu')
-        await state.update_data(
-            photo_message_id=photo_msg.message_id,
-            menu_message_id=menu_msg.message_id
-        )
+        # 🔧 [2026-01-03 20:02] НЕ сохраняем меню в дб!
+        # Меню удалится при перезагрузке (normal telegram behavior)
+        # ФОТО ОСТАНЕТСЯ тк сохранено в дб
+        logger.info(f"🔧 [2026-01-03 20:02] МЕНЮ НЕ сохраняем в дб!")
+        logger.info(f"   ✅ ПРИ ПЕРЕЗАГРУЗКЕ:")
+        logger.info(f"      - ФОТО ОСТАНЕТСЯ (т.u043a сохранено в дб)")
+        logger.info(f"      - МЕНЮ УДАЛИТСЯ (normal telegram behavior)")
         
-        logger.info(f"✅ [SCREEN 11→12] COMPLETED - примерка готова с отдельным меню")
+        await state.set_state(CreationStates.post_generation_sample)
+        await state.update_data(last_generated_image_url=result_url)
+        
+        logger.info(f"✅ [SCREEN 11→12] COMPLETED - примерка готова с ОТДЕЛЬНЫМ меню")
+        logger.info(f"   ✅ ФОТО: сохранено в дб")
+        logger.info(f"   ✅ МЕНЮ: НЕ сохранено (удалится при перезагрузке)")
         
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 11 кнопка failed: {e}", exc_info=True)
