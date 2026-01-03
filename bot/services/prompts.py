@@ -3,6 +3,7 @@
 # Описание: Модуль текстовых промптов и шаблонов для работы с Replicate API
 # [2025-12-23 15:30] ОБНОВЛЕНО: Добавлена интеграция с translator.py для перевода на английский
 # [2026-01-03 21:15] ОБНОВЛЕНО: Добавлен APPLY_STYLE_PROMPT для примерки дизайна (Sample Design)
+# [2026-01-03 19:30] 🔥 КРИТИЧНО: Обновлен APPLY_STYLE_PROMPT для ПОЛНОЙ трансформации (мебель + стиль)
 # ========================================
 
 import logging
@@ -59,15 +60,36 @@ You can't:
 # 🎁 ПРОМПТ ДЛЯ ПРИМЕРКИ ДИЗАЙНА (SAMPLE DESIGN - TRY-ON)
 # ========================================
 # [2026-01-03 21:15] НОВОЕ: Для функции apply_style_to_room()
-# Описание: Применить стиль и цветовую схему из образца к основной комнате
+# [2026-01-03 19:30] 🔥 КРИТИЧНО: Переписан для ПОЛНОЙ трансформации по образцу
+# Описание: Полностью преобразить комнату по образцу - заменить ВСЮ мебель, декор, стиль
 # Используется в: SCREEN 11 - Кнопка "🎨 Примерить дизайн"
 # Вход: основное фото комнаты + образец дизайна
-# Выход: новый дизайн с применённым стилем образца
+# Выход: новый дизайн с ПОЛНОЙ трансформацией по образцу
 
 APPLY_STYLE_PROMPT = (
-    "Apply the style and color scheme from the reference image to this room, "
-    "while maintaining the same configuration, layout, and furniture arrangement. "
-    "Cannot be modified or expanded."
+    "You are a professional interior designer. "
+    "Completely transform the room in the first image to match the reference design shown in the second image. "
+    
+    "WHAT TO CHANGE (transform everything):\n"
+    "- Replace ALL furniture with furniture matching the reference design\n"
+    "- Replace ALL decor, accessories, and decorative elements\n"
+    "- Apply the exact color scheme, materials, and textures from the reference\n"
+    "- Match the lighting, atmosphere, and mood of the reference design\n"
+    "- Adopt the same style aesthetic (modern, classic, minimalist, etc.) as the reference\n"
+    "- Recreate wall treatments, finishes, and surface materials from the reference\n"
+    "- Match flooring style and material to the reference design\n"
+    "- Apply the same window treatments (curtains, blinds, etc.)\n"
+    "- Recreate ceiling design and lighting fixtures from the reference\n"
+    "- Include similar plants, artwork, and decorative accents\n"
+    
+    "WHAT TO PRESERVE (keep from original):\n"
+    "- Maintain the exact room dimensions and floor area\n"
+    "- Keep the same room geometry and wall layout\n"
+    "- Preserve the positions of doors and windows\n"
+    "- Maintain the overall room proportions and spatial configuration\n"
+    "- Adapt furniture scale and placement to fit the current room size\n"
+    
+    "GOAL: Create a photorealistic design that looks exactly like the reference style has been applied to this specific room space."
 )
 
 # ========================================
@@ -136,26 +158,30 @@ async def build_design_prompt(style: str, room: str, translate: bool = True) -> 
 async def build_apply_style_prompt(translate: bool = True) -> str:
     """
     🎁 [2026-01-03 21:15] НОВОЕ: Собирает промпт для примерки дизайна (Try-On)
+    🔥 [2026-01-03 19:30] КРИТИЧНО: Обновлено для ПОЛНОЙ трансформации по образцу
     
     Описание:
-    Применяет стиль и цветовую схему из образца к основной комнате,
-    сохраняя конфигурацию, макет и расстановку мебели.
+    ПОЛНОСТЬЮ преобразует комнату по образцу:
+    - Заменяет ВСЮ мебель на мебель из образца
+    - Применяет стиль, цвета, материалы из образца
+    - Сохраняет ТОЛЬКО геометрию комнаты и расположение окон/дверей
+    - Адаптирует масштаб мебели под площадь комнаты
     
     Используется в:
     - SCREEN 11: Кнопка "🎨 Примерить дизайн"
     - Функция: apply_style_to_room() в kie_api.py
     - Вход: [основное фото, образец фото]
-    - Выход: новый дизайн с применённым стилем
+    - Выход: ПОЛНАЯ трансформация комнаты по образцу
     
     Args:
         translate: включить ли перевод на английский (по умолчанию True)
     
     Returns:
-        Готовый промпт на английском языке (для KIE.AI)
+        Готовый промпт на английском языке (для KIE.AI) - ~450+ символов
     
     Пример:
         >>> prompt = await build_apply_style_prompt()
-        >>> # Результат: "Apply the style and color scheme from the reference image..."
+        >>> # Результат: "You are a professional interior designer. Completely transform..."
     """
     prompt = APPLY_STYLE_PROMPT
     
