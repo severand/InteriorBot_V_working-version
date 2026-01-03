@@ -490,54 +490,36 @@ def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
 def get_download_sample_keyboard() -> InlineKeyboardMarkup:
     """
     Клавиатура лоадинга образца (SCREEN 10: DOWNLOAD_SAMPLE)
-    Кнопка для примерки дизайна + навигация
-    
-    🔧 [2026-01-03] ИСПРАВЛЕНА:
-    - Добавлена кнопка "🎨 Примерить дизайн" (callback_data="generate_try_on")
-    - Переводит на SCREEN 11 (generation_try_on)
+    Навигация на главное меню и назад к загружению
     """
     builder = InlineKeyboardBuilder()
-    
-    # Кнопка примерки
-    builder.row(InlineKeyboardButton(
-        text="🎨 Примерить дизайн",
-        callback_data="generate_try_on"
-    ))
-    
-    # Навигация
     builder.row(
         InlineKeyboardButton(text="⬅️ Назад", callback_data="uploading_photo"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
     )
-    builder.adjust(1, 2)
+    builder.adjust(2)
     return builder.as_markup()
 
 
 # ========================================
 # SCREEN 11: GENERATION_TRY_ON - ГЕНЕРАЦИЯ ПРИМЕРКИ
-# 🔧 [2026-01-03] ОБНОВЛЕНА СТРУКТУРА КНОПОК
 # ========================================
 
 def get_generation_try_on_keyboard() -> InlineKeyboardMarkup:
     """
     Клавиатура генерации примерки (SCREEN 11: GENERATION_TRY_ON)
-    
-    🔧 [2026-01-03] ИСПРАВЛЕНО:
-    Убрана кнопка "🎨 Примерить дизайн" (она была на SCREEN 10)
-    Теперь только навигация для выбора образца/режима
-    
-    Структура:
-    - Ряд 1: 📸 Новый образец (download_sample) - вернуться к загрузке
-    - Ряд 2: 🏠 Главное меню (select_mode) - в главное меню
+    Кнопка генерации + навигация
     """
     builder = InlineKeyboardBuilder()
-    
-    # Навигация
+    builder.row(InlineKeyboardButton(
+        text="🎨 Примерить дизайн",
+        callback_data="generate_try_on"
+    ))
     builder.row(
-        InlineKeyboardButton(text="📸 Новый образец", callback_data="download_sample"),
+        InlineKeyboardButton(text="⬅️ Назад", callback_data="download_sample"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="select_mode")
     )
-    builder.adjust(2)
+    builder.adjust(1, 2)
     return builder.as_markup()
 
 
