@@ -1,6 +1,7 @@
 # bot/database/models.py
-# --- ОБНОВЛЕН: 2026-01-02 11:53 - НОВОЕ: Добавлена таблица user_photos для сохранения фото ---
-# --- ОБНОВЛЕН: 2025-12-27 21:45 - КРИТИЧНО: Добавлена таблица для сохранения current_mode ---
+# --- ОБНОВЛЕНО: 2026-01-03 17:51 - КРИТИЧЕСКИ: Добавлены отдельные поля main_photo_id И sample_photo_id
+# --- ОБНОВЛЕНО: 2026-01-02 11:53 - НОВОЕ: Добавлены методы save_user_photo/get_last_user_photo ---
+# --- ОБНОВЛЕНО: 2025-12-27 21:45 - КРИТИЧНО: Добавлена таблица для сохранения current_mode ---
 # [2025-12-24 12:35] Добавлены поля для PRO MODE функционала ---
 # [2025-12-07 09:58] Добавлена таблица chat_menus для системы единого меню ---
 """SQL queries for database initialization"""
@@ -87,15 +88,27 @@ CREATE TABLE IF NOT EXISTS user_activity (
 )
 """
 
-# ===== НОВОЕ: ТАБЛИЦА ПОСЛЕДНИХ ФОТО ПОЛЬЗОВАТЕЛЕЙ (2026-01-02) =====
-# Сохраняет photo_id (Telegram file_id) каждого пользователя
-# Используется для показа кнопки "Использовать текущую фото" на SCREEN 2
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🔧 КРИТИЧЕСКИ ОБНОВЛЕНО [2026-01-03 17:51]: ТАБЛИЦА user_photos
+# ═══════════════════════════════════════════════════════════════════════════════
+# 
+# БЫЛО: Одно поле photo_id - перезаписывалось при загрузке нового фото
+# СТАЛО: ДВА отдельных поля:
+#   - main_photo_id: Основное фото (SCREEN 2) - ОСНОВНОЕ, не меняется
+#   - sample_photo_id: Образец фото (SCREEN 10) - для примерки, может заменяться
+# 
+# ИСПОЛЬЗОВАНИЕ:
+# - SAMPLE_DESIGN режим: загружаем основное фото → main_photo_id
+# - SCREEN 10: загружаем образец фото → sample_photo_id
+# - При генерации: берём ОБА photo_id одновременно
+# ═══════════════════════════════════════════════════════════════════════════════
 
 CREATE_USER_PHOTOS_TABLE = """
 CREATE TABLE IF NOT EXISTS user_photos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL UNIQUE,
-    photo_id TEXT NOT NULL,
+    main_photo_id TEXT,
+    sample_photo_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (user_id)
@@ -260,16 +273,51 @@ INSERT INTO user_activity (user_id, action_type)
 VALUES (?, ?)
 """
 
-# --- НОВОЕ: ФОТО ПОЛЬЗОВАТЕЛЕЙ (2026-01-02) ---
-SAVE_USER_PHOTO = """
-INSERT INTO user_photos (user_id, photo_id, created_at, updated_at)
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🔧 ОБНОВЛЕНО [2026-01-03 17:51]: SQL QUERIES ДЛЯ ФОТО
+# ═══════════════════════════════════════════════════════════════════════════════
+# 
+# ДОБАВЛЕНЫ ДВА НОВЫХ МЕТОДА:
+# - SAVE_MAIN_PHOTO: Сохранить основное фото (SCREEN 2)
+# - SAVE_SAMPLE_PHOTO: Сохранить образец фото (SCREEN 10)
+# - GET_USER_PHOTOS: Получить ОБА фото пользователя
+# 
+# ДЛЯ СОВМЕСТИМОСТИ:
+# - SAVE_USER_PHOTO: Сохраняет в main_photo_id (для старого кода)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SAVE_MAIN_PHOTO = """
+INSERT INTO user_photos (user_id, main_photo_id, created_at, updated_at)
 VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT(user_id) DO UPDATE SET
-    photo_id = excluded.photo_id,
+    main_photo_id = excluded.main_photo_id,
     updated_at = CURRENT_TIMESTAMP
 """
+
+SAVE_SAMPLE_PHOTO = """
+INSERT INTO user_photos (user_id, sample_photo_id, created_at, updated_at)
+VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT(user_id) DO UPDATE SET
+    sample_photo_id = excluded.sample_photo_id,
+    updated_at = CURRENT_TIMESTAMP
+"""
+
+GET_USER_PHOTOS = """
+SELECT main_photo_id, sample_photo_id FROM user_photos 
+WHERE user_id = ?
+"""
+
+# СТАРОЕ (для совместимости)
+SAVE_USER_PHOTO = """
+INSERT INTO user_photos (user_id, main_photo_id, created_at, updated_at)
+VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT(user_id) DO UPDATE SET
+    main_photo_id = excluded.main_photo_id,
+    updated_at = CURRENT_TIMESTAMP
+"""
+
 GET_LAST_USER_PHOTO = """
-SELECT photo_id FROM user_photos 
+SELECT main_photo_id FROM user_photos 
 WHERE user_id = ?
 """
 
