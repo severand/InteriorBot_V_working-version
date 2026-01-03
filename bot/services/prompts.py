@@ -102,8 +102,7 @@ APPLY_STYLE_PROMPT = (
     "- Only furniture arrangement and styling can change\n"
     "- Preserve the exact aspect ratio and proportions of the original room\n"
     
-    "GOAL: Create an ultra-photorealistic design for a glossy design magazine that will look exactly as if
-    the reference style was applied to THAT SPECIFIC ROOM, while maintaining the exact dimensions, geometry and structure of the room."
+    "GOAL: Create an ultra-photorealistic design for a glossy design magazine that will look exactly as if the reference style was applied to THAT SPECIFIC ROOM, while maintaining the exact dimensions, geometry and structure of the room."
 )
 
 # ========================================
