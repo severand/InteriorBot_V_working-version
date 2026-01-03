@@ -8,10 +8,12 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.exceptions import TelegramBadRequest
 
 from database.db import db
-from keyboards.inline import get_generation_try_on_keyboard
+from keyboards.inline import get_generation_try_on_keyboard, get_post_generation_sample_keyboard
 from states.fsm import CreationStates, WorkMode
 from utils.helpers import add_balance_and_mode_to_text
 from utils.texts import GENERATION_TRY_ON_TEXT
+from services.kie_api import apply_style_to_room
+from config import config
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -107,25 +109,129 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
     """
     🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
 
-    📍 ПУТЬ: [SCREEN 11: generation_try_on] → Кнопка → [Запуск генерации]
+    📍 ПУТЬ: [SCREEN 11: generation_try_on] → Кнопка → [Запуск генерации примерки]
 
-    🔧 [2026-01-03] ОСНОВНОЕ:
-    - ТЕКСТ из texts.py: GENERATION_TRY_ON_TEXT
-    - КЛАВИАТУРА из inline.py: get_generation_try_on_keyboard()
-    - TODO: Реализовать генерацию примерки
+    🔧 [2026-01-03 21:20] РЕАЛИЗОВАНО:
+    - Получаем основное фото (main_photo_id) из FSM или БД
+    - Получаем образец фото (sample_photo_id) из FSM
+    - Вызываем apply_style_to_room(main_photo_id, sample_photo_id)
+    - Показываем "⏳ Генерируем примерку..."
+    - При готовности показываем результат с клавиатурой SCREEN 12
+    - На ошибку показываем сообщение об ошибке
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
 
     try:
         logger.info(f"🎁 [SCREEN 11] КНОПКА НАЖАТА: user_id={user_id}")
-        logger.warning(f"TODO: Реализовать генерацию примерки дизайна (дальнейшая работа)")
         
+        # 🔄 ЗАГРУЖЕННЫЙ ОБРАЗЕЦ
+        data = await state.get_data()
+        sample_photo_id = data.get('sample_photo_id')
+        
+        if not sample_photo_id:
+            logger.error("❌ Образец фото не найден в FSM")
+            await callback.answer(
+                "❌ Ошибка: образец фото не найден. Загрузите образец еще раз.",
+                show_alert=True
+            )
+            return
+        
+        # 🎯 ПОЛУЧАЕМ ОСНОВНОЕ ФОТО
+        logger.info(f"🔍 Получение основного фото из БД...")
+        user_photos = await db.get_user_photos(user_id)
+        main_photo_id = user_photos.get('photo_id') if user_photos else None
+        
+        if not main_photo_id:
+            logger.error("❌ Основное фото не найдено в БД")
+            await callback.answer(
+                "❌ Ошибка: основное фото не найдено. Загрузите фото комнаты еще раз.",
+                show_alert=True
+            )
+            return
+        
+        logger.info(f"✅ Оба фото найдены:")
+        logger.info(f"   - Основное: {main_photo_id[:30]}...")
+        logger.info(f"   - Образец: {sample_photo_id[:30]}...")
+        
+        # ⏳ ПОКАЗЫВАЕМ СООБЩЕНИЕ О ГЕНЕРАЦИИ
         await callback.answer("⏳ Подождите... генерируем примерку", show_alert=False)
-
+        
+        # 🔄 РЕДАКТИРУЕМ МЕНЮ НА "ГЕНЕРИРУЮ"
+        menu_message_id = data.get('menu_message_id')
+        if menu_message_id:
+            try:
+                await callback.message.edit_text(
+                    text="⏳ *Генерируем примерку дизайна...*\n\nЭто может занять до 2 минут.",
+                    parse_mode="Markdown",
+                    reply_markup=None
+                )
+                logger.info(f"📝 Обновлено меню на SCREEN 11 (генерация)")
+            except TelegramBadRequest as e:
+                logger.debug(f"⚠️ Не удалось отредактировать: {e}")
+        
+        # 🎨 ЗАПУСКАЕМ ГЕНЕРАЦИЮ
+        logger.info(f"🚀 Запускаем apply_style_to_room()...")
+        result_url = await apply_style_to_room(
+            main_photo_file_id=main_photo_id,
+            sample_photo_file_id=sample_photo_id,
+            bot_token=config.BOT_TOKEN
+        )
+        
+        if not result_url:
+            logger.error("❌ Генерация провалилась")
+            error_text = "❌ Ошибка генерации. Пожалуйста, попробуйте еще раз."
+            try:
+                await callback.message.edit_text(
+                    text=error_text,
+                    reply_markup=get_generation_try_on_keyboard()
+                )
+            except TelegramBadRequest:
+                await callback.message.answer(text=error_text)
+            return
+        
+        # ✅ ГЕНЕРАЦИЯ УСПЕШНА
+        logger.info(f"✅ Результат примерки готов: {result_url[:50]}...")
+        
+        # ПЕРЕХОД НА SCREEN 12: post_generation_sample
+        await state.set_state(CreationStates.post_generation_sample)
+        await state.update_data(last_generated_image_url=result_url)
+        
+        # 📸 ОТПРАВЛЯЕМ РЕЗУЛЬТАТ
+        result_text = (
+            "✅ *Примерка готова!*\n\n"
+            "Дизайн применен к вашей комнате с сохранением мебели и макета."
+        )
+        
+        # Если есть меню, отправляем фото ответом
+        if menu_message_id:
+            try:
+                await callback.message.delete()
+                logger.info(f"🗑️ Удалено меню генерации")
+            except TelegramBadRequest:
+                logger.debug("⚠️ Не удалось удалить меню")
+        
+        # Отправляем результат
+        result_msg = await callback.message.answer_photo(
+            photo=result_url,
+            caption=result_text,
+            parse_mode="Markdown",
+            reply_markup=get_post_generation_sample_keyboard()
+        )
+        logger.info(f"📸 [SCREEN 12] Результат примерки отправлен (msg_id={result_msg.message_id})")
+        
+        # Сохраняем меню
+        await db.save_chat_menu(chat_id, user_id, result_msg.message_id, 'post_generation_sample')
+        await state.update_data(menu_message_id=result_msg.message_id)
+        
+        logger.info(f"✅ [SCREEN 11→12] COMPLETED - примерка готова")
+        
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 11 кнопка failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
+        await callback.answer(
+            f"❌ Ошибка. Попробуйте еще раз: {str(e)[:50]}",
+            show_alert=True
+        )
 
 
 async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int):
