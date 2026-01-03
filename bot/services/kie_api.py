@@ -1,7 +1,7 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.5 (2025-12-30 10:36) - REVERT HOTFIX SSL
+# ВЕРСИЯ: 3.7 (2026-01-02 21:04) - ENHANCEMENT: Добавить префикс промпта + лог финального промпта
 # АВТОР: Project Owner
 # https://docs.kie.ai/market/google/nano-banana
 # https://docs.kie.ai/market/google/nano-banana-edit
@@ -12,6 +12,8 @@
 # [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт translate_to_english в начало файла
 # [2025-12-24 08:18] ДОБАВЛЕНО: Поддержка KIE.AI PRO режима (nano-banana-pro)
 # [2025-12-30 10:36] 🔙 REVERT: Отменить HOTFIX SSL проверку (проблема была в VPN, не в коде)
+# [2026-01-02 20:55] 🔥 CRITICAL FIX: В текстовом редакторе отправлять ТОЛЬКО user_prompt БЕЗ добавления контекста
+# [2026-01-02 21:04] ✨ ENHANCEMENT: Добавить префикс \"Create ultra-photorealistic image\" + детальный лог финального промпта
 
 import os
 import logging
@@ -40,7 +42,7 @@ KIE_API_POLLING_INTERVAL = 3  # Проверять каждые 3 секунды
 KIE_API_MAX_POLLS = 100  # Макс 100 попыток = 5 минут
 
 # Модели
-# [НОВОЕ 2025-12-24] ДОБАВЛЕНы PRO модели: nano-banana-pro
+# [НОВОЕ 2025-12-24] ДОБАВЛЕНЫ PRO модели: nano-banana-pro
 MODELS = {
     "image_generation": {
         "nano_banana": "google/nano-banana",
@@ -49,6 +51,10 @@ MODELS = {
         "nano_banana_pro_edit": "nano-banana-pro",  # [НОВОЕ 2025-12-24]
     },
 }
+
+# [2026-01-02 21:04] ✨ ПРЕФИКС ДЛЯ ТЕКСТОВОГО РЕДАКТОРА
+#TEXT_EDITOR_PROMPT_PREFIX = "Create ultra-photorealistic image. Apply the following prompt: "
+TEXT_EDITOR_PROMPT_PREFIX = "Create an ultra-photorealistic image just like you'd find in a glossy magazine, preserving all the details and settings of the original photo. Follow the next prompt: "
 
 
 class KieApiClient:
@@ -61,7 +67,7 @@ class KieApiClient:
         self.api_key = api_key or os.getenv('KIE_API_KEY') or getattr(config, 'KIE_API_KEY', None)
         self.base_url = KIE_API_BASE_URL
         self.use_pro = use_pro or config_kie.USE_PRO_MODEL  # [НОВОЕ 2025-12-24]
-        self.timeout = config_kie.KIE_API_TIMEOUT  # динамический таймаут [НОВОЕ 2025-12-24]
+        self.timeout = config_kie.KIE_API_TIMEOUT  # динамический тайм-аут [НОВОЕ 2025-12-24]
 
         if not self.api_key:
             logger.warning("⚠️  KIE_API_KEY не установлен")
@@ -104,7 +110,7 @@ class KieApiClient:
                 return response.json()
 
         except httpx.TimeoutException:
-            logger.error(f"❌ Таймаут (>{self.timeout}s)")
+            logger.error(f"❌ Тайм-аут (>{self.timeout}s)")
             return None
         except Exception as e:
             logger.error(f"❌ Ошибка запроса: {e}")
@@ -117,7 +123,7 @@ class KieApiClient:
         callback_url: Optional[str] = None,
     ) -> Optional[str]:
         """
-        Креать задачу генерации.
+        Креатить задачу генерации.
 
         Returns:
             Task ID или None
@@ -138,7 +144,7 @@ class KieApiClient:
         logger.info(f"Model: {model}")
         
         # [НОВОЕ 2025-12-24] Логирование режима
-        mode_str = "🕹 PRO" if self.use_pro else "📋 BASE"
+        mode_str = "🔝 PRO" if self.use_pro else "📋 BASE"
         logger.info(f"Mode: {mode_str}")
         
         if input_data.get('image_urls'):
@@ -258,7 +264,7 @@ class KieApiClient:
                 logger.warning(f"⚠️  Неизвестный state: {state}")
                 await asyncio.sleep(poll_interval)
 
-        logger.error(f"❌ Таймаут: результат не получен за {max_polls * poll_interval}s")
+        logger.error(f"❌ Тайм-аут: результат не получен за {max_polls * poll_interval}s")
         return None
 
 
@@ -287,7 +293,7 @@ class NanoBananaClient(KieApiClient):
         use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
         
         if use_pro_mode:
-            logger.info("🕹 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana PRO)")
+            logger.info("🔝 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana PRO)")
         else:
             logger.info("📋 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana BASE)")
         
@@ -347,7 +353,7 @@ class NanoBananaClient(KieApiClient):
         use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
         
         if use_pro_mode:
-            logger.info("🕹 ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana PRO)")
+            logger.info("🔝 ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana PRO)")
         else:
             logger.info("📋 ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana BASE)")
         
@@ -435,9 +441,9 @@ async def generate_interior_with_nano_banana(
 ) -> Optional[str]:
     """
     Генерация дизайна интерьера через Nano Banana (Kie.ai).
-    [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод на английский
+    [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
     [2025-12-23 23:02] ПРИМЕЧАНИЕ: Это использует предустановленный style (room + style from design_styles)
-    [НОВОЕ 2025-12-24] ДОБАВЛена поддержка PRO режима
+    [НОВОЕ 2025-12-24] ДОБАВЛЕНА поддержка PRO режима
     """
     logger.info("="*70)
     logger.info("⚡ ГЕНЕРАЦИЯ ДИЗАЙНА [NANO BANANA via Kie.ai]")
@@ -453,7 +459,7 @@ async def generate_interior_with_nano_banana(
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод на английский
+        # [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод на английский
         prompt = await build_design_prompt(style, room, translate=True)
         logger.info(f"📄 Промпт сгенерирован и переведен (длина: {len(prompt)} символов)")
 
@@ -490,26 +496,27 @@ async def generate_interior_with_text_nano_banana(
     
     [2025-12-23 23:02] ДОБАВЛЕНО: Новая функция для поддержки текстовых промптов
     [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт в начало файла
-    [НОВОЕ 2025-12-24] ДОБАВЛена поддержка PRO режима
+    [НОВОЕ 2025-12-24] ДОБАВЛЕНА поддержка PRO режима
+    [2026-01-02 20:55] 🔥 CRITICAL FIX: Отправлять ТОЛЬКО user_prompt БЕЗ добавления контекста
+    [2026-01-02 21:04] ✨ ENHANCEMENT: Добавить префикс \"Create ultra-photorealistic image\" + детальный лог финального промпта
     
     Используется для:
-    - "Другого помещения"
-    - Экстерьера (дом, участок)
-    - Любого кастомного текстового введения
+    - ТЕКСТОВЫЙ РЕДАКТОР (edit_design режим) - user_prompt с префиксом!
+    - \"Другого помещения\" - с контекстом scene_type
+    - Экстерьера (дом, участок) - с контекстом scene_type
     
     Args:
         photo_file_id: ID фото из Telegram
         user_prompt: Текстовый промпт от пользователя (ВАЖНО!)
         bot_token: Токен бота Telegram
-        scene_type: Тип сцены (house_exterior, plot_exterior, other_room, custom)
+        scene_type: Тип сцены (НЕ используется в текстовом редакторе!)
         use_pro: Использовать PRO режим [НОВОЕ 2025-12-24]
     
     Returns:
         URL сгенерированного изображения или None
     """
     logger.info("="*70)
-    logger.info("✍️  ГЕНЕРАЦИЯ С ТЕКСТОВЫМ ПРОМПТОМ [NANO BANANA via Kie.ai]")
-    logger.info(f"   Сцена: {scene_type}")
+    logger.info("✏️  ГЕНЕРАЦИЯ С ТЕКСТОВЫМ ПРОМПТОМ [NANO BANANA via Kie.ai]")
     logger.info(f"   Пользовательский промпт: {user_prompt[:100]}...")
     logger.info("="*70)
 
@@ -530,11 +537,29 @@ async def generate_interior_with_text_nano_banana(
             logger.warning(f"⚠️  Не удалось перевести, используем оригинальный: {translate_error}")
             english_prompt = user_prompt
 
-        # Добавляем контекст генерации к промпту
-        full_prompt = f"Create a photorealistic {scene_type} design based on the user's request: {english_prompt}"
+        # [2026-01-02 21:04] ✨ ENHANCEMENT: Добавить префикс для текстового редактора
+        final_prompt = f"{TEXT_EDITOR_PROMPT_PREFIX}{english_prompt}"
         
-        logger.info(f"📄 Полный промпт для KIE.AI:")
-        logger.info(f"   {full_prompt}")
+        # [2026-01-02 21:04] 📋 ДЕТАЛЬНЫЙ ЛОГ ФИНАЛЬНОГО ПРОМПТА
+        logger.info("")
+        logger.info("="*70)
+        logger.info("📋 ФИНАЛЬНЫЙ ПРОМПТ ДЛЯ МОДЕЛИ (ТЕКСТОВЫЙ РЕДАКТОР)")
+        logger.info("="*70)
+        logger.info("")
+        logger.info("🔤 СТРУКТУРА ПРОМПТА:")
+        logger.info(f"   [ПРЕФИКС] {TEXT_EDITOR_PROMPT_PREFIX}")
+        logger.info(f"   [ПОЛЬЗОВАТЕЛЬСКИЙ ТЕКСТ] {english_prompt}")
+        logger.info("")
+        logger.info("📄 ПОЛНЫЙ ПРОМПТ (как получит модель):")
+        logger.info("-"*70)
+        for line in final_prompt.split('\n'):
+            if line.strip():
+                logger.info(f"   {line}")
+        logger.info("-"*70)
+        logger.info("")
+        logger.info(f"✅ Длина промпта: {len(final_prompt)} символов")
+        logger.info("="*70)
+        logger.info("")
 
         # [НОВОЕ 2025-12-24] Передать режим PRO в клиент
         use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
@@ -542,7 +567,7 @@ async def generate_interior_with_text_nano_banana(
         client = NanoBananaClient(use_pro=use_pro_mode)
         result = await client.edit_image(
             image_urls=[image_url],
-            prompt=full_prompt,
+            prompt=final_prompt,  # ✅ ФИНАЛЬНЫЙ ПРОМПТ С ПРЕФИКСОМ!
             output_format="png",
             image_size="auto",
             use_pro=use_pro_mode,  # [НОВОЕ 2025-12-24]
@@ -564,7 +589,7 @@ async def clear_space_with_kie(
 ) -> Optional[str]:
     """
     Очистка пространства через Nano Banana.
-    [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод
+    [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
     """
     logger.info("="*70)
     logger.info("📋 ОЧИСТКА ПРОСТРАНСТВА [Kie.ai]")
@@ -578,7 +603,7 @@ async def clear_space_with_kie(
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # [2025-12-23 15:30] ОБНОвЛЕНО: автоматический перевод
+        # [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
         prompt = await build_clear_space_prompt(translate=True)
         logger.info(f"📄 Промпт очистки (переведен): {prompt}")
 

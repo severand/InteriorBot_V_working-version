@@ -27,20 +27,20 @@ router = Router()
 @router.message(F.text.startswith("/start"))
 async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     """
-    SCREEN 0: ГЛАВНОЕ МЕНЮ с 3 кнопками
-    Безопасно удаляет старое меню, создаёт новое и сохраняет в БД.
+    SCREEN 0: ГЛАВНОЕ МЕНИ с 3 кнопками
+    Безопасно удаляет старое меню, создает новое и сохраняет в БД.
     
     🔴 КРИТИЧЕСКОЕ: Устанавливаем session_started=True
-    Это обеспечивает правильную логику видимости кнопки загрузки фото
+    Это обеспечивает правильную логику видимости кнопки загружения фото
     """
     chat_id = message.chat.id
     user_id = message.from_user.id
     username = message.from_user.username
 
-    # ===== 1️⃣ ПАРСИМ АРГУМЕНТЫ =====
+    # ===== 1️⃣ ПАРЗИМ АРГУМЕНТЫ =====
     start_param = message.text.split()[1] if len(message.text.split()) > 1 else None
 
-    # ===== 2️⃣ ПРОВЕРЯЕМ - УСПЕШНЫЙ ПЛАТЁЖ? =====
+    # ===== 2️⃣ ПРОВЕРЯЕМ - УСПЕШНЫЙ ПЛАТЕЖ? =====
     if start_param == "payment_success":
         # Удаляем старое меню
         await db.delete_old_menu_if_exists(chat_id, message.bot)
@@ -53,7 +53,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
 
             from keyboards.inline import get_profile_keyboard
 
-            # Создаём НОВОЕ меню
+            # Сохраняем в FSM + БД
             menu_msg = await message.answer(
                 text,
                 reply_markup=get_profile_keyboard(),
@@ -73,7 +73,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
             logger.info(f"✅ [PAYMENT_SUCCESS] User {user_id} redirected to profile, msg_id={menu_msg.message_id}")
             return
 
-    # ===== 3️⃣ БЕЗОПАСНО УДАЛЯЕМ СТАРОЕ МЕНЮ =====
+    # ===== 3️⃣ БЕЗОПАСНО УДАЛЯЕМ СТАРОЕ МЕНУ =====
     await db.delete_old_menu_if_exists(chat_id, message.bot)
 
     # ===== 4️⃣ ОЧИЩАЕМ FSM STATE =====
@@ -81,7 +81,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
 
     # ===== 🔴 КРИТИЧЕСКОЕ: УСТАНАВЛИВАЕМ session_started=True =====
     # Это указывает на то, что пользователь только что нажал /start
-    # Флаг будет отключен после загрузки первого фото в этой сессии
+    # Флаг будет отключен после загружки первого фото в этой сессии
     await state.update_data(session_started=True)
     logger.info(f"🔴 [/START] Установлен флаг session_started=True для user_id={user_id}")
 
@@ -125,7 +125,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     except:
         pass
 
-    # ===== 7️⃣ ОТПРАВЛЯЕМ SCREEN 0: ГЛАВНОЕ МЕНЮ С БАЛАНСОМ =====
+    # ===== 7️⃣ ОТПРАВЛЯЕМ SCREEN 0: ГЛАВНОЕ МЕНИ С БАЛАНСОМ =====
     text = await add_balance_to_text(START_TEXT, user_id)
     menu_msg = await message.answer(
         text,
@@ -133,7 +133,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
         parse_mode="Markdown"
     )
 
-    # ===== 8️⃣ 💾 СОХРАНЯЕМ В FSM + БД =====
+    # ===== 8️⃣ 📔 СОХРАНЯЕМ В FSM + БД =====
     await state.update_data(menu_message_id=menu_msg.message_id)
     await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'main_menu')
 
@@ -145,7 +145,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
 async def back_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
     Возврат в SCREEN 0 (главное меню) из любого места.
-    ИСПОЛЬЗУЕТ state.set_state(None) вместо state.clear()!
+    МОНОПОЛЬзУЕТ state.set_state(None) вместо state.clear()!
     """
     await show_main_menu(callback, state, admins)
     await callback.answer()
@@ -231,7 +231,7 @@ async def start_creation(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
 
-    # ВОССТАНАВЛИВАЕМ menu_message_id
+    # ВОссТАНАВЛИВАЕМ menu_message_id
     if menu_message_id:
         await state.update_data(menu_message_id=menu_message_id)
 
@@ -270,11 +270,11 @@ async def show_statistics(callback: CallbackQuery, state: FSMContext):
     reg_date = user_data.get('reg_date', 'неизвестно')
 
     stats_text = (
-        f"📊 **СТАТИСТИКА**\n\n"
-        f"─────────────────\n"
-        f"✨ Текущий баланс: **{balance}** генераций\n"
-        f"🗓️ С нами с: {reg_date}\n"
-        f"─────────────────\n\n"
+        f"📋 **СТАТИСТИКА**\n\n"
+        f"─────────────\n"
+        f"✨ Нынешний баланс: **{balance}** генераций\n"
+        f"📅 С нами с: {reg_date}\n"
+        f"─────────────\n\n"
         f"ℹ️ Детальная статистика в разработке..."
     )
 
@@ -322,7 +322,7 @@ async def show_referral_program(callback: CallbackQuery, state: FSMContext):
         elif 2 <= count % 10 <= 4 and (count % 100 < 10 or count % 100 >= 20):
             return "друга"
         else:
-            return "друзей"
+            return "дружей"
 
     referrals_word = get_word_form(referrals_count)
 
@@ -330,11 +330,11 @@ async def show_referral_program(callback: CallbackQuery, state: FSMContext):
         return f"{num:,}".replace(',', ' ')
 
     referral_text = (
-        f"🎁 **ПАРТНЁРСКАЯ ПРОГРАММА**\n\n"
-        f"─────────────────\n"
+        f"🎁 **ПАРТНЕРСКАЯ ПРОГРАММА**\n\n"
+        f"─────────────\n"
         f"🔗 Ваша ссылка:\n`{referral_link}`\n\n"
         f"👥 Приглашено: **{referrals_count}** {referrals_word}\n"
-        f"─────────────────\n\n"
+        f"─────────────\n\n"
         f"💰 **Реферальный баланс:**\n"
         f"• Доступно: **{format_number(referral_balance)} руб.**\n"
         f"• Всего заработано: {format_number(referral_total_earned)} руб.\n"
@@ -342,7 +342,7 @@ async def show_referral_program(callback: CallbackQuery, state: FSMContext):
         f"🎯 **Ваши условия:**\n"
         f"• За регистрацию: +2 генерации\n"
         f"• % от покупок: {commission_percent}%\n"
-        f"─────────────────"
+        f"─────────────"
     )
 
     from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -353,7 +353,7 @@ async def show_referral_program(callback: CallbackQuery, state: FSMContext):
         InlineKeyboardButton(text="💎 Обменять на генерации", callback_data="referral_exchange_tokens")
     )
     builder.row(InlineKeyboardButton(text="⚙️ Реквизиты для выплат", callback_data="referral_setup_payment"))
-    builder.row(InlineKeyboardButton(text="📊 История операций", callback_data="referral_history"))
+    builder.row(InlineKeyboardButton(text="📋 История операций", callback_data="referral_history"))
     builder.row(InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data="show_profile"))
 
     builder.adjust(2, 1, 1, 1)
@@ -376,11 +376,11 @@ async def show_support(callback: CallbackQuery, state: FSMContext):
 
     support_text = (
         "💬 **ПОДДЕРЖКА**\n\n"
-        "─────────────────\n"
+        "─────────────\n"
         "📧 Email: support@example.com\n"
         "💬 Telegram: `@support_bot`\n"
-        "─────────────────\n\n"
-        "ℹ️ Мы ответим в течение 24 часов"
+        "─────────────\n\n"
+        "\u2139️ Мы ответим в течение 24 часов"
     )
 
     from aiogram.utils.keyboard import InlineKeyboardBuilder

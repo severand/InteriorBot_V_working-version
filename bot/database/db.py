@@ -1,4 +1,6 @@
 # bot/database/db.py
+# --- ОБНОВЛЕН: 2026-01-02 22:42 - НОВОЕ: edit_old_menu_if_exists() - редактирование вместо удаления ---
+# --- ОБНОВЛЕН: 2026-01-02 21:40 - ОТКАТЫВАЕМ НЕПРАВИЛЬНЫЙ FIX - вернуть delete_message с правильной обработкой ошибок ---
 # --- ОБНОВЛЕН: 2026-01-02 11:53 - НОВОЕ: Добавлены методы save_user_photo/get_last_user_photo ---
 # --- ОБНОВЛЕН: 2025-12-30 23:59 - Добавлена функция increase_balance() для возврата баланса ---
 # --- ОБНОВЛЕН: 2025-12-24 20:25 - Добавлены методы get_setting/set_setting ---
@@ -20,7 +22,7 @@ from database.models import (
     CREATE_GENERATIONS_TABLE, CREATE_USER_ACTIVITY_TABLE,
     CREATE_ADMIN_NOTIFICATIONS_TABLE, CREATE_USER_SOURCES_TABLE,
     CREATE_CHAT_MENUS_TABLE,  # ← НОВАЯ СТРОКА
-    CREATE_USER_PHOTOS_TABLE,  # ← НОВАЯ ТАБЛИЦА ДЛЯ ФОТО (2026-01-02)
+    CREATE_USER_PHOTOS_TABLE,  # ← НОВАЯ ТАБЛИЦА ДЛЕ ФОТО (2026-01-02)
     CREATE_USER_SESSION_MODES_TABLE,  # ← Эта таблица есть
     DEFAULT_SETTINGS,
     # Пользователи
@@ -82,7 +84,7 @@ class Database:
             for key, value in DEFAULT_SETTINGS.items():
                 await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
 
-            # ✅ МИГРАЦИЯ: Добавляем столбцы PRO MODE если их нет
+            # ✅ МИГРАЦИО: Добавляем столбцы PRO MODE если их нет
             await self._migrate_pro_mode_columns(db)
 
             await db.commit()
@@ -116,7 +118,7 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Ошибка миграции PRO MODE: {e}")
 
-    # ===== НОВОЕ: МЕТОДЫ ДЛЯ ЦУЧЕНИЯ ФОТО (2026-01-02) =====
+    # ===== НОВОЕ: МЕТОДЫ ДЛЕ ЦУЧЕНИЯ ФОТО (2026-01-02) =====
 
     async def save_user_photo(self, user_id: int, photo_id: str) -> bool:
         """
@@ -316,19 +318,80 @@ class Database:
                 logger.error(f"❌ Ошибка delete_chat_menu: {e}")
                 return False
 
+    async def edit_old_menu_if_exists(self, chat_id: int, user_id: int, new_text: str, new_keyboard, bot) -> Optional[int]:
+        """
+        ✏️ [2026-01-02 22:42] НОВОЕ РЕШЕНИЕ:
+        
+        Вместо того, чтобы удалять старое меню - редактируем его!
+        
+        Преимущества:
+        ✅ Одно сообщение в чате (редактируется)
+        ✅ Лучший UX - нен пренес сообщения
+        ✅ Когда сообщение удалено/испорчено - создаём новое
+        
+        Возвращает:
+        - message_id если редактировали старое
+        - None если не найдено/если редактирование не сработало
+        """
+        try:
+            menu_data = await self.get_chat_menu(chat_id)
+            if menu_data and menu_data.get('menu_message_id'):
+                old_message_id = menu_data['menu_message_id']
+                try:
+                    # Пытаемся редактировать старое сообщение
+                    await bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=old_message_id,
+                        text=new_text,
+                        reply_markup=new_keyboard
+                    )
+                    logger.info(f"✏️ Отредактировано старое меню: chat={chat_id}, msg_id={old_message_id}")
+                    
+                    # Обновляем время в БД
+                    await self.save_chat_menu(chat_id, user_id, old_message_id, 'main_menu')
+                    
+                    return old_message_id
+                
+                except Exception as edit_error:
+                    # Если не удалось редактировать - вернули None
+                    logger.warning(
+                        f"⚠️ Не удалось отредактировать (chat={chat_id}, msg_id={old_message_id}): "
+                        f"{str(edit_error)} - сохраним в БД для следующего раза"
+                    )
+                    return None
+            
+            logger.debug(f"⚠️ Нет старого меню в БД для chat={chat_id}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка в edit_old_menu_if_exists: {e}")
+            return None
+
     async def delete_old_menu_if_exists(self, chat_id: int, bot) -> bool:
-        """Удалить старое меню из чата, если оно есть в БД"""
+        """
+        🗑️ [2026-01-02 21:40] ПРАВИЛЬНОЕ РЕШЕНИЕ:
+        
+        Удаляем ФИЗИЧЕСКИ старое сообщение из чата И из БД.
+        С корректной обработкой ошибок!
+        
+        Если сообщение уже удалено/отредактировано - не проблема,
+        мы все равно очищаем БД и создаем новое сообщение.
+        """
         try:
             menu_data = await self.get_chat_menu(chat_id)
             if menu_data and menu_data.get('menu_message_id'):
                 old_menu_id = menu_data['menu_message_id']
                 try:
+                    # Пытаемся физически удалить сообщение из чата
                     await bot.delete_message(chat_id=chat_id, message_id=old_menu_id)
-                    logger.debug(f"🗑️ Удалено старое меню: chat={chat_id}, message_id={old_menu_id}")
+                    logger.info(f"✅ Удалено старое меню: chat={chat_id}, msg_id={old_menu_id}")
                 except Exception as e:
-                    logger.debug(f"⚠️ Не удалось удалить старое меню: {e}")
+                    # Если не получилось - не критично (может быть уже удалено)
+                    logger.debug(f"⚠️ Не удалось удалить сообщение (возможно уже удалено): {e}")
 
+                # В любом случае очищаем запись из БД
                 await self.delete_chat_menu(chat_id)
+                logger.info(f"📔 Очищена запись меню в БД для chat={chat_id}")
             return True
         except Exception as e:
             logger.error(f"❌ Ошибка delete_old_menu_if_exists: {e}")
@@ -377,7 +440,7 @@ class Database:
 
             referrer_id = referrer[0]
 
-            # Связываем пользователя с реферером
+            # Связываем пользователя с реферем
             await db.execute(UPDATE_REFERRED_BY, (referrer_id, user_id))
 
             # Увеличиваем счетчик рефалов
