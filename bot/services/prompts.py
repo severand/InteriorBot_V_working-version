@@ -5,6 +5,7 @@
 # [2026-01-03 21:15] ОБНОВЛЕНО: Добавлен APPLY_STYLE_PROMPT для примерки дизайна (Sample Design)
 # [2026-01-03 19:30] 🔥 КРИТИЧНО: Обновлен APPLY_STYLE_PROMPT для ПОЛНОЙ трансформации (мебель + стиль)
 # [2026-01-03 19:37] 🔧 CRITICAL FIX: Добавлено жесткое сохранение геометрии и размеров комнаты
+# [2026-01-03 22:51] ✨ ENHANCED: Обновлен APPLY_STYLE_PROMPT для максимального реализма
 # ========================================
 
 import logging
@@ -63,46 +64,59 @@ You can't:
 # [2026-01-03 21:15] НОВОЕ: Для функции apply_style_to_room()
 # [2026-01-03 19:30] 🔥 КРИТИЧНО: Переписан для ПОЛНОЙ трансформации по образцу
 # [2026-01-03 19:37] 🔧 CRITICAL FIX: Добавлено жесткое сохранение геометрии
+# [2026-01-03 22:51] ✨ ENHANCED: Обновлен для максимального реализма
 # Описание: Полностью преобразить комнату по образцу - заменить ВСЮ мебель, декор, стиль
 # Используется в: SCREEN 11 - Кнопка "🎨 Примерить дизайн"
 # Вход: основное фото комнаты + образец дизайна
 # Выход: новый дизайн с ПОЛНОЙ трансформацией по образцу
 
+# ========================================
+# СТАРЫЙ ПРОМПТ (ЗАКОММЕНТИРОВАН 2026-01-03 22:51)
+# ========================================
+# APPLY_STYLE_PROMPT = (
+#     "You are a professional interior designer. "
+#     "Completely transform the room in the first image to match the reference design shown in the second image. "
+#     
+#     "WHAT TO CHANGE (transform everything):\n"
+#     "- Replace ALL furniture with furniture matching the reference design\n"
+#     "- Replace ALL decor, accessories, and decorative elements\n"
+#     "- Apply the exact color scheme, materials, and textures from the reference\n"
+#     "- Match the lighting, atmosphere, and mood of the reference design\n"
+#     "- Adopt the same style aesthetic (modern, classic, minimalist, etc.) as the reference\n"
+#     "- Recreate wall treatments, finishes, and surface materials from the reference\n"
+#     "- Match flooring style and material to the reference design\n"
+#     "- Apply the same window treatments (curtains, blinds, etc.)\n"
+#     "- Recreate ceiling design and lighting fixtures from the reference\n"
+#     "- Include similar plants, artwork, and decorative accents\n"
+#     
+#     "WHAT TO PRESERVE (keep EXACTLY from original - DO NOT CHANGE):\n"
+#     "- MUST maintain the exact room dimensions and floor area\n"
+#     "- MUST keep the same room geometry and wall layout EXACTLY\n"
+#     "- MUST preserve the exact positions of doors and windows - DO NOT MOVE THEM\n"
+#     "- MUST maintain the overall room proportions and spatial configuration - NO CHANGES ALLOWED\n"
+#     "- MUST NOT enlarge or decrease the room size\n"
+#     "- MUST NOT change the room's height or width\n"
+#     "- MUST NOT remove or add walls\n"
+#     "- MUST NOT distort or warp the room's original geometry\n"
+#     "- Adapt furniture scale and placement to fit the current room size EXACTLY\n"
+#     
+#     "STRICT RULES (CRITICAL - DO NOT BREAK):\n"
+#     "- The room's basic structure CANNOT be changed\n"
+#     "- Window and door positions are FIXED and IMMUTABLE\n"
+#     "- Room dimensions are SACRED - maintain them precisely\n"
+#     "- Only furniture arrangement and styling can change\n"
+#     "- Preserve the exact aspect ratio and proportions of the original room\n"
+#     
+#     "GOAL: Create an ultra-photorealistic design for a glossy design magazine that will look exactly as if the reference style was applied to THAT SPECIFIC ROOM, while maintaining the exact dimensions, geometry and structure of the room."
+# )
+
+# ========================================
+# НОВЫЙ ПРОМПТ (ОБНОВЛЕН 2026-01-03 22:51)
+# ========================================
 APPLY_STYLE_PROMPT = (
-    "You are a professional interior designer. "
-    "Completely transform the room in the first image to match the reference design shown in the second image. "
-    
-    "WHAT TO CHANGE (transform everything):\n"
-    "- Replace ALL furniture with furniture matching the reference design\n"
-    "- Replace ALL decor, accessories, and decorative elements\n"
-    "- Apply the exact color scheme, materials, and textures from the reference\n"
-    "- Match the lighting, atmosphere, and mood of the reference design\n"
-    "- Adopt the same style aesthetic (modern, classic, minimalist, etc.) as the reference\n"
-    "- Recreate wall treatments, finishes, and surface materials from the reference\n"
-    "- Match flooring style and material to the reference design\n"
-    "- Apply the same window treatments (curtains, blinds, etc.)\n"
-    "- Recreate ceiling design and lighting fixtures from the reference\n"
-    "- Include similar plants, artwork, and decorative accents\n"
-    
-    "WHAT TO PRESERVE (keep EXACTLY from original - DO NOT CHANGE):\n"
-    "- MUST maintain the exact room dimensions and floor area\n"
-    "- MUST keep the same room geometry and wall layout EXACTLY\n"
-    "- MUST preserve the exact positions of doors and windows - DO NOT MOVE THEM\n"
-    "- MUST maintain the overall room proportions and spatial configuration - NO CHANGES ALLOWED\n"
-    "- MUST NOT enlarge or decrease the room size\n"
-    "- MUST NOT change the room's height or width\n"
-    "- MUST NOT remove or add walls\n"
-    "- MUST NOT distort or warp the room's original geometry\n"
-    "- Adapt furniture scale and placement to fit the current room size EXACTLY\n"
-    
-    "STRICT RULES (CRITICAL - DO NOT BREAK):\n"
-    "- The room's basic structure CANNOT be changed\n"
-    "- Window and door positions are FIXED and IMMUTABLE\n"
-    "- Room dimensions are SACRED - maintain them precisely\n"
-    "- Only furniture arrangement and styling can change\n"
-    "- Preserve the exact aspect ratio and proportions of the original room\n"
-    
-    "GOAL: Create an ultra-photorealistic design for a glossy design magazine that will look exactly as if the reference style was applied to THAT SPECIFIC ROOM, while maintaining the exact dimensions, geometry and structure of the room."
+    "Создайте ультра фотореалистичный дизайн для глянцевого журнала о дизайне, "
+    "который будет выглядеть в точности так, как будто эталонный стиль был применен к ЭТОМУ КОНКРЕТНОМУ ПОМЕЩЕНИЮ, "
+    "сохраняя при этом точные размеры, геометрию и структуру помещения."
 )
 
 # ========================================
@@ -172,6 +186,7 @@ async def build_apply_style_prompt(translate: bool = True) -> str:
     """
     🎁 [2026-01-03 21:15] НОВОЕ: Собирает промпт для примерки дизайна (Try-On)
     🔧 [2026-01-03 19:37] CRITICAL FIX: Добавлено жесткое сохранение геометрии
+    ✨ [2026-01-03 22:51] ENHANCED: Обновлен для максимального фотореализма
     
     Описание:
     ПОЛНОСТьЮ преобразует комнату по образцу:
@@ -179,22 +194,23 @@ async def build_apply_style_prompt(translate: bool = True) -> str:
     - Применяет стиль, цвета, материалы из образца
     - СОХРАНЯЕТ ТОЛЬКО геометрию комнаты и расположение окон/дверей
     - Адаптирует масштаб мебели под площадь комнаты
+    - Создает ультра фотореалистичный дизайн для журнального качества
     
     Используется в:
     - SCREEN 11: Кнопка "🎨 Примерить дизайн"
     - Функция: apply_style_to_room() в kie_api.py
     - Вход: [основное фото, образец фото]
-    - Выход: ПОЛНАЯ трансформация комнаты по образцу
+    - Выход: ПОЛНАЯ трансформация комнаты по образцу с максимальным реализмом
     
     Args:
         translate: включить ли перевод на английский (по умолчанию True)
     
     Returns:
-        Готовый промпт на английском языке (для KIE.AI) - ~700+ символов
+        Готовый промпт на английском языке (для KIE.AI) - ~200+ символов
     
     Пример:
         >>> prompt = await build_apply_style_prompt()
-        >>> # Результат: "You are a professional interior designer. Completely transform..."
+        >>> # Результат: "Создайте ультра фотореалистичный дизайн..."
     """
     prompt = APPLY_STYLE_PROMPT
     
