@@ -4,6 +4,7 @@
 # [2025-12-23 15:30] ОБНОВЛЕНО: Добавлена интеграция с translator.py для перевода на английский
 # [2026-01-03 21:15] ОБНОВЛЕНО: Добавлен APPLY_STYLE_PROMPT для примерки дизайна (Sample Design)
 # [2026-01-03 19:30] 🔥 КРИТИЧНО: Обновлен APPLY_STYLE_PROMPT для ПОЛНОЙ трансформации (мебель + стиль)
+# [2026-01-03 19:37] 🔧 CRITICAL FIX: Добавлено жесткое сохранение геометрии и размеров комнаты
 # ========================================
 
 import logging
@@ -61,6 +62,7 @@ You can't:
 # ========================================
 # [2026-01-03 21:15] НОВОЕ: Для функции apply_style_to_room()
 # [2026-01-03 19:30] 🔥 КРИТИЧНО: Переписан для ПОЛНОЙ трансформации по образцу
+# [2026-01-03 19:37] 🔧 CRITICAL FIX: Добавлено жесткое сохранение геометрии
 # Описание: Полностью преобразить комнату по образцу - заменить ВСЮ мебель, декор, стиль
 # Используется в: SCREEN 11 - Кнопка "🎨 Примерить дизайн"
 # Вход: основное фото комнаты + образец дизайна
@@ -82,14 +84,26 @@ APPLY_STYLE_PROMPT = (
     "- Recreate ceiling design and lighting fixtures from the reference\n"
     "- Include similar plants, artwork, and decorative accents\n"
     
-    "WHAT TO PRESERVE (keep from original):\n"
-    "- Maintain the exact room dimensions and floor area\n"
-    "- Keep the same room geometry and wall layout\n"
-    "- Preserve the positions of doors and windows\n"
-    "- Maintain the overall room proportions and spatial configuration\n"
-    "- Adapt furniture scale and placement to fit the current room size\n"
+    "WHAT TO PRESERVE (keep EXACTLY from original - DO NOT CHANGE):\n"
+    "- MUST maintain the exact room dimensions and floor area\n"
+    "- MUST keep the same room geometry and wall layout EXACTLY\n"
+    "- MUST preserve the exact positions of doors and windows - DO NOT MOVE THEM\n"
+    "- MUST maintain the overall room proportions and spatial configuration - NO CHANGES ALLOWED\n"
+    "- MUST NOT enlarge or decrease the room size\n"
+    "- MUST NOT change the room's height or width\n"
+    "- MUST NOT remove or add walls\n"
+    "- MUST NOT distort or warp the room's original geometry\n"
+    "- Adapt furniture scale and placement to fit the current room size EXACTLY\n"
     
-    "GOAL: Create a photorealistic design that looks exactly like the reference style has been applied to this specific room space."
+    "STRICT RULES (CRITICAL - DO NOT BREAK):\n"
+    "- The room's basic structure CANNOT be changed\n"
+    "- Window and door positions are FIXED and IMMUTABLE\n"
+    "- Room dimensions are SACRED - maintain them precisely\n"
+    "- Only furniture arrangement and styling can change\n"
+    "- Preserve the exact aspect ratio and proportions of the original room\n"
+    
+    "GOAL: Create a photorealistic design that looks exactly like the reference style has been applied to THIS SPECIFIC ROOM SPACE "
+    "while preserving the room's exact size, geometry, and structure."
 )
 
 # ========================================
@@ -158,13 +172,13 @@ async def build_design_prompt(style: str, room: str, translate: bool = True) -> 
 async def build_apply_style_prompt(translate: bool = True) -> str:
     """
     🎁 [2026-01-03 21:15] НОВОЕ: Собирает промпт для примерки дизайна (Try-On)
-    🔥 [2026-01-03 19:30] КРИТИЧНО: Обновлено для ПОЛНОЙ трансформации по образцу
+    🔧 [2026-01-03 19:37] CRITICAL FIX: Добавлено жесткое сохранение геометрии
     
     Описание:
-    ПОЛНОСТЬЮ преобразует комнату по образцу:
+    ПОЛНОСТьЮ преобразует комнату по образцу:
     - Заменяет ВСЮ мебель на мебель из образца
     - Применяет стиль, цвета, материалы из образца
-    - Сохраняет ТОЛЬКО геометрию комнаты и расположение окон/дверей
+    - СОХРАНЯЕТ ТОЛЬКО геометрию комнаты и расположение окон/дверей
     - Адаптирует масштаб мебели под площадь комнаты
     
     Используется в:
@@ -177,7 +191,7 @@ async def build_apply_style_prompt(translate: bool = True) -> str:
         translate: включить ли перевод на английский (по умолчанию True)
     
     Returns:
-        Готовый промпт на английском языке (для KIE.AI) - ~450+ символов
+        Готовый промпт на английском языке (для KIE.AI) - ~700+ символов
     
     Пример:
         >>> prompt = await build_apply_style_prompt()
