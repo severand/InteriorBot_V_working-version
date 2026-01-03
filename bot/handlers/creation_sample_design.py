@@ -1,5 +1,7 @@
 import logging
 import asyncio
+import uuid
+from datetime import datetime
 
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
@@ -17,6 +19,31 @@ from config import config
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+PHOTO_SEND_LOG = {}
+
+def log_photo_send(user_id: int, method: str, message_id: int, request_id: str = None, operation: str = ""):
+    """Логирует отправку фото для диагностики"""
+    if user_id not in PHOTO_SEND_LOG:
+        PHOTO_SEND_LOG[user_id] = []
+    
+    timestamp = datetime.now().isoformat()
+    rid = request_id or str(uuid.uuid4())[:8]
+    
+    entry = {
+        'timestamp': timestamp,
+        'method': method,
+        'message_id': message_id,
+        'request_id': rid,
+        'operation': operation
+    }
+    
+    PHOTO_SEND_LOG[user_id].append(entry)
+    
+    logger.warning(
+        f"📊 [PHOTO_LOG] user_id={user_id}, method={method}, msg_id={message_id}, "
+        f"request_id={rid}, operation={operation}, timestamp={timestamp}"
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -97,9 +124,9 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
         asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
 
 
-# ════════════════════════════════════════���════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════════
 # 🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
-# ═════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(
     StateFilter(CreationStates.generation_try_on),
@@ -122,9 +149,15 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
     📊 [2026-01-03 19:17] ЛОГИРОВАНИЕ:
     - ДЕТАЛЬНЫЕ логи источника фото (БД vs FSM)
     - Для отладки перезагрузки при потере FSM
+    
+    🔧 [2026-01-03 19:40] КРИТИЧНО FIX:
+    - Отправляем ОТДЕЛЬНОЕ текстовое сообщение с кнопками ПОСЛЕ фото
+    - Фото отправляется БЕЗ кнопок (просто с caption)
+    - Это предотвращает удаление меню при перезагрузке бота
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
+    request_id = str(uuid.uuid4())[:8]
 
     try:
         logger.info(f"🎁 [SCREEN 11] КНОПКА НАЖАТА: user_id={user_id}")
@@ -253,18 +286,20 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         
         # ✅ ГЕНЕРАЦИЯ УСПЕШНА
         logger.info(f"✅ Результат примерки готов: {result_url[:50]}...")
+        log_photo_send(user_id, "answer_photo", 0, request_id, "apply_style_to_room")
         
         # ПЕРЕХОД НА SCREEN 12: post_generation_sample
         await state.set_state(CreationStates.post_generation_sample)
         await state.update_data(last_generated_image_url=result_url)
         
-        # 📸 ОТПРАВЛЯЕМ РЕЗУЛЬТАТ
-        result_text = (
-            "✅ *Примерка готова!*\n\n"
+        # 🔧 [2026-01-03 19:40] КРИТИЧНО FIX:
+        # Отправляем ТОЛЬКО ФОТО (БЕЗ КНОПОК)
+        photo_caption = (
+            "✨ *Примерка готова!*\n\n"
             "Дизайн применен к вашей комнате с сохранением мебели и макета."
         )
         
-        # Если есть меню, отправляем фото ответом
+        # Удаляем меню генерации
         if menu_message_id:
             try:
                 await callback.message.delete()
@@ -272,20 +307,45 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             except TelegramBadRequest:
                 logger.debug("⚠️ Не удалось удалить меню")
         
-        # Отправляем результат
-        result_msg = await callback.message.answer_photo(
+        # ОТПРАВЛЯЕМ ФОТО БЕЗ КНОПОК
+        photo_msg = await callback.message.answer_photo(
             photo=result_url,
-            caption=result_text,
-            parse_mode="Markdown",
-            reply_markup=get_post_generation_sample_keyboard()
+            caption=photo_caption,
+            parse_mode="Markdown"
         )
-        logger.info(f"📸 [SCREEN 12] Результат примерки отправлен (msg_id={result_msg.message_id})")
+        logger.info(f"📸 [SCREEN 12] Фото примерки отправлено (msg_id={photo_msg.message_id})")
+        log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id, "apply_style_to_room_success")
         
-        # Сохраняем меню
-        await db.save_chat_menu(chat_id, user_id, result_msg.message_id, 'post_generation_sample')
-        await state.update_data(menu_message_id=result_msg.message_id)
+        await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation_sample_photo')
         
-        logger.info(f"✅ [SCREEN 11→12] COMPLETED - примерка готова")
+        # 🔧 [2026-01-03 19:40] ОТПРАВЛЯЕМ ОТДЕЛЬНОЕ МЕНЮ СООБЩЕНИЕ С КНОПКАМИ
+        # Как в creation_new_design.py - это предотвращает удаление при перезагрузке
+        data = await state.get_data()
+        work_mode = data.get('work_mode', 'sample_design')
+        balance = await db.get_balance(user_id)
+        
+        menu_text = (
+            f"🎨 *Примерка дизайна готова!*\n\n"
+            f"Выберите действие:\n"
+            f"🔄 Загрузить новый образец\n"
+            f"🏠 Вернуться в меню\n\n"
+            f"📊 Баланс: *{balance}* генераций | 🔧 Режим: *{work_mode}*"
+        )
+        
+        menu_msg = await callback.message.answer(
+            text=menu_text,
+            reply_markup=get_post_generation_sample_keyboard(),
+            parse_mode="Markdown"
+        )
+        logger.info(f"📝 [SCREEN 12] Меню с кнопками отправлено (msg_id={menu_msg.message_id})")
+        
+        await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_sample_menu')
+        await state.update_data(
+            photo_message_id=photo_msg.message_id,
+            menu_message_id=menu_msg.message_id
+        )
+        
+        logger.info(f"✅ [SCREEN 11→12] COMPLETED - примерка готова с отдельным меню")
         
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 11 кнопка failed: {e}", exc_info=True)
