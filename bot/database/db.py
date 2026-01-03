@@ -94,13 +94,13 @@ class Database:
     async def save_main_photo(self, user_id: int, photo_id: str) -> bool:
         """
         📷 Сохранить ОСНОВНОЕ фото пользователя в БД (SCREEN 2).
-        
+
         ⚠️ ВНИМАНИЕ: Основное фото считается постоянным!
-        
+
         Параметры:
         - user_id: ID пользователя
         - photo_id: Telegram file_id фото
-        
+
         Возвращает:
         - True если успешно сохранено, False при ошибке
         """
@@ -117,13 +117,13 @@ class Database:
     async def save_sample_photo(self, user_id: int, photo_id: str) -> bool:
         """
         🎨 Сохранить ОБРАЗЕЦ фото пользователя в БД (SCREEN 10).
-        
+
         ⚠️ ВАЖНО: Образец может быть заменен многократно для примерки!
-        
+
         Параметры:
         - user_id: ID пользователя
         - photo_id: Telegram file_id фото
-        
+
         Возвращает:
         - True если успешно сохранено, False при ошибке
         """
@@ -140,7 +140,7 @@ class Database:
     async def get_user_photos(self, user_id: int) -> Dict[str, Optional[str]]:
         """
         📸 Получить ОБА фото пользователя одновременно!
-        
+
         Возвращает:
         {
             'main_photo_id': 'file_id или None',
@@ -156,7 +156,7 @@ class Database:
                             'main_photo_id': row[0],
                             'sample_photo_id': row[1]
                         }
-                    
+
                     logger.debug(f"⚠️ Фото не найдены для user_id={user_id}")
                     return {
                         'main_photo_id': None,
@@ -191,7 +191,7 @@ class Database:
                         photo_id = row[0]
                         logger.info(f"✅ Найдена фото для user_id={user_id}")
                         return photo_id
-                    
+
                     logger.debug(f"⚠️ Фото не найдена для user_id={user_id}")
                     return None
             except Exception as e:
@@ -314,7 +314,8 @@ class Database:
                 logger.error(f"❌ Ошибка delete_chat_menu: {e}")
                 return False
 
-    async def edit_old_menu_if_exists(self, chat_id: int, user_id: int, new_text: str, new_keyboard, bot) -> Optional[int]:
+    async def edit_old_menu_if_exists(self, chat_id: int, user_id: int, new_text: str, new_keyboard, bot) -> Optional[
+        int]:
         """✏️ Редактируем старое меню вместо удаления"""
         try:
             menu_data = await self.get_chat_menu(chat_id)
