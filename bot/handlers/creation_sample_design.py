@@ -97,7 +97,7 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
         asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════���════════════════════════════════════
 # 🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -119,17 +119,28 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
     - При готовности показываем результат с клавиатурой SCREEN 12
     - На ошибку показываем сообщение об ошибке
     
-    🔧 [2026-01-03 19:15] HOTFIX: Fallback для photo_id из FSM если не в БД
+    📊 [2026-01-03 19:17] ЛОГИРОВАНИЕ:
+    - ДЕТАЛЬНЫЕ логи источника фото (БД vs FSM)
+    - Для отладки перезагрузки при потере FSM
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
 
     try:
         logger.info(f"🎁 [SCREEN 11] КНОПКА НАЖАТА: user_id={user_id}")
+        logger.info(f"═" * 80)
+        logger.info(f"📊 [SCREEN 11] ДИАГНОСТИКА ЗАГРУЗКИ ФОТО")
+        logger.info(f"═" * 80)
         
         # 🔄 ЗАГРУЖЕННЫЙ ОБРАЗЕЦ
         data = await state.get_data()
         sample_photo_id = data.get('sample_photo_id')
+        
+        logger.info(f"\n1️⃣  ОБРАЗЕЦ ФОТО (sample_photo_id):")
+        if sample_photo_id:
+            logger.info(f"   ✅ НАЙДЕН в FSM: {sample_photo_id[:40]}...")
+        else:
+            logger.error(f"   ❌ НЕ НАЙДЕН в FSM")
         
         if not sample_photo_id:
             logger.error("❌ Образец фото не найден в FSM")
@@ -139,32 +150,68 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             )
             return
         
-        # 🎯 ПОЛУЧАЕМ ОСНОВНОЕ ФОТО (С FALLBACK)
-        logger.info(f"🔍 Получение основного фото...")
+        # 🎯 ПОЛУЧАЕМ ОСНОВНОЕ ФОТО (С ПОДРОБНЫМ ЛОГИРОВАНИЕМ)
+        logger.info(f"\n2️⃣  ОСНОВНОЕ ФОТО (main_photo_id):")
+        logger.info(f"   🔍 Проверяю источники данных...")
         
-        # 1️⃣ Пытаемся получить из БД
+        # ПОПЫТКА 1: БД
+        logger.info(f"   📌 ПОПЫТКА 1: Получаю из БД...")
         user_photos = await db.get_user_photos(user_id)
+        logger.info(f"   📦 Результат get_user_photos(): {user_photos}")
+        
         main_photo_id = user_photos.get('photo_id') if user_photos else None
         
-        # 2️⃣ Fallback: если нет в БД → берем из FSM (текущая сессия)
-        if not main_photo_id:
-            main_photo_id = data.get('photo_id')
-            if main_photo_id:
-                logger.info(f"✅ Основное фото найдено в FSM (fallback)")
+        if user_photos is None:
+            logger.warning(f"   ⚠️  БД: Запрос вернул NULL (нет записи в таблице user_photos)")
+        elif isinstance(user_photos, dict):
+            if 'photo_id' in user_photos:
+                photo_value = user_photos['photo_id']
+                if photo_value:
+                    logger.info(f"   ✅ БД: photo_id найден: {photo_value[:40]}...")
+                else:
+                    logger.warning(f"   ⚠️  БД: photo_id найден, но ПУСТ (NULL)")
             else:
-                logger.error("❌ Основное фото не найдено ни в БД ни в FSM")
+                logger.warning(f"   ⚠️  БД: Поле photo_id отсутствует в словаре")
+                logger.info(f"      Доступные ключи: {list(user_photos.keys())}")
+        
+        # ПОПЫТКА 2: FSM (Fallback)
+        if not main_photo_id:
+            logger.info(f"   📌 ПОПЫТКА 2: БД вернула пусто, беру из FSM (fallback)...")
+            main_photo_id = data.get('photo_id')
+            
+            if main_photo_id:
+                logger.info(f"   ✅ FSM: photo_id найден (FALLBACK): {main_photo_id[:40]}...")
+                logger.warning(f"   ⚠️  ВНИМАНИЕ: Используется photo_id из FSM (не из БД!)")
+                logger.warning(f"   ⚠️  Это может означать:")
+                logger.warning(f"      - Перезагрузка бота (FSM восстановлен из памяти)")
+                logger.warning(f"      - Баг в сохранении в БД")
+                logger.warning(f"      - Первый раз загрузки в этой сессии")
+            else:
+                logger.error(f"   ❌ FSM: photo_id ОТСУТСТВУЕТ")
         else:
-            logger.info(f"✅ Основное фото найдено в БД")
+            logger.info(f"   ✅ ИСТОЧНИК: БД")
+        
+        # ИТОГОВЫЙ РЕЗУЛЬТАТ
+        logger.info(f"\n3️⃣  ИТОГОВЫЙ РЕЗУЛЬТАТ:")
+        if main_photo_id:
+            source = "БД" if user_photos and user_photos.get('photo_id') else "FSM (FALLBACK)"
+            logger.info(f"   ✅ ОСНОВНОЕ ФОТО НАЙДЕНО (источник: {source})")
+            logger.info(f"      {main_photo_id[:40]}...")
+        else:
+            logger.error(f"   ❌ ОСНОВНОЕ ФОТО НЕ НАЙДЕНО НИ В БД НИ В FSM")
+        
+        logger.info(f"\n✅ ОБРАЗЕЦ ФОТО: {sample_photo_id[:40]}...")
+        logger.info(f"═" * 80)
         
         if not main_photo_id:
-            logger.error("❌ Основное фото не найдено")
+            logger.error("❌ Основное фото не найдено в БД")
             await callback.answer(
                 "❌ Ошибка: основное фото не найдено. Загрузите фото комнаты еще раз.",
                 show_alert=True
             )
             return
         
-        logger.info(f"✅ Оба фото найдены:")
+        logger.info(f"\n✅ Оба фото найдены:")
         logger.info(f"   - Основное: {main_photo_id[:30]}...")
         logger.info(f"   - Образец: {sample_photo_id[:30]}...")
         
