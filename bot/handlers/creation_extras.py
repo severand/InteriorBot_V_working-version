@@ -112,6 +112,25 @@ async def handle_photo_in_loading_facade_sample_state(message: Message, state: F
     pass
 
 
+
+@router.message(StateFilter(CreationStates.download_sample), F.photo)
+async def handle_photo_in_download_sample_state(message: Message, state: FSMContext):
+    """
+    ✅ [SCREEN 10] Пользователь загружает образец дизайна в состоянии download_sample
+    
+    📌 КОГДА СРАБАТЫВАЕТ:
+       Пользователь отправил фото образца дизайна на экране "Загрузить образец"
+    
+    🎯 ЧТО ДЕЛАЕТ:
+       Пропускает фото дальше - его обработает handler в creation_main.py
+    
+    💡 ПОЧЕМУ ВАЖНО:
+       Без этого обработчика фото удалился бы в handle_unexpected_files().
+    """
+    pass
+
+
+
 @router.message(StateFilter(CreationStates.text_input), F.text)
 async def handle_text_in_text_input_state(message: Message, state: FSMContext):
     """
@@ -144,6 +163,7 @@ async def handle_text_in_text_input_state(message: Message, state: FSMContext):
     ~StateFilter(CreationStates.uploading_photo),
     ~StateFilter(CreationStates.uploading_furniture),
     ~StateFilter(CreationStates.loading_facade_sample),
+    ~StateFilter(CreationStates.download_sample),
     F.photo,
     F.media_group_id
 )
@@ -182,6 +202,7 @@ async def handle_unexpected_media_group(message: Message, state: FSMContext):
     ~StateFilter(CreationStates.uploading_photo),
     ~StateFilter(CreationStates.uploading_furniture),
     ~StateFilter(CreationStates.loading_facade_sample),
+    ~StateFilter(CreationStates.download_sample),
     F.photo | F.document | F.video | F.video_note | F.audio | F.voice | F.animation,
     ~F.media_group_id
 )
