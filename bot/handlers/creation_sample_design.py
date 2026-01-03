@@ -126,8 +126,12 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
-# 🔧 [2026-01-03 20:08] КРИТИЧНО FIX: СОХРАНАЕМ ОБЕ ID (ФОТО + МЕНЮ) В FSM & ДБ
-# РЕЗУЛЬТАТ: Стандартные месседжи по всему проекту, ничего не делаем
+# 🔧 [2026-01-03 20:14] КРИТИЧНО FIX: 
+#    1. РЕДАКТИРУЕМ меню на SCREEN 11 → прогресс
+#    2. ГЕНЕРИРУЕМ изображение
+#    3. УДАЛЯЕМ прогресс-сообщение (или редактируем)
+#    4. ОТПРАВЛЯЕМ SCREEN 12 (ФОТО + МЕНЮ)
+#    5. СОХРАНЯЕМ ОБЕ ID В FSM & ДБ
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(
@@ -140,11 +144,13 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
 
     📍 ПУТЬ: [SCREEN 11] → Кнопка → [SCREEN 12: ФОТО + МЕНЮ]
 
-    🔧 [2026-01-03 20:08] КРИТИЧНО:
-    - Отправляем ФОТО с caption
-    - Отправляем SCREEN 12 МЕНЮ с КНОПКАМИ
-    - СОХРАНАЕМ ОБЕ ID В FSM & ДБ (as per project standard)
-    - НИЧЕГО НЕ УДАЛАЕМ! ТЕЛЕГРАМ САМ Поставит Отметку дали
+    🔧 [2026-01-03 20:14] КРИТИЧНО FIX:
+    1️⃣ РЕДАКТИРУЕМ меню на "ГЕНЕРИРУю" (показываем прогресс)
+    2️⃣ ГЕНЕРИРУЕМ изображение
+    3️⃣ УДАЛЯЕМ или РЕДАКТИРУЕМ прогресс-сообщение
+    4️⃣ ОТПРАВЛЯЕМ ФОТО с caption
+    5️⃣ ОТПРАВЛЯЕМ SCREEN 12 МЕНЮ с КНОПКАМИ
+    6️⃣ СОХРАНЯЕМ ОБЕ ID В FSM & ДБ (as per project standard)
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -237,8 +243,10 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         await callback.answer("⏳ Подождите... генерируем примерку", show_alert=False)
         
         # 🔄 РЕДАКТИРУЕМ МЕНЮ На "ГЕНЕРИРУю"
-        menu_message_id = data.get('menu_message_id')
-        if menu_message_id:
+        progress_message_id = callback.message.message_id
+        logger.info(f"🔧 [PROGRESS] Сохраняю ID прогресс-сообщения: {progress_message_id}")
+        
+        if progress_message_id:
             try:
                 await callback.message.edit_text(
                     text="⏳ *Генерируем примерку дизайна...*\n\nЭто может занять до 2 минут.",
@@ -273,10 +281,31 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         logger.info(f"✅ Результат примерки готов: {result_url[:50]}...")
         log_photo_send(user_id, "answer_photo", 0, request_id, "apply_style_to_room")
         
-        # 🔧 [2026-01-03 20:08] КРИТИЧНО FIX:
-        # 🎁 ОТПРАВЛЯЕМ ФОТО + МЕНЮ
-        # СОХРАНАЕМ ОБЕ ID В FSM & ДБ
-        # НИЧЕГО НЕ УДАЛАЕМ!
+        # 🔧 [2026-01-03 20:14] КРИТИЧНО FIX:
+        # 1️⃣ УДАЛЯЕМ или РЕДАКТИРУЕМ прогресс-сообщение
+        # 2️⃣ ОТПРАВЛЯЕМ ФОТО + МЕНЮ
+        # 3️⃣ СОХРАНЯЕМ ОБЕ ID В FSM & ДБ
+        
+        # 🗑️ УДАЛЯЕМ ПРОГРЕСС-СООБЩЕНИЕ
+        if progress_message_id:
+            try:
+                await callback.bot.delete_message(
+                    chat_id=chat_id,
+                    message_id=progress_message_id
+                )
+                logger.info(f"🗑️ [PROGRESS] Удалено прогресс-сообщение (msg_id={progress_message_id})")
+            except TelegramBadRequest as e:
+                logger.warning(f"⚠️ [PROGRESS] Не удалось удалить прогресс: {e}")
+                # Fallback: пытаемся отредактировать
+                try:
+                    await callback.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=progress_message_id,
+                        text="✅ *Примерка готова!*"
+                    )
+                    logger.info(f"📝 [PROGRESS] Отредактировано вместо удаления")
+                except Exception as e2:
+                    logger.debug(f"⚠️ [PROGRESS] Fallback не сработал: {e2}")
         
         # 1️⃣ ОТПРАВЛЯЕМ ФОТО
         photo_caption = (
@@ -312,7 +341,7 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         )
         logger.info(f"📝 [SCREEN 12] МЕНЮ отправлено (msg_id={menu_msg.message_id})")
         
-        # 3️⃣ СОХРАНАЕМ ОБЕ ID В FSM & ДБ (as per project standard)
+        # 3️⃣ СОХРАНЯЕМ ОБЕ ID В FSM & ДБ (as per project standard)
         await state.update_data(
             photo_message_id=photo_msg.message_id,
             menu_message_id=menu_msg.message_id
@@ -330,10 +359,10 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         await state.update_data(last_generated_image_url=result_url)
         
         logger.info(f"✅ [SCREEN 11→12] COMPLETED!")
+        logger.info(f"   ✅ ПРОГРЕСС: удалено (msg_id={progress_message_id})")
         logger.info(f"   ✅ ФОТО: msg_id={photo_msg.message_id}")
         logger.info(f"   ✅ МЕНЮ: msg_id={menu_msg.message_id}")
         logger.info(f"   ✅ ОБЕ ID сохранены в FSM & ДБ")
-        logger.info(f"   ✅ Пери перезагружке: Телеграм сам удалит МЕНЮ")
         
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 11 кнопка failed: {e}", exc_info=True)
