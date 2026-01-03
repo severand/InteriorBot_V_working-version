@@ -20,6 +20,7 @@ from keyboards.inline import (
     get_download_sample_keyboard,
     get_uploading_furniture_keyboard,
     get_loading_facade_sample_keyboard,
+    get_generation_try_on_keyboard,
 )
 
 from states.fsm import CreationStates, WorkMode
@@ -32,6 +33,8 @@ from utils.texts import (
     WHAT_IS_IN_PHOTO_TEXT,
     ERROR_INSUFFICIENT_BALANCE,
     ROOM_CHOICE_TEXT,
+    DOWNLOAD_SAMPLE_TEXT,
+    GENERATION_TRY_ON_TEXT,
 )
 
 from utils.helpers import add_balance_and_mode_to_text
@@ -324,11 +327,12 @@ async def photo_handler(message: Message, state: FSMContext):
         screen = 'edit_design'
         
     elif work_mode == WorkMode.SAMPLE_DESIGN.value:
-        await state.set_state(CreationStates.download_sample)
-        text = f"📄 **Загрузите образец дизайна**"
+        # 🔧 FIX: [2026-01-03] После загрузки фото на SCREEN 10 → переходим на SCREEN 11!
+        await state.set_state(CreationStates.generation_try_on)  # ← SCREEN 11!
+        text = GENERATION_TRY_ON_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
-        keyboard = get_download_sample_keyboard()
-        screen = 'download_sample'
+        keyboard = get_generation_try_on_keyboard()
+        screen = 'generation_try_on'  # ← SCREEN 11!
         
     elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
         await state.set_state(CreationStates.uploading_furniture)
@@ -414,11 +418,12 @@ async def use_current_photo(callback: CallbackQuery, state: FSMContext):
             screen = 'edit_design'
             
         elif work_mode == WorkMode.SAMPLE_DESIGN.value:
-            await state.set_state(CreationStates.download_sample)
-            text = f"📄 **Скачать примеры**"
+            # 🔧 FIX: [2026-01-03] При использовании текущего фото → переходим на SCREEN 11!
+            await state.set_state(CreationStates.generation_try_on)  # ← SCREEN 11!
+            text = GENERATION_TRY_ON_TEXT
             text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
-            keyboard = get_download_sample_keyboard()
-            screen = 'download_sample'
+            keyboard = get_generation_try_on_keyboard()
+            screen = 'generation_try_on'  # ← SCREEN 11!
             
         elif work_mode == WorkMode.ARRANGE_FURNITURE.value:
             await state.set_state(CreationStates.uploading_furniture)
