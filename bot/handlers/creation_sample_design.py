@@ -118,6 +118,8 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
     - Показываем "⏳ Генерируем примерку..."
     - При готовности показываем результат с клавиатурой SCREEN 12
     - На ошибку показываем сообщение об ошибке
+    
+    🔧 [2026-01-03 19:15] HOTFIX: Fallback для photo_id из FSM если не в БД
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -137,13 +139,25 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             )
             return
         
-        # 🎯 ПОЛУЧАЕМ ОСНОВНОЕ ФОТО
-        logger.info(f"🔍 Получение основного фото из БД...")
+        # 🎯 ПОЛУЧАЕМ ОСНОВНОЕ ФОТО (С FALLBACK)
+        logger.info(f"🔍 Получение основного фото...")
+        
+        # 1️⃣ Пытаемся получить из БД
         user_photos = await db.get_user_photos(user_id)
         main_photo_id = user_photos.get('photo_id') if user_photos else None
         
+        # 2️⃣ Fallback: если нет в БД → берем из FSM (текущая сессия)
         if not main_photo_id:
-            logger.error("❌ Основное фото не найдено в БД")
+            main_photo_id = data.get('photo_id')
+            if main_photo_id:
+                logger.info(f"✅ Основное фото найдено в FSM (fallback)")
+            else:
+                logger.error("❌ Основное фото не найдено ни в БД ни в FSM")
+        else:
+            logger.info(f"✅ Основное фото найдено в БД")
+        
+        if not main_photo_id:
+            logger.error("❌ Основное фото не найдено")
             await callback.answer(
                 "❌ Ошибка: основное фото не найдено. Загрузите фото комнаты еще раз.",
                 show_alert=True
