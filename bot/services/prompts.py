@@ -114,10 +114,9 @@ You can't:
 # НОВЫЙ ПРОМПТ (ОБНОВЛЕН 2026-01-03 22:51)
 # ========================================
 APPLY_STYLE_PROMPT = (
-    "Создайте ультра фотореалистичный дизайн для глянцевого журнала о дизайне, "
-    "который будет выглядеть в точности так, как будто эталонный стиль был применен к ЭТОМУ КОНКРЕТНОМУ ПОМЕЩЕНИЮ, "
-    "сохраняя при этом точные размеры, геометрию и структуру помещения."
-)
+    "Create an ultra-photorealistic design for a glossy design magazine that",
+    "will look exactly as if the reference style was applied to THAT SPECIFIC ROOM,",
+    "while maintaining the exact dimensions, geometry and structure of the room."
 
 # ========================================
 # ПРОМПТ ДЛЯ ОЧИСТКИ ПРОСТРАНСТВА
