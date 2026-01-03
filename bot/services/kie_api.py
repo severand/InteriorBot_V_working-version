@@ -1,7 +1,7 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.7 (2026-01-02 21:04) - ENHANCEMENT: Добавить префикс промпта + лог финального промпта
+# ВЕРСИЯ: 3.8 (2026-01-03 21:20) - ADD: apply_style_to_room() для Sample Design Try-On (Screen 11)
 # АВТОР: Project Owner
 # https://docs.kie.ai/market/google/nano-banana
 # https://docs.kie.ai/market/google/nano-banana-edit
@@ -13,7 +13,8 @@
 # [2025-12-24 08:18] ДОБАВЛЕНО: Поддержка KIE.AI PRO режима (nano-banana-pro)
 # [2025-12-30 10:36] 🔙 REVERT: Отменить HOTFIX SSL проверку (проблема была в VPN, не в коде)
 # [2026-01-02 20:55] 🔥 CRITICAL FIX: В текстовом редакторе отправлять ТОЛЬКО user_prompt БЕЗ добавления контекста
-# [2026-01-02 21:04] ✨ ENHANCEMENT: Добавить префикс \"Create ultra-photorealistic image\" + детальный лог финального промпта
+# [2026-01-02 21:04] ✨ ENHANCEMENT: Добавить префикс "Create ultra-photorealistic image" + детальный лог финального промпта
+# [2026-01-03 21:20] ✨ ADD: apply_style_to_room() для Screen 11 Sample Design Try-On
 
 import os
 import logging
@@ -26,7 +27,7 @@ from config import config
 from config_kie import config_kie
 
 from services.design_styles import get_room_name, get_style_description, is_valid_room, is_valid_style
-from services.prompts import build_design_prompt, build_clear_space_prompt
+from services.prompts import build_design_prompt, build_clear_space_prompt, build_apply_style_prompt
 from services.translator import translate_prompt_to_english as translate_to_english
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ class KieApiClient:
         data: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Выполнить HTTP запрос к API."""
+        """Выполнить HTTP запрос к АПИ."""
         url = f"{self.base_url}/{endpoint}"
         headers = self._get_headers()
 
@@ -144,7 +145,7 @@ class KieApiClient:
         logger.info(f"Model: {model}")
         
         # [НОВОЕ 2025-12-24] Логирование режима
-        mode_str = "🔝 PRO" if self.use_pro else "📋 BASE"
+        mode_str = "🔝 PRO" if self.use_pro else "📈 BASE"
         logger.info(f"Mode: {mode_str}")
         
         if input_data.get('image_urls'):
@@ -295,7 +296,7 @@ class NanoBananaClient(KieApiClient):
         if use_pro_mode:
             logger.info("🔝 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana PRO)")
         else:
-            logger.info("📋 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana BASE)")
+            logger.info("📈 ГЕНЕРАЦИЯ ТЕКСТ→ИЗОБРАЖЕНИЕ (Google Nano Banana BASE)")
         
         logger.info(f"   Промпт: {prompt[:100]}...")
         logger.info(f"   Размер: {aspect_ratio if use_pro_mode else image_size}")
@@ -344,7 +345,7 @@ class NanoBananaClient(KieApiClient):
         resolution: Optional[str] = None,  # [НОВОЕ 2025-12-24]
     ) -> Optional[str]:
         """
-        Редактирование изображения.
+        Примениме редактирование изображения.
         [НОВОЕ 2025-12-24] Поддерживает PRO режим.
         """
         logger.info("="*70)
@@ -355,7 +356,7 @@ class NanoBananaClient(KieApiClient):
         if use_pro_mode:
             logger.info("🔝 ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana PRO)")
         else:
-            logger.info("📋 ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana BASE)")
+            logger.info("📈 ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana BASE)")
         
         logger.info(f"   Промпт: {prompt[:100]}...")
         logger.info(f"   Кол-во изображений: {len(image_urls)}")
@@ -365,7 +366,7 @@ class NanoBananaClient(KieApiClient):
             logger.error("❌ KIE_API_KEY не установлен")
             return None
 
-        # [НОВОЕ 2025-12-24] КРИТИЧНОЕ: Ключи параметров разные!
+        # [НОВОЕ 2025-12-24] КРИТИЧНО: Ключи параметров разные!
         # BASE: image_urls, image_size
         # PRO: image_input, aspect_ratio, resolution
         if use_pro_mode:
@@ -484,6 +485,106 @@ async def generate_interior_with_nano_banana(
         return None
 
 
+# 🎁 [2026-01-03 21:20] НОВАЯ: ФУНКЦИЯ ПРИМЕНЕНИЯ СТИЛЯ ОБРАЗЦА К КОМНАТЕ
+# Используется в: SCREEN 11 - Кнопка "🎨 Примерить дизайн"
+
+async def apply_style_to_room(
+    main_photo_file_id: str,
+    sample_photo_file_id: str,
+    bot_token: str,
+    use_pro: Optional[bool] = None,
+) -> Optional[str]:
+    """
+    🎁 [2026-01-03 21:20] НОВАЯ ФУНКЦИЯ: Применить стиль и цветовую схему из образца к основной комнате
+    
+    Описание:
+    Эта функция запускается на SCREEN 11 когда пользователь нажимает кнопку
+    "🎨 Примерить дизайн".
+    
+    Это отличается от generate_interior_with_nano_banana():
+    - generate_interior_with_nano_banana() но вновь сохраняет мебель и выставляет ее
+    - apply_style_to_room() СОХРАНЯЕТ мебель и макет, применяя онда образца
+    
+    Вход:
+    - main_photo_file_id: Основное фото комнаты (Telegram file_id)
+    - sample_photo_file_id: Образец фото дизайна (Telegram file_id)
+    - bot_token: Токен бота Telegram
+    - use_pro: Использовать PRO режим [НОВОЕ 2025-12-24]
+    
+    Выход:
+    - URL сгенерированного изображения или None
+    
+    Вызов из:
+    - handlers/creation_sample_design.py: generate_try_on_handler()
+    
+    Пример:
+        >>> result = await apply_style_to_room(
+        ...     main_photo_file_id=user_main_photo,
+        ...     sample_photo_file_id=user_sample_photo,
+        ...     bot_token=config.BOT_TOKEN
+        ... )
+        >>> if result:
+        ...     print(f"✅ Новый дизайн: {result}")
+    """
+    logger.info("="*70)
+    logger.info("🎁 ПРИМЕНЕНИЕ СТИЛЯ ОБРАЗЦА К КОМНАТЕ [SCREEN 11]")
+    logger.info("="*70)
+
+    try:
+        # Получаем URL основного фото
+        logger.info("📃 Получение основного фото...")
+        main_image_url = await get_telegram_file_url(main_photo_file_id, bot_token)
+        
+        if not main_image_url:
+            logger.error("❌ Не удалось получить URL основного фото")
+            return None
+        
+        # Получаем URL образца
+        logger.info("🎁 Получение образца фото...")
+        sample_image_url = await get_telegram_file_url(sample_photo_file_id, bot_token)
+        
+        if not sample_image_url:
+            logger.error("❌ Не удалось получить URL образца")
+            return None
+        
+        logger.info(f"📄 Оба фото готовы:")
+        logger.info(f"   Основные: {main_image_url[:50]}...")
+        logger.info(f"   Образец: {sample_image_url[:50]}...")
+        
+        # Получаем промпт
+        logger.info("📄 Получение промпта ПОЧОВ...")
+        prompt = await build_apply_style_prompt(translate=True)
+        logger.info(f"📄 Промпт получен (длина: {len(prompt)} символов)")
+        
+        # Установить режим PRO
+        use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
+        
+        # Вызываем edit_image с трёмя фото (основные + образец)
+        logger.info("📈 Отправка запроса к KIE.AI...")
+        
+        client = NanoBananaClient(use_pro=use_pro_mode)
+        result = await client.edit_image(
+            image_urls=[main_image_url, sample_image_url],  # [Основные, Образец]
+            prompt=prompt,
+            output_format="png",
+            image_size="auto",
+            use_pro=use_pro_mode,
+            aspect_ratio=config_kie.KIE_NANO_BANANA_PRO_ASPECT if use_pro_mode else None,
+            resolution=config_kie.KIE_NANO_BANANA_PRO_RESOLUTION if use_pro_mode else None,
+        )
+        
+        if result:
+            logger.info(f"✅ Применение стиля ПОЧОв: {result}")
+        else:
+            logger.error("❌ Не удалось применить стиль")
+        
+        return result
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка при применении стиля: {e}", exc_info=True)
+        return None
+
+
 async def generate_interior_with_text_nano_banana(
     photo_file_id: str,
     user_prompt: str,
@@ -498,11 +599,11 @@ async def generate_interior_with_text_nano_banana(
     [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт в начало файла
     [НОВОЕ 2025-12-24] ДОБАВЛЕНА поддержка PRO режима
     [2026-01-02 20:55] 🔥 CRITICAL FIX: Отправлять ТОЛЬКО user_prompt БЕЗ добавления контекста
-    [2026-01-02 21:04] ✨ ENHANCEMENT: Добавить префикс \"Create ultra-photorealistic image\" + детальный лог финального промпта
+    [2026-01-02 21:04] ✨ ENHANCEMENT: Добавить префикс + детальный лог
     
     Используется для:
-    - ТЕКСТОВЫЙ РЕДАКТОР (edit_design режим) - user_prompt с префиксом!
-    - \"Другого помещения\" - с контекстом scene_type
+    - ТЕКСТОВОЕ РЕДАКТОРУ (edit_design режим) - user_prompt с префиксом!
+    - "Другого помещения" - с контекстом scene_type
     - Экстерьера (дом, участок) - с контекстом scene_type
     
     Args:
@@ -516,7 +617,7 @@ async def generate_interior_with_text_nano_banana(
         URL сгенерированного изображения или None
     """
     logger.info("="*70)
-    logger.info("✏️  ГЕНЕРАЦИЯ С ТЕКСТОВЫМ ПРОМПТОМ [NANO BANANA via Kie.ai]")
+    logger.info("✍️  ГЕНЕРАЦИЯ С ТЕКСТОВЫМ ПРОМПТОМ [NANO BANANA via Kie.ai]")
     logger.info(f"   Пользовательский промпт: {user_prompt[:100]}...")
     logger.info("="*70)
 
@@ -528,7 +629,7 @@ async def generate_interior_with_text_nano_banana(
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # ✅ ИСПРАВЛЕНО: Импорт в начало файла, используем напрямую
+        # ✅ ИСПРАВЛЕНО: Образом в начало файла, используем напрямую
         logger.info("📄 Перевод промпта на английский...")
         try:
             english_prompt = await translate_to_english(user_prompt)
@@ -540,10 +641,10 @@ async def generate_interior_with_text_nano_banana(
         # [2026-01-02 21:04] ✨ ENHANCEMENT: Добавить префикс для текстового редактора
         final_prompt = f"{TEXT_EDITOR_PROMPT_PREFIX}{english_prompt}"
         
-        # [2026-01-02 21:04] 📋 ДЕТАЛЬНЫЙ ЛОГ ФИНАЛЬНОГО ПРОМПТА
+        # [2026-01-02 21:04] 📈 ДЕТАЛЬНЫЙ ЛОГ ФИНАЛЬНОГО ПРОМПТА
         logger.info("")
         logger.info("="*70)
-        logger.info("📋 ФИНАЛЬНЫЙ ПРОМПТ ДЛЯ МОДЕЛИ (ТЕКСТОВЫЙ РЕДАКТОР)")
+        logger.info("📈 ФИНАЛЬНЫЙ ПРОМПТ ДЛЯ МОДЕЛИ (ТЕКСТОВОЕ РЕДАКТОРУ)")
         logger.info("="*70)
         logger.info("")
         logger.info("🔤 СТРУКТУРА ПРОМПТА:")
@@ -592,7 +693,7 @@ async def clear_space_with_kie(
     [2025-12-23 15:30] ОБНОВЛЕНО: автоматический перевод
     """
     logger.info("="*70)
-    logger.info("📋 ОЧИСТКА ПРОСТРАНСТВА [Kie.ai]")
+    logger.info("📈 ОЧИСТКА ПРОСТРАНСТВА [Kie.ai]")
     logger.info("="*70)
 
     try:
