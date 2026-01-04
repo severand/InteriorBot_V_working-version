@@ -10,10 +10,10 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.exceptions import TelegramBadRequest
 
 from database.db import db
-from keyboards.inline import get_generation_try_on_keyboard, get_post_generation_sample_keyboard
+from keyboards.inline import get_generation_try_on_keyboard, get_post_generation_sample_keyboard, get_download_sample_keyboard
 from states.fsm import CreationStates, WorkMode
 from utils.helpers import add_balance_and_mode_to_text
-from utils.texts import GENERATION_TRY_ON_TEXT
+from utils.texts import GENERATION_TRY_ON_TEXT, DOWNLOAD_SAMPLE_TEXT
 from utils.texts import SCREEN_10_PHOTO_SAMPLE
 from services.kie_api import apply_style_to_room
 from config import config
@@ -89,7 +89,7 @@ async def collect_all_media_group_photos(user_id: int, media_group_id: str, mess
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 🎁 [SCREEN 10] ЗАГРУЗКА ОБРАЗЦА ФОТО (SAMPLE_DESIGN)
-# 🔧 [2026-01-04 22:41] УБРАНА ОТПРАВКА ДУБЛИРУЮЩЕГОСЯ СООБЩЕНИЯ ОБ ОШИБКЕ
+# 🔧 [2026-01-04 22:41] УБРАНА ОТПРАВКА ДУБЛирующегося сообщения об ошибке
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.message(StateFilter(CreationStates.download_sample), F.photo)
@@ -99,7 +99,7 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
     
     📍 ПУТЬ: [SCREEN 10: download_sample] → загружка фото образца → [SCREEN 11: generation_try_on]
     
-    🔧 [2026-01-04 22:41] ОТСУТСТВУЕТ ОТПРАВКА ОШИБКИ:
+    🔧 [2026-01-04 22:41] Отсутствует отправка ошибки:
     - Альбом детектируется и удаляется
     - НЕ ОТПРАВЛЯЕМ сообщение об ошибке (уже есть стандартное сообщение "отправьте одну фото")
     - Просто удаляем и выходим (return)
@@ -208,6 +208,48 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ⬅️ [SCREEN 11] КНОПКА "НАЗАД" - ВОІТИ НА SCREEN 10
+# 🔧 [2026-01-04 22:49] ОБНОВЛЕНО: добавлен обработчик кнопки "назад"
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.callback_query(
+    StateFilter(CreationStates.generation_try_on),
+    F.data == "download_sample"
+)
+async def back_to_sample_upload(callback: CallbackQuery, state: FSMContext):
+    """
+    ⬅️ [SCREEN 11] КНОПКА "НАЗАД" - ВОБНАТЬ НА SCREEN 10 (загрузка образца)
+    
+    📍 ПУТЬ: [SCREEN 11: generation_try_on] → кнопка НАЗАД → [SCREEN 10: download_sample]
+    """
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+
+    try:
+        await state.set_state(CreationStates.download_sample)
+        
+        text = DOWNLOAD_SAMPLE_TEXT
+        text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
+        keyboard = get_download_sample_keyboard()
+        
+        logger.info(f"⬅️ [SCREEN 11→10] НАЖАТА КНОПКА НАЗАД - возврат на SCREEN 10")
+        
+        await callback.message.edit_text(
+            text=text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'download_sample')
+        logger.info(f"✅ [SCREEN 11→10] Меню SCREEN 10 доставлено")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"[ERROR] back_to_sample_upload failed: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
 # 🔧 [2026-01-03 20:14] КРИТИЧНО FIX: 
 #    1. РЕДАКТИРУЕМ меню на SCREEN 11 → прогресс
@@ -242,10 +284,10 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
     try:
         logger.info(f"🎁 [SCREEN 11] КНОПКА НАЖАТА: user_id={user_id}")
         logger.info(f"═" * 80)
-        logger.info(f"📊 [SCREEN 11] ДИАГНОСТИКА ЗАГРУЖКи ФОТО")
+        logger.info(f"📊 [SCREEN 11] ДИАГНОСТИКА ЗАГРУЖки ФОТО")
         logger.info(f"═" * 80)
         
-        # 🔄 ЗАГРУЖЕННЫЙ ОБРАЗЕЦ
+        # 🔄 ЗАГРУжЕННЫЙ ОБРАЗЕЦ
         data = await state.get_data()
         sample_photo_id = data.get('sample_photo_id')
         
@@ -325,7 +367,7 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         # ⏳ ПОКАЗЫВАЕМ СООБЩЕНИЕ О ГЕНЕРАЦИИ
         await callback.answer("⏳ Подождите... генерируем примерку", show_alert=False)
         
-        # 🔄 РЕДАКТИРУЕМ МЕНЮ На "ГЕНЕРИРУю"
+        # 🔄 РЕДАКТИРУЕМ МЕНЮ НА "ГЕНЕРИРУю"
         progress_message_id = callback.message.message_id
         logger.info(f"🔧 [PROGRESS] Сохраняю ID прогресс-сообщения: {progress_message_id}")
         
