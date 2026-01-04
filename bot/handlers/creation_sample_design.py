@@ -23,6 +23,10 @@ router = Router()
 
 PHOTO_SEND_LOG = {}
 
+# 📄 Отслеживание альбомов для удаления
+media_group_cache = {}
+
+
 def log_photo_send(user_id: int, method: str, message_id: int, request_id: str = None, operation: str = ""):
     """Логирует отправку фото для диагностики"""
     if user_id not in PHOTO_SEND_LOG:
@@ -47,9 +51,45 @@ def log_photo_send(user_id: int, method: str, message_id: int, request_id: str =
     )
 
 
+async def collect_all_media_group_photos(user_id: int, media_group_id: str, message_id: int):
+    """
+    📄 Отслеживание всех фото альбома и удаление всех сразу
+    
+    Процесс:
+    1. Первое фото → регистрируем
+    2. Ждём 1сек - приходят остальные
+    3. Отмечаем как собранные
+    4. Возвращаем все message_ids для удаления
+    """
+    if user_id not in media_group_cache:
+        media_group_cache[user_id] = {}
+    
+    if media_group_id not in media_group_cache[user_id]:
+        media_group_cache[user_id][media_group_id] = {
+            'message_ids': [message_id],
+            'collected': False
+        }
+        logger.info(f"📄 [COLLECT] user={user_id}, group={media_group_id}, photo #1")
+        
+        await asyncio.sleep(1.0)
+        
+        media_group_cache[user_id][media_group_id]['collected'] = True
+        
+        final_ids = media_group_cache[user_id][media_group_id]['message_ids'].copy()
+        logger.info(f"📄 [COLLECT] DONE: {len(final_ids)} photos")
+        return final_ids
+    else:
+        if not media_group_cache[user_id][media_group_id]['collected']:
+            media_group_cache[user_id][media_group_id]['message_ids'].append(message_id)
+            count = len(media_group_cache[user_id][media_group_id]['message_ids'])
+            logger.info(f"📄 [COLLECT] photo #{count} added")
+        
+        return None
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 🎁 [SCREEN 10] ЗАГРУЗКА ОБРАЗЦА ФОТО (SAMPLE_DESIGN)
-# 🔧 [2026-01-03 17:51] КРИТИЧНО: ДОБАВЛЕНО СОХРАНЕНИЕ ОБРАЗЦА В БД!
+# 🔧 [2026-01-04] FIX: ДОБАВЛЕНА ПРОВЕРКА НА АЛЬБОМ! ТОЛЬКО ОДНА ФОТО!
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.message(StateFilter(CreationStates.download_sample), F.photo)
@@ -59,17 +99,53 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
     
     📍 ПУТЬ: [SCREEN 10: download_sample] → загружка фото образца → [SCREEN 11: generation_try_on]
     
-    🔧 [2026-01-03 17:51] КРИТИЧНО:
+    🔧 [2026-01-04] FIX КРИТИЧНО:
+    - ПРОВЕРЯЕМ на альбом (media_group_id)
+    - Если альбом → УДАЛЯЕМ ВСЕ и выходим
+    - Если одиночное → обрабатываем
     - Образец сохраняется в FSM (для текущей сессии)
     - Образец сохраняется в БД (для повторного использования)
-    - Может заменяться многократно
-    - Основное фото (main_photo_id) НЕ трогается
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
     
     try:
-        logger.info(f"🎁 [SCREEN 10] Загруженный образец фото")
+        # 📄 АЛЬБОМ ФОТО - Удалить все (НОВАЯ ЛОГИКА ДЛЯ SCREEN 10)
+        if message.media_group_id:
+            logger.info(f"📄 [ALBUM] [SCREEN 10] media_group_id={message.media_group_id}")
+            
+            collected_ids = await collect_all_media_group_photos(
+                user_id,
+                message.media_group_id,
+                message.message_id
+            )
+            
+            if collected_ids:
+                logger.warning(f"❌ [ALBUM] [SCREEN 10] {len(collected_ids)} фото детектировано! УДАЛЯЕМ ВСЕ!")
+                
+                delete_tasks = []
+                for msg_id in collected_ids:
+                    delete_tasks.append(
+                        message.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                    )
+                
+                results = await asyncio.gather(*delete_tasks, return_exceptions=True)
+                success_count = sum(1 for r in results if not isinstance(r, Exception))
+                logger.info(f"🗑️ [ALBUM] [SCREEN 10] Удалено {success_count}/{len(collected_ids)} фото")
+                
+                # Отправляем сообщение об ошибке
+                error_msg = await message.answer(
+                    "❌ *Пожалуйста, отправьте ОДНУ фото образца!*\n\n"
+                    "Группы фото не допускаются в режиме примерки.",
+                    parse_mode="Markdown"
+                )
+                await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'download_sample')
+                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
+            
+            return
+        
+        # 📄 ОДИНОЧНОЕ ФОТО - Обработать
+        logger.info(f"📄 [SINGLE] [SCREEN 10] Одиночное фото образца")
         
         data = await state.get_data()
         work_mode = data.get('work_mode')
@@ -83,7 +159,7 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
         )
         logger.info(f"📄 [FSM] Образец фото сохранено в FSM: {photo_id[:30]}...")
         
-        # 2️⃣ В БД (sample_photo_id для повторного использования) - ⭐ НОВОЕ
+        # 2️⃣ В БД (sample_photo_id для повторного использования)
         await db.save_sample_photo(user_id, photo_id)
         logger.info(f"📄 [БД] Образец фото сохранено в user_photos.sample_photo_id")
         
@@ -98,10 +174,6 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
             except Exception as e:
                 logger.debug(f"⚠️ Не удалось удалить: {e}")
 
-
-
-
-        
         # 🎁 Отправляем образец фото с подписью
         logger.info(f"🎁 [SCREEN 10] Отправляю образец фото с сообщением")
         
@@ -111,6 +183,7 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
             parse_mode="Markdown"
         )
         logger.info(f"🎁 [SCREEN 10] Образец фото отправлено (msg_id={sample_msg.message_id})")
+        
         # 🗑️ УДАЛЯЕМ ОРИГИНАЛЬНОЕ ФОТО ЮЗЕРА СРАЗУ
         try:
             await message.delete()
@@ -118,10 +191,6 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
         except Exception as e:
             logger.debug(f"⚠️ Не удалось удалить фото юзера: {e}")
 
-        
-
-        
-        
         # ПЕРЕХОД НА SCREEN 11: generation_try_on
         await state.set_state(CreationStates.generation_try_on)
         
@@ -184,7 +253,7 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
     try:
         logger.info(f"🎁 [SCREEN 11] КНОПКА НАЖАТА: user_id={user_id}")
         logger.info(f"═" * 80)
-        logger.info(f"📊 [SCREEN 11] ДИАГНОСТИКА ЗАГРУЗКи ФОТО")
+        logger.info(f"📊 [SCREEN 11] ДИАГНОСТИКА ЗАГРУЖКи ФОТО")
         logger.info(f"═" * 80)
         
         # 🔄 ЗАГРУЖЕННЫЙ ОБРАЗЕЦ
