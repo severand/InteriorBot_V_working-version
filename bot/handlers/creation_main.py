@@ -230,6 +230,8 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         CreationStates.uploading_photo      # SCREEN 2
     ), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
+
+    
     """
     📄 [SCREEN 2] Обработка загружки фото
     
@@ -244,6 +246,8 @@ async def photo_handler(message: Message, state: FSMContext):
     🔧 [2026-01-03] FIX: Правильный поток для sample_design:
     - SCREEN 2 (загрузка основного фото) → SCREEN 10 (загрузка образца) → SCREEN 11 (примерка)
     """
+
+    
     user_id = message.from_user.id
     chat_id = message.chat.id
     
@@ -303,13 +307,27 @@ async def photo_handler(message: Message, state: FSMContext):
     
     logger.info(f"📋 [SCREEN 2] Фото сохранено")
 
+
+    
     logger.info(f"📸 [SCREEN 2] Отправляю загруженное фото")
     photo_msg = await message.answer_photo(
         photo=photo_id,
         caption= SCREEN_2_PHOTO_CAPTION,
         parse_mode="Markdown"
     )
+
+    
     logger.info(f"📸 [SCREEN 2] Фото отправлено (msg_id={photo_msg.message_id})")
+
+
+    
+       # 🗑️ УДАЛЯЕМ ОРИГИНАЛЬНОЕ ФОТО ЮЗЕРА СРАЗУ
+    try:
+        await message.delete()
+        logger.info(f"🗑️ [SCREEN 2] Удалено оригинальное фото юзера (msg_id={message.message_id})")
+    except Exception as e:
+        logger.debug(f"⚠️ Не удалось удалить фото юзера: {e}")
+
     
     
     # 🎯 КЛЮЧЕВОЕ: Сохраняем photo_id в FSM
