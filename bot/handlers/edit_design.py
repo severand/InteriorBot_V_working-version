@@ -2,6 +2,7 @@
 # bot/handlers/edit_design.py
 # EDIT_DESIGN MODE HANDLERS
 # Дата создания: 2026-01-02
+# [2026-01-05 00:00] FIXED: bot_token теперь берется из config, не из параметра
 # ========================================
 """
 Обработчики для режима EDIT_DESIGN (экраны 7, 8, 9):
@@ -45,6 +46,7 @@ from services.api_fallback import (
     smart_clear_space,
 )
 from services.design_styles import get_room_name
+from config import config
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -127,14 +129,11 @@ async def open_text_editor(callback: CallbackQuery, state: FSMContext):
 # ========================================
 
 @router.message(StateFilter(CreationStates.text_input), F.text)
-async def receive_text_prompt(
-    message: Message,
-    state: FSMContext,
-    bot_token: str
-):
+async def receive_text_prompt(message: Message, state: FSMContext):
     """
     SCREEN 7: Получить текстовый промпт и СРАЗУ отправить в модель
     
+    [2026-01-05 00:00] ИСПРАВЛЕНО: bot_token теперь берется из config
     [2026-01-02 20:50] ИСПРАВЛЕНО: Отправляем ТОЛЬКО пользовательский текст!
     
     Логика:
@@ -203,10 +202,11 @@ async def receive_text_prompt(
         logger.info(f"   ✅ Отправляем ТОЛЬКО пользовательский текст (без base_prompt)")
         
         # ШАГ 4: Вызываем API с ТОЛЬКО пользовательским текстом
+        # [2026-01-05 00:00] FIX: bot_token теперь из config.BOT_TOKEN
         result_image_url = await smart_generate_with_text(
             photo_file_id=photo_id,
             user_prompt=user_text,  # ✅ ТОЛЬКО ЭТО! БЕЗ base_prompt!
-            bot_token=bot_token,
+            bot_token=config.BOT_TOKEN,  # ✅ [2026-01-05] ИСПРАВЛЕНО: из config
             scene_type=room_type,  # Передаем room_type как scene_type
             use_pro=use_pro
         )
@@ -335,11 +335,7 @@ async def show_clear_confirmation(callback: CallbackQuery, state: FSMContext):
 # ========================================
 
 @router.callback_query(StateFilter(CreationStates.edit_design), F.data == "clear_space_execute")
-async def execute_clear_space(
-    callback: CallbackQuery,
-    state: FSMContext,
-    bot_token: str
-):
+async def execute_clear_space(callback: CallbackQuery, state: FSMContext):
     """
     SCREEN 9: Выполнить очистку пространства
     
@@ -352,6 +348,8 @@ async def execute_clear_space(
     
     Промпт для API:
     "Completely remove all interior details from this space."
+    
+    [2026-01-05 00:00] ИСПРАВЛЕНО: bot_token теперь из config
     """
     await callback.answer()
     
@@ -376,9 +374,10 @@ async def execute_clear_space(
         logger.info(f"🗑️ [USER {user_id}] Clear space started")
         
         # ШАГ 3: Вызываем API для очистки
+        # [2026-01-05 00:00] FIX: bot_token из config.BOT_TOKEN
         result_image_url = await smart_clear_space(
             photo_file_id=photo_id,
-            bot_token=bot_token,
+            bot_token=config.BOT_TOKEN,  # ✅ [2026-01-05] ИСПРАВЛЕНО: из config
             use_pro=use_pro
         )
         
