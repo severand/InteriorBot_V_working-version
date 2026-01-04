@@ -226,6 +226,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
     StateFilter(
         CreationStates.uploading_photo,      # SCREEN 2
         CreationStates.download_sample       # ← ДОБАВИТЬ ЭТУ СТРОКУ!
+        CreationStates.generation_try_on
     ), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
