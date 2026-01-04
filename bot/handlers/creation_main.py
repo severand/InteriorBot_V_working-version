@@ -35,6 +35,9 @@ from utils.texts import (
     ROOM_CHOICE_TEXT,
     DOWNLOAD_SAMPLE_TEXT,
     GENERATION_TRY_ON_TEXT,
+    SCREEN_2_PHOTO_CAPTION,
+    SCREEN_10_PHOTO_SAMPLE,
+
 )
 
 from utils.helpers import add_balance_and_mode_to_text
@@ -299,6 +302,15 @@ async def photo_handler(message: Message, state: FSMContext):
         logger.error(f"❌ Ошибка сохранения photo_id в БД")
     
     logger.info(f"📋 [SCREEN 2] Фото сохранено")
+
+    logger.info(f"📸 [SCREEN 2] Отправляю загруженное фото")
+    photo_msg = await message.answer_photo(
+        photo=photo_id,
+        caption=SCREEN_2_PHOTO_CAPTION,
+        parse_mode="Markdown"
+    )
+    logger.info(f"📸 [SCREEN 2] Фото отправлено (msg_id={photo_msg.message_id})")
+    
     
     # 🎯 КЛЮЧЕВОЕ: Сохраняем photo_id в FSM
     await state.update_data(
