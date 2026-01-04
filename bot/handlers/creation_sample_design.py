@@ -298,7 +298,7 @@ async def new_sample_from_screen_12(callback: CallbackQuery, state: FSMContext):
 
 # ════════════════════════════════════════════════════════════════════════════════════
 # ✏️ [SCREEN 12] КНОПКА "ТЕКСТОВОЕ РЕДАКТИРОВАНИЕ" - ПЕРЕЙТИ НА SCREEN 8
-# 🔧 [2026-01-04 23:15] ДОБАВЛЕНО: сохранить сгенерированное фото в БД и перейти на SCREEN 8
+# 🔧 [2026-01-05 00:15] ПЕРЕДЕЛАНО: правильно сохранять сгенерированное фото в БД и переход на SCREEN 8
 # ════════════════════════════════════════════════════════════════════════════════════
 
 @router.callback_query(
@@ -314,7 +314,7 @@ async def text_input_from_screen_12(callback: CallbackQuery, state: FSMContext):
         → СОХРАНЯЕМ сгенерированное фото
         → [SCREEN 8: edit_design]
     
-    🔧 [2026-01-04 23:15] РЕАЛИЗОВАНО:
+    🔧 [2026-01-05 00:15] ПЕРЕДЕЛАНО:
     1️⃣ Получаем URL последнего сгенерированного изображения (last_generated_image_url из FSM)
     2️⃣ Сохраняем его в БД как основное фото (photo_id в user_photos)
     3️⃣ Обновляем FSM с новым photo_id
@@ -340,25 +340,26 @@ async def text_input_from_screen_12(callback: CallbackQuery, state: FSMContext):
             )
             return
         
-        logger.info(f"📸 [SCREEN 12→8] НАЖАТА КНОПКА 'ТЕКСТОВОЕ РЕДАКТИРОВАНИЕ'")
+        logger.info(f"✏️ [SCREEN 12→8] НАЖАТА КНОПКА 'ТЕКСТОВОЕ РЕДАКТИРОВАНИЕ'")
         logger.info(f"   Сохраняю сгенерированное фото: {last_generated_url[:50]}...")
         
         # ШАГ 2: Сохраняем в БД как основное фото
         await db.save_user_photo(user_id, last_generated_url)
         logger.info(f"✅ [ДБ] Сохранено сгенерированное фото как photo_id")
         
-        # ШАГ 3: Обновляем FSM
+        # ШАГ 3: Обновляем FSM (ВСЕ необходимые поля для SCREEN 8)
         await state.update_data(
-            photo_id=last_generated_url,  # Используем URL как photo_id
-            room_type='living_room',      # Default room type для редактирования
-            style_type='modern'            # Default style type для редактирования
+            photo_id=last_generated_url,  # URL как photo_id для редактирования
+            room_type='living_room',      # Default room type
+            style_type='modern',           # Default style type
+            menu_message_id=callback.message.message_id  # ID меню для редактирования
         )
-        logger.info(f"📝 [FSM] Обновлено: photo_id = {last_generated_url[:30]}...")
+        logger.info(f"📝 [FSM] Обновлено все поля для SCREEN 8")
         
         # ШАГ 4: Переходим на SCREEN 8 (edit_design)
         await state.set_state(CreationStates.edit_design)
         
-        # Импортируем текст SCREEN 8 из edit_design.py
+        # Используем текст из edit_design.py (тот же EDIT_DESIGN_MENU_TEXT)
         edit_design_menu_text = """✏️ **Редактируем дизайн**
 
 Выберите действие:
@@ -376,15 +377,17 @@ async def text_input_from_screen_12(callback: CallbackQuery, state: FSMContext):
         from keyboards.inline import get_edit_design_keyboard
         
         logger.info(f"📄 [SCREEN 12→8] Отправляю меню SCREEN 8")
-        menu_msg = await callback.message.edit_text(
+        
+        # Редактируем сообщение на SCREEN 8 (используем то же сообщение)
+        await callback.message.edit_text(
             text=edit_design_menu_text,
             reply_markup=get_edit_design_keyboard()
         )
         
-        await state.update_data(menu_message_id=menu_msg.message_id)
-        await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'edit_design')
+        # Сохраняем в БД
+        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'edit_design')
         
-        logger.info(f"✅ [SCREEN 12→8] COMPLETED - меню SCREEN 8 отправлено")
+        logger.info(f"✅ [SCREEN 12→8] COMPLETED - переход на SCREEN 8 выполнен")
         await callback.answer()
         
     except Exception as e:
