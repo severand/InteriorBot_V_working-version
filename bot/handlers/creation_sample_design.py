@@ -14,7 +14,7 @@ from keyboards.inline import get_generation_try_on_keyboard, get_post_generation
 from states.fsm import CreationStates, WorkMode
 from utils.helpers import add_balance_and_mode_to_text
 from utils.texts import GENERATION_TRY_ON_TEXT
-from utils.texts import SCREEN_10_PHOTO_SAMPLE,
+from utils.texts import SCREEN_10_PHOTO_SAMPLE
 from services.kie_api import apply_style_to_room
 from config import config
 
