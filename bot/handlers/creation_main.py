@@ -222,7 +222,11 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
 # 📄 [SCREEN 2] ЗАГРУЗКА ФОТО
 # ═════════════════════════════════════════════════════════════════════════════
 
-@router.message(StateFilter(CreationStates.uploading_photo), F.photo)
+@router.message(
+    StateFilter(
+        CreationStates.uploading_photo,      # SCREEN 2
+        CreationStates.download_sample       # ← ДОБАВИТЬ ЭТУ СТРОКУ!
+    ), F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     """
     📄 [SCREEN 2] Обработка загружки фото
