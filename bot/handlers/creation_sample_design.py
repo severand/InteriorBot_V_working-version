@@ -89,7 +89,7 @@ async def collect_all_media_group_photos(user_id: int, media_group_id: str, mess
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 🎁 [SCREEN 10] ЗАГРУЗКА ОБРАЗЦА ФОТО (SAMPLE_DESIGN)
-# 🔧 [2026-01-04] FIX: ДОБАВЛЕНА ПРОВЕРКА НА АЛЬБОМ! ТОЛЬКО ОДНА ФОТО!
+# 🔧 [2026-01-04 22:41] УБРАНА ОТПРАВКА ДУБЛИРУЮЩЕГОСЯ СООБЩЕНИЯ ОБ ОШИБКЕ
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.message(StateFilter(CreationStates.download_sample), F.photo)
@@ -99,18 +99,16 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
     
     📍 ПУТЬ: [SCREEN 10: download_sample] → загружка фото образца → [SCREEN 11: generation_try_on]
     
-    🔧 [2026-01-04] FIX КРИТИЧНО:
-    - ПРОВЕРЯЕМ на альбом (media_group_id)
-    - Если альбом → УДАЛЯЕМ ВСЕ и выходим
-    - Если одиночное → обрабатываем
-    - Образец сохраняется в FSM (для текущей сессии)
-    - Образец сохраняется в БД (для повторного использования)
+    🔧 [2026-01-04 22:41] ОТСУТСТВУЕТ ОТПРАВКА ОШИБКИ:
+    - Альбом детектируется и удаляется
+    - НЕ ОТПРАВЛЯЕМ сообщение об ошибке (уже есть стандартное сообщение "отправьте одну фото")
+    - Просто удаляем и выходим (return)
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
     
     try:
-        # 📄 АЛЬБОМ ФОТО - Удалить все (НОВАЯ ЛОГИКА ДЛЯ SCREEN 10)
+        # 📄 АЛЬБОМ ФОТО - Удалить все
         if message.media_group_id:
             logger.info(f"📄 [ALBUM] [SCREEN 10] media_group_id={message.media_group_id}")
             
@@ -121,7 +119,7 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
             )
             
             if collected_ids:
-                logger.warning(f"❌ [ALBUM] [SCREEN 10] {len(collected_ids)} фото детектировано! УДАЛЯЕМ ВСЕ!")
+                logger.warning(f"❌ [ALBUM] [SCREEN 10] {len(collected_ids)} фото детектировано! УДАЛЯЕМ!")
                 
                 delete_tasks = []
                 for msg_id in collected_ids:
@@ -132,15 +130,6 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
                 results = await asyncio.gather(*delete_tasks, return_exceptions=True)
                 success_count = sum(1 for r in results if not isinstance(r, Exception))
                 logger.info(f"🗑️ [ALBUM] [SCREEN 10] Удалено {success_count}/{len(collected_ids)} фото")
-                
-                # Отправляем сообщение об ошибке
-                error_msg = await message.answer(
-                    "❌ *Пожалуйста, отправьте ОДНУ фото образца!*\n\n"
-                    "Группы фото не допускаются в режиме примерки.",
-                    parse_mode="Markdown"
-                )
-                await db.save_chat_menu(chat_id, user_id, error_msg.message_id, 'download_sample')
-                asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
             
             return
         
