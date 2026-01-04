@@ -163,7 +163,7 @@ async def handle_text_in_text_input_state(message: Message, state: FSMContext):
     ~StateFilter(CreationStates.uploading_photo),
     ~StateFilter(CreationStates.uploading_furniture),
     ~StateFilter(CreationStates.loading_facade_sample),
-    ~StateFilter(CreationStates.download_sample),
+   # ~StateFilter(CreationStates.download_sample),
     F.photo,
     F.media_group_id
 )
