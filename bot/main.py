@@ -59,7 +59,7 @@ async def main():
 
     # [2026-01-01 22:24] Устанавливаем команду /start в меню бота
     await bot.set_my_commands([
-        BotCommand(command="start", description="🔄 Перезагружить бота")
+        BotCommand(command="start", description="🔄 Перезагрузить бота")
     ])
     logger.info("Команда /start добавлена в меню")
 

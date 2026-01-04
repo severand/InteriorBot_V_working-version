@@ -75,48 +75,48 @@ You can't:
 # ========================================
 # СТАРЫЙ ПРОМПТ (ЗАКОММЕНТИРОВАН 2026-01-03 22:51)
 # ========================================
-# APPLY_STYLE_PROMPT = (
-#     "You are a professional interior designer. "
-#     "Completely transform the room in the first image to match the reference design shown in the second image. "
-#     
-#     "WHAT TO CHANGE (transform everything):\n"
-#     "- Replace ALL furniture with furniture matching the reference design\n"
-#     "- Replace ALL decor, accessories, and decorative elements\n"
-#     "- Apply the exact color scheme, materials, and textures from the reference\n"
-#     "- Match the lighting, atmosphere, and mood of the reference design\n"
-#     "- Adopt the same style aesthetic (modern, classic, minimalist, etc.) as the reference\n"
-#     "- Recreate wall treatments, finishes, and surface materials from the reference\n"
-#     "- Match flooring style and material to the reference design\n"
-#     "- Apply the same window treatments (curtains, blinds, etc.)\n"
-#     "- Recreate ceiling design and lighting fixtures from the reference\n"
-#     "- Include similar plants, artwork, and decorative accents\n"
-#     
-#     "WHAT TO PRESERVE (keep EXACTLY from original - DO NOT CHANGE):\n"
-#     "- MUST maintain the exact room dimensions and floor area\n"
-#     "- MUST keep the same room geometry and wall layout EXACTLY\n"
-#     "- MUST preserve the exact positions of doors and windows - DO NOT MOVE THEM\n"
-#     "- MUST maintain the overall room proportions and spatial configuration - NO CHANGES ALLOWED\n"
-#     "- MUST NOT enlarge or decrease the room size\n"
-#     "- MUST NOT change the room's height or width\n"
-#     "- MUST NOT remove or add walls\n"
-#     "- MUST NOT distort or warp the room's original geometry\n"
-#     "- Adapt furniture scale and placement to fit the current room size EXACTLY\n"
-#     
-#     "STRICT RULES (CRITICAL - DO NOT BREAK):\n"
-#     "- The room's basic structure CANNOT be changed\n"
-#     "- Window and door positions are FIXED and IMMUTABLE\n"
-#     "- Room dimensions are SACRED - maintain them precisely\n"
-#     "- Only furniture arrangement and styling can change\n"
-#     "- Preserve the exact aspect ratio and proportions of the original room\n"
-#     
-#     "GOAL: Create an ultra-photorealistic design for a glossy design magazine that will look exactly as if the reference style was applied to THAT SPECIFIC ROOM, while maintaining the exact dimensions, geometry and structure of the room."
-# )
+APPLY_STYLE_PROMPT = (
+     "You are a professional interior designer. "
+     "Completely transform the room in the first image to match the reference design shown in the second image. "
+     
+     "WHAT TO CHANGE (transform everything):\n"
+     "- Replace ALL furniture with furniture matching the reference design\n"
+     "- Replace ALL decor, accessories, and decorative elements\n"
+     "- Apply the exact color scheme, materials, and textures from the reference\n"
+     "- Match the lighting, atmosphere, and mood of the reference design\n"
+     "- Adopt the same style aesthetic (modern, classic, minimalist, etc.) as the reference\n"
+     "- Recreate wall treatments, finishes, and surface materials from the reference\n"
+     "- Match flooring style and material to the reference design\n"
+     "- Apply the same window treatments (curtains, blinds, etc.)\n"
+     "- Recreate ceiling design and lighting fixtures from the reference\n"
+     "- Include similar plants, artwork, and decorative accents\n"
+     
+     "WHAT TO PRESERVE (keep EXACTLY from original - DO NOT CHANGE):\n"
+     "- MUST maintain the exact room dimensions and floor area\n"
+     "- MUST keep the same room geometry and wall layout EXACTLY\n"
+     "- MUST preserve the exact positions of doors and windows - DO NOT MOVE THEM\n"
+     "- MUST maintain the overall room proportions and spatial configuration - NO CHANGES ALLOWED\n"
+     "- MUST NOT enlarge or decrease the room size\n"
+     "- MUST NOT change the room's height or width\n"
+     "- MUST NOT remove or add walls\n"
+     "- MUST NOT distort or warp the room's original geometry\n"
+     "- Adapt furniture scale and placement to fit the current room size EXACTLY\n"
+     
+     "STRICT RULES (CRITICAL - DO NOT BREAK):\n"
+     "- The room's basic structure CANNOT be changed\n"
+     "- Window and door positions are FIXED and IMMUTABLE\n"
+     "- Room dimensions are SACRED - maintain them precisely\n"
+     "- Only furniture arrangement and styling can change\n"
+     "- Preserve the exact aspect ratio and proportions of the original room\n"
+     
+    "GOAL: Create an ultra-photorealistic design for a glossy design magazine that will look exactly as if the reference style was applied to THAT SPECIFIC ROOM, while maintaining the exact dimensions, geometry and structure of the room."
+ )
 
 # ========================================
 # НОВЫЙ ПРОМПТ (ОБНОВЛЕН 2026-01-03 22:51)
 # ========================================
-APPLY_STYLE_PROMPT = "Create an ultra-photorealistic design for a glossy design magazine that will look exactly as if the reference style was applied to THAT SPECIFIC ROOM, while maintaining the exact dimensions, geometry and structure of the room."
-
+#APPLY_STYLE_PROMPT = "Completely remove all interior details from this space and Create an ultra-photorealistic design for a glossy design magazine that will look exactly as if the reference style was applied to THAT SPECIFIC ROOM, while maintaining the exact dimensions, geometry and structure of the room."
+#APPLY_STYLE_PROMPT = "Completely remove all interior details from this room and create an ultra-photorealistic design for a glossy design magazine. Transfer the design from the sample photo to the specific room. Strictly adhere to the dimensions, geometry, structure, and focal point of the room."
 # ========================================
 # ПРОМПТ ДЛЯ ОЧИСТКИ ПРОСТРАНСТВА
 # ========================================
