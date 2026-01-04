@@ -22,59 +22,27 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 PHOTO_SEND_LOG = {}
-
-# 📄 Отслеживание альбомов для удаления
 media_group_cache = {}
 
 
 def log_photo_send(user_id: int, method: str, message_id: int, request_id: str = None, operation: str = ""):
-    """Логирует отправку фото для диагностики"""
     if user_id not in PHOTO_SEND_LOG:
         PHOTO_SEND_LOG[user_id] = []
-    
     timestamp = datetime.now().isoformat()
     rid = request_id or str(uuid.uuid4())[:8]
-    
-    entry = {
-        'timestamp': timestamp,
-        'method': method,
-        'message_id': message_id,
-        'request_id': rid,
-        'operation': operation
-    }
-    
+    entry = {'timestamp': timestamp, 'method': method, 'message_id': message_id, 'request_id': rid, 'operation': operation}
     PHOTO_SEND_LOG[user_id].append(entry)
-    
-    logger.warning(
-        f"📊 [PHOTO_LOG] user_id={user_id}, method={method}, msg_id={message_id}, "
-        f"request_id={rid}, operation={operation}, timestamp={timestamp}"
-    )
+    logger.warning(f"📊 [PHOTO_LOG] user_id={user_id}, method={method}, msg_id={message_id}, request_id={rid}, operation={operation}, timestamp={timestamp}")
 
 
 async def collect_all_media_group_photos(user_id: int, media_group_id: str, message_id: int):
-    """
-    📄 Отслеживание всех фото альбома и удаление всех сразу
-    
-    Процесс:
-    1. Первое фото → регистрируем
-    2. Ждём 1сек - приходят остальные
-    3. Отмечаем как собранные
-    4. Возвращаем все message_ids для удаления
-    """
     if user_id not in media_group_cache:
         media_group_cache[user_id] = {}
-    
     if media_group_id not in media_group_cache[user_id]:
-        media_group_cache[user_id][media_group_id] = {
-            'message_ids': [message_id],
-            'collected': False
-        }
+        media_group_cache[user_id][media_group_id] = {'message_ids': [message_id], 'collected': False}
         logger.info(f"📄 [COLLECT] user={user_id}, group={media_group_id}, photo #1")
-        
         await asyncio.sleep(1.0)
-        
         media_group_cache[user_id][media_group_id]['collected'] = True
-        
         final_ids = media_group_cache[user_id][media_group_id]['message_ids'].copy()
         logger.info(f"📄 [COLLECT] DONE: {len(final_ids)} photos")
         return final_ids
@@ -83,79 +51,41 @@ async def collect_all_media_group_photos(user_id: int, media_group_id: str, mess
             media_group_cache[user_id][media_group_id]['message_ids'].append(message_id)
             count = len(media_group_cache[user_id][media_group_id]['message_ids'])
             logger.info(f"📄 [COLLECT] photo #{count} added")
-        
         return None
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
-# 🎁 [SCREEN 10] ЗАГРУЗКА ОБРАЗЦА ФОТО (SAMPLE_DESIGN)
-# 🔧 [2026-01-04 22:41] УБРАНА ОТПРАВКА ДУБЛИРУЮЩЕГОСЯ сообщения об ошибке
+# 🎁 [SCREEN 10] ЗАГРУЗКА ОБРАЗЦА ФОТО
 # ════════════════════════════════════════════════════════════════════════════════════
 
 @router.message(StateFilter(CreationStates.download_sample), F.photo)
 async def download_sample_photo_handler(message: Message, state: FSMContext):
-    """
-    🎁 [SCREEN 10] Обработка загрузки образца фото (второе фото)
-    
-    📋 ПУТЬ: [SCREEN 10: download_sample] → загрузка фото образца → [SCREEN 11: generation_try_on]
-    
-    🔧 [2026-01-04 22:41] Отсутствует отправка ошибки:
-    - Альбом детектируется и удаляется
-    - НЕ ОТПРАВЛЯЕМ сообщение об ошибке (уже есть стандартное сообщение "отправьте одну фото")
-    - Просто удаляем и выходим (return)
-    """
     user_id = message.from_user.id
     chat_id = message.chat.id
-    
     try:
-        # 📄 АЛЬБОМ ФОТО - Удалить все
         if message.media_group_id:
             logger.info(f"📄 [ALBUM] [SCREEN 10] media_group_id={message.media_group_id}")
-            
-            collected_ids = await collect_all_media_group_photos(
-                user_id,
-                message.media_group_id,
-                message.message_id
-            )
-            
+            collected_ids = await collect_all_media_group_photos(user_id, message.media_group_id, message.message_id)
             if collected_ids:
                 logger.warning(f"❌ [ALBUM] [SCREEN 10] {len(collected_ids)} фото детектировано! УДАЛЯЕМ!")
-                
-                delete_tasks = []
-                for msg_id in collected_ids:
-                    delete_tasks.append(
-                        message.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                    )
-                
+                delete_tasks = [message.bot.delete_message(chat_id=chat_id, message_id=msg_id) for msg_id in collected_ids]
                 results = await asyncio.gather(*delete_tasks, return_exceptions=True)
                 success_count = sum(1 for r in results if not isinstance(r, Exception))
                 logger.info(f"🗑️ [ALBUM] [SCREEN 10] Удалено {success_count}/{len(collected_ids)} фото")
-            
             return
         
-        # 📄 ОДИНОЧНОЕ ФОТО - Обрабатывать
         logger.info(f"📄 [SINGLE] [SCREEN 10] Одиночное фото образца")
-        
         data = await state.get_data()
         work_mode = data.get('work_mode')
         photo_id = message.photo[-1].file_id
         
-        # 🎯 Сохраняем photo_id образца В ДВУХ МЕСТАХ:
-        # 1️⃣ В FSM (для текущей сессии)
-        await state.update_data(
-            sample_photo_id=photo_id,  # ОБРАЗЕЦ фото
-            session_started=False
-        )
+        await state.update_data(sample_photo_id=photo_id, session_started=False)
         logger.info(f"📄 [FSM] Образец фото сохранено в FSM: {photo_id[:30]}...")
-        
-        # 2️⃣ В БД (sample_photo_id для повторного использования)
         await db.save_sample_photo(user_id, photo_id)
         logger.info(f"📄 [БД] Образец фото сохранено в user_photos.sample_photo_id")
         
-        # Удаляем старое меню (SCREEN 10)
         old_menu_data = await db.get_chat_menu(chat_id)
         old_menu_message_id = old_menu_data.get('menu_message_id') if old_menu_data else None
-        
         if old_menu_message_id:
             try:
                 await message.bot.delete_message(chat_id=chat_id, message_id=old_menu_message_id)
@@ -163,43 +93,26 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
             except Exception as e:
                 logger.debug(f"⚠️ Не удалось удалить: {e}")
 
-        # 🎁 Отправляем образец фото с подписью
         logger.info(f"🎁 [SCREEN 10] Отправляю образец фото с сообщением")
-        
-        sample_msg = await message.answer_photo(
-            photo=photo_id,
-            caption=SCREEN_10_PHOTO_SAMPLE,  # ← ИСПОЛЬЗУЕМ ГОТОВЫЙ ТЕКСТ!
-            parse_mode="Markdown"
-        )
+        sample_msg = await message.answer_photo(photo=photo_id, caption=SCREEN_10_PHOTO_SAMPLE, parse_mode="Markdown")
         logger.info(f"🎁 [SCREEN 10] Образец фото отправлено (msg_id={sample_msg.message_id})")
         
-        # 🗑️ УДАЛЯЕМ ОРИГИНАЛЬНОЕ ФОТО ЮЗЕРА СРАЗУ
         try:
             await message.delete()
             logger.info(f"🗑️ [SCREEN 10] Удалено оригинальное фото юзера (msg_id={message.message_id})")
         except Exception as e:
             logger.debug(f"⚠️ Не удалось удалить фото юзера: {e}")
 
-        # ПЕРЕХОД НА SCREEN 11: generation_try_on
         await state.set_state(CreationStates.generation_try_on)
-        
         text = GENERATION_TRY_ON_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
         keyboard = get_generation_try_on_keyboard()
-        
         logger.info(f"🎁 [SCREEN 10→11] Отправляю меню SCREEN 11 с кнопкой примерки")
-        menu_msg = await message.answer(
-            text=text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
+        menu_msg = await message.answer(text=text, reply_markup=keyboard, parse_mode="Markdown")
         logger.info(f"✅ [SCREEN 10→11] Меню SCREEN 11 отправлено (msg_id={menu_msg.message_id})")
-        
         await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'generation_try_on')
         await state.update_data(menu_message_id=menu_msg.message_id)
-        
         logger.info(f"📄 [SCREEN 10→11] COMPLETED - переход на generation_try_on")
-        
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 10 photo handler failed: {e}", exc_info=True)
         error_msg = await message.answer(f"❌ Ошибка при загрузке образца: {str(e)[:50]}")
@@ -207,159 +120,100 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
         asyncio.create_task(_delete_message_after_delay(message.bot, chat_id, error_msg.message_id, 3))
 
 
-# ════════════════════════════════════════════════════════════════════════════════════
-# ⬅️ [SCREEN 11] КНОПКА "НАЗАД" - ВЕРНУТЬСЯ НА SCREEN 10
-# 🔧 [2026-01-04 22:49] ОБНОВЛЕНО: добавлен обработчик кнопки "назад"
-# ════════════════════════════════════════════════════════════════════════════════════
-
-@router.callback_query(
-    StateFilter(CreationStates.generation_try_on),
-    F.data == "download_sample"
-)
+@router.callback_query(StateFilter(CreationStates.generation_try_on), F.data == "download_sample")
 async def back_to_sample_upload(callback: CallbackQuery, state: FSMContext):
-    """
-    ⬅️ [SCREEN 11] КНОПКА "НАЗАД" - Вернуться на SCREEN 10 (загрузка образца)
-    
-    📋 ПУТЬ: [SCREEN 11: generation_try_on] → кнопка НАЗАД → [SCREEN 10: download_sample]
-    """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
-
     try:
         await state.set_state(CreationStates.download_sample)
-        
         text = DOWNLOAD_SAMPLE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
         keyboard = get_download_sample_keyboard()
-        
         logger.info(f"⬅️ [SCREEN 11→10] НАЖАТА КНОПКА НАЗАД - возврат на SCREEN 10")
-        
-        await callback.message.edit_text(
-            text=text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-        
+        await callback.message.edit_text(text=text, reply_markup=keyboard, parse_mode="Markdown")
         await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'download_sample')
         logger.info(f"✅ [SCREEN 11→10] Меню SCREEN 10 доставлено")
         await callback.answer()
-        
     except Exception as e:
         logger.error(f"[ERROR] back_to_sample_upload failed: {e}", exc_info=True)
         await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
 
 
-# ════════════════════════════════════════════════════════════════════════════════════
-# ⬅️ [SCREEN 12] КНОПКА "НОВЫЙ ОБРАЗЕЦ" - ВЕРНУТЬСЯ НА SCREEN 10
-# 🔧 [2026-01-04 23:03] ДОБАВЛЕНО: обработчик для кнопки "новый образец" на SCREEN 12
-# ════════════════════════════════════════════════════════════════════════════════════
-
-@router.callback_query(
-    StateFilter(CreationStates.post_generation_sample),
-    F.data == "download_sample"
-)
+@router.callback_query(StateFilter(CreationStates.post_generation_sample), F.data == "download_sample")
 async def new_sample_from_screen_12(callback: CallbackQuery, state: FSMContext):
-    """
-    📸 [SCREEN 12] КНОПКА "НОВЫЙ ОБРАЗЕЦ" - Вернуться на SCREEN 10 (загрузка образца)
-    
-    📋 ПУТЬ: [SCREEN 12: post_generation_sample] → кнопка "новый образец" → [SCREEN 10: download_sample]
-    
-    🔧 [2026-01-04 23:03] РЕАЛИЗОВАНО:
-    - ИСПОЛЬЗУЕМ ТОТ ЖЕ callback_data "download_sample", что и в SCREEN 11
-    - НО с ДРУГИМ state фильтром (post_generation_sample вместо generation_try_on)
-    - ЭТО ПЕРЕИСПОЛЬЗОВАНИЕ обработчика БЕЗ ДУБЛИКАТОВ (DRY принцип)
-    """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
-
     try:
         await state.set_state(CreationStates.download_sample)
-        
         text = DOWNLOAD_SAMPLE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='sample_design')
         keyboard = get_download_sample_keyboard()
-        
         logger.info(f"📸 [SCREEN 12→10] НАЖАТА КНОПКА 'НОВЫЙ ОБРАЗЕЦ' - возврат на SCREEN 10")
-        
-        await callback.message.edit_text(
-            text=text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-        
+        await callback.message.edit_text(text=text, reply_markup=keyboard, parse_mode="Markdown")
         await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'download_sample')
         logger.info(f"✅ [SCREEN 12→10] Меню SCREEN 10 доставлено")
         await callback.answer()
-        
     except Exception as e:
         logger.error(f"[ERROR] new_sample_from_screen_12 failed: {e}", exc_info=True)
         await callback.answer("❌ Ошибка. Попробуйте еще раз.", show_alert=True)
 
 
-# ════════════════════════════════════════════════════════════════════════════════════
-# ✏️ [SCREEN 12] КНОПКА "ТЕКСТОВОЕ РЕДАКТИРОВАНИЕ" - ПЕРЕЙТИ НА SCREEN 8
-# 🔧 [2026-01-05 00:15] ПЕРЕДЕЛАНО: правильно сохранять сгенерированное фото в БД и переход на SCREEN 8
-# ════════════════════════════════════════════════════════════════════════════════════
-
-@router.callback_query(
-    StateFilter(CreationStates.post_generation_sample),
-    F.data == "text_input"
-)
+@router.callback_query(StateFilter(CreationStates.post_generation_sample), F.data == "text_input")
 async def text_input_from_screen_12(callback: CallbackQuery, state: FSMContext):
     """
-    ✏️ [SCREEN 12] КНОПКА "ТЕКСТОВОЕ РЕДАКТИРОВАНИЕ" → SCREEN 8
+    ✏️ [SCREEN 12→8] КРИТИЧЕСКИЙ FIX [2026-01-05 00:45]
     
-    📋 ПУТЬ: [SCREEN 12: post_generation_sample] 
-        → кнопка "✏️ Текстовое редактирование"
-        → СОХРАНЯЕМ сгенерированное фото
-        → [SCREEN 8: edit_design]
+    ПРОБЛЕМА: Сохранялся прямой URL как photo_id
+    Telegram отказывает: "wrong file_id or the file is temporarily unavailable"
     
-    🔧 [2026-01-05 00:15] ПЕРЕДЕЛАНО:
-    1️⃣ Получаем URL последнего сгенерированного изображения (last_generated_image_url из FSM)
-    2️⃣ Сохраняем его в БД как основное фото (photo_id в user_photos)
-    3️⃣ Обновляем FSM с новым photo_id
-    4️⃣ Переходим на SCREEN 8 (edit_design)
-    5️⃣ На SCREEN 8 уже есть обработчик text_input в edit_design.py
-    
-    ⚠️ ВАЖНО: URL изображения сохраняется как "photo_id" в БД!
-    Это работает потому что Telegram принимает direct URLs как photo параметры
+    РЕШЕНИЕ: Загрузить фото в Telegram, получить реальный file_id
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
 
     try:
-        # ШАГ 1: Получаем последний сгенерированный URL
+        # ШАГ 1: Получить URL сгенерированного фото
         data = await state.get_data()
         last_generated_url = data.get('last_generated_image_url')
         
         if not last_generated_url:
             logger.error(f"❌ [SCREEN 12] last_generated_image_url not found in FSM")
-            await callback.answer(
-                "❌ Ошибка: сгенерированное изображение не найдено. Повторите попытку генерации.",
-                show_alert=True
-            )
+            await callback.answer("❌ Ошибка: сгенерированное изображение не найдено.", show_alert=True)
             return
         
         logger.info(f"✏️ [SCREEN 12→8] НАЖАТА КНОПКА 'ТЕКСТОВОЕ РЕДАКТИРОВАНИЕ'")
-        logger.info(f"   Сохраняю сгенерированное фото: {last_generated_url[:50]}...")
+        logger.info(f"   🔄 Загружаю фото в Telegram, чтобы получить реальный file_id")
         
-        # ШАГ 2: Сохраняем в БД как основное фото
-        await db.save_user_photo(user_id, last_generated_url)
-        logger.info(f"✅ [ДБ] Сохранено сгенерированное фото как photo_id")
-        
-        # ШАГ 3: Обновляем FSM (ВСЕ необходимые поля для SCREEN 8)
-        await state.update_data(
-            photo_id=last_generated_url,  # URL как photo_id для редактирования
-            room_type='living_room',      # Default room type
-            style_type='modern',           # Default style type
-            menu_message_id=callback.message.message_id  # ID меню для редактирования
+        # ШАГ 2: КРИТИЧЕСКО! Загрузить фото в Telegram и получить file_id
+        # (вместо сохранения прямого URL)
+        uploaded_photo = await callback.message.answer_photo(
+            photo=last_generated_url,
+            caption="⏳ Подготавливаю к редактированию..."
         )
-        logger.info(f"📝 [FSM] Обновлено все поля для SCREEN 8")
         
-        # ШАГ 4: Переходим на SCREEN 8 (edit_design)
+        # Получить реальный file_id из загруженного фото
+        real_photo_id = uploaded_photo.photo[-1].file_id
+        logger.info(f"✅ [ДБ] Получен реальный file_id: {real_photo_id[:30]}...")
+        
+        # ШАГ 3: Сохранить в БД (РЕАЛЬНЫЙ file_id, не URL!)
+        await db.save_user_photo(user_id, real_photo_id)
+        logger.info(f"✅ [ДБ] Сохранено сгенерированное фото с реальным file_id")
+        
+        # ШАГ 4: Обновить FSM со ВСЕМИ полями для SCREEN 8
+        await state.update_data(
+            photo_id=real_photo_id,  # ✅ РЕАЛЬНЫЙ file_id из Telegram!
+            room_type='living_room',
+            style_type='modern',
+            menu_message_id=callback.message.message_id
+        )
+        logger.info(f"📝 [FSM] Обновлено: photo_id = {real_photo_id[:30]}...")
+        
+        # ШАГ 5: Переходим на SCREEN 8
         await state.set_state(CreationStates.edit_design)
         
-        # Используем текст из edit_design.py (тот же EDIT_DESIGN_MENU_TEXT)
+        # ШАГ 6: Показываем SCREEN 8 меню (отредактируем загруженное сообщение)
+        from keyboards.inline import get_edit_design_keyboard
+        
         edit_design_menu_text = """✏️ **Редактируем дизайн**
 
 Выберите действие:
@@ -374,66 +228,42 @@ async def text_input_from_screen_12(callback: CallbackQuery, state: FSMContext):
 • "Больше растений и освещения"
 """
         
-        from keyboards.inline import get_edit_design_keyboard
-        
         logger.info(f"📄 [SCREEN 12→8] Отправляю меню SCREEN 8")
         
-        # Редактируем сообщение на SCREEN 8 (используем то же сообщение)
-        await callback.message.edit_text(
+        # Удалить временное сообщение и показать меню
+        await uploaded_photo.delete()
+        menu_msg = await callback.message.edit_text(
             text=edit_design_menu_text,
             reply_markup=get_edit_design_keyboard()
         )
         
-        # Сохраняем в БД
-        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'edit_design')
+        await state.update_data(menu_message_id=menu_msg.message_id)
+        await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'edit_design')
         
         logger.info(f"✅ [SCREEN 12→8] COMPLETED - переход на SCREEN 8 выполнен")
         await callback.answer()
         
     except Exception as e:
         logger.error(f"[ERROR] text_input_from_screen_12 failed: {e}", exc_info=True)
-        await callback.answer(f"❌ Ошибка. Попробуйте еще раз: {str(e)[:50]}", show_alert=True)
+        await callback.answer(f"❌ Ошибка: {str(e)[:50]}", show_alert=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
 # 🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
-# 🔧 [2026-01-03 20:14] КРИТИЧНО FIX: 
-#    1. РЕДАКТИРУЕМ меню на SCREEN 11 → прогресс
-#    2. ГЕНЕРИРУЕМ изображение
-#    3. УДАЛЯЕМ прогресс-сообщение (или редактируем)
-#    4. ОТПРАВЛЯЕМ SCREEN 12 (ФОТО + МЕНЮ)
-#    5. СОХРАНЯЕМ ОБЕ ID В FSM & ДБ
 # ════════════════════════════════════════════════════════════════════════════════════
 
-@router.callback_query(
-    StateFilter(CreationStates.generation_try_on),
-    F.data == "generate_try_on"
-)
+@router.callback_query(StateFilter(CreationStates.generation_try_on), F.data == "generate_try_on")
 async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
-    """
-    🎁 [SCREEN 11] КНОПКА: "🎨 Примерить дизайн"
-
-    📋 ПУТЬ: [SCREEN 11] → Кнопка → [SCREEN 12: ФОТО + МЕНЮ]
-
-    🔧 [2026-01-03 20:14] КРИТИЧНО FIX:
-    1️⃣ РЕДАКТИРУЕМ меню на "ГЕНЕРИРУЮ" (показываем прогресс)
-    2️⃣ ГЕНЕРИРУЕМ изображение
-    3️⃣ УДАЛЯЕМ или РЕДАКТИРУЕМ прогресс-сообщение
-    4️⃣ ОТПРАВЛЯЕМ ФОТО с caption
-    5️⃣ ОТПРАВЛЯЕМ SCREEN 12 МЕНЮ с КНОПКАМИ
-    6️⃣ СОХРАНЯЕМ ОБЕ ID В FSM & ДБ
-    """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     request_id = str(uuid.uuid4())[:8]
 
     try:
         logger.info(f"🎁 [SCREEN 11] КНОПКА НАЖАТА: user_id={user_id}")
-        logger.info(f"═" * 80)
+        logger.info(f"{'═' * 80}")
         logger.info(f"📊 [SCREEN 11] ДИАГНОСТИКА ЗАГРУЗКИ ФОТО")
-        logger.info(f"═" * 80)
+        logger.info(f"{'═' * 80}")
         
-        # 🔄 ЗАГРУЖЕННЫЙ ОБРАЗЕЦ
         data = await state.get_data()
         sample_photo_id = data.get('sample_photo_id')
         
@@ -445,17 +275,12 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         
         if not sample_photo_id:
             logger.error("❌ Образец фото не найден в FSM")
-            await callback.answer(
-                "❌ Ошибка: образец фото не найден. Загрузите образец еще раз.",
-                show_alert=True
-            )
+            await callback.answer("❌ Ошибка: образец фото не найден. Загрузите образец еще раз.", show_alert=True)
             return
         
-        # 🎯 ПОЛУЧАЕМ ОСНОВНОЕ ФОТО (С ПОДРОБНЫМ ЛОГИРОВАНИЕМ)
         logger.info(f"\n2️⃣  ОСНОВНОЕ ФОТО (main_photo_id):")
         logger.info(f"   🔍 Проверяю источники данных...")
         
-        # ПОПЫТКА 1: БД
         logger.info(f"   📋 ПОПЫТКА 1: Получаю из БД...")
         user_photos = await db.get_user_photos(user_id)
         logger.info(f"   📦 Результат get_user_photos(): {user_photos}")
@@ -475,11 +300,9 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
                 logger.warning(f"   ⚠️  БД: Поле photo_id отсутствует в словаре")
                 logger.info(f"      Доступные ключи: {list(user_photos.keys())}")
         
-        # ПОПЫТКА 2: FSM (Fallback)
         if not main_photo_id:
             logger.info(f"   📋 ПОПЫТКА 2: БД вернула пусто, беру из FSM (fallback)...")
             main_photo_id = data.get('photo_id')
-            
             if main_photo_id:
                 logger.info(f"   ✅ FSM: photo_id найден (FALLBACK): {main_photo_id[:40]}...")
             else:
@@ -487,7 +310,6 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         else:
             logger.info(f"   ✅ ИСТОЧНИК: БД")
         
-        # ИТОГОВЫЙ РЕЗУЛЬТАТ
         logger.info(f"\n3️⃣  ИТОГОВЫЙ РЕЗУЛЬТАТ:")
         if main_photo_id:
             source = "БД" if user_photos and user_photos.get('photo_id') else "FSM (FALLBACK)"
@@ -497,23 +319,18 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             logger.error(f"   ❌ ОСНОВНОЕ ФОТО НЕ НАЙДЕНО")
         
         logger.info(f"\n✅ ОБРАЗЕЦ ФОТО: {sample_photo_id[:40]}...")
-        logger.info(f"═" * 80)
+        logger.info(f"{'═' * 80}")
         
         if not main_photo_id:
-            await callback.answer(
-                "❌ Ошибка: основное фото не найдено. Загрузите фото комнаты еще раз.",
-                show_alert=True
-            )
+            await callback.answer("❌ Ошибка: основное фото не найдено. Загрузите фото комнаты еще раз.", show_alert=True)
             return
         
         logger.info(f"\n✅ Оба фото найдены:")
         logger.info(f"   - Основное: {main_photo_id[:30]}...")
         logger.info(f"   - Образец: {sample_photo_id[:30]}...")
         
-        # ⏳ ПОКАЗЫВАЕМ СООБЩЕНИЕ О ГЕНЕРАЦИИ
         await callback.answer("⏳ Подождите... генерируем примерку", show_alert=False)
         
-        # 🔄 РЕДАКТИРУЕМ МЕНЮ НА "ГЕНЕРИРУЮ"
         progress_message_id = callback.message.message_id
         logger.info(f"🔧 [PROGRESS] Сохраняю ID прогресс-сообщения: {progress_message_id}")
         
@@ -528,7 +345,6 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             except TelegramBadRequest as e:
                 logger.debug(f"⚠️ Не удалось отредактировать: {e}")
         
-        # 🎨 ЗАПУСКАЕМ ГЕНЕРАЦИЮ
         logger.info(f"🚀 Запускаем apply_style_to_room()...")
         result_url = await apply_style_to_room(
             main_photo_file_id=main_photo_id,
@@ -548,26 +364,15 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
                 await callback.message.answer(text=error_text)
             return
         
-        # ✅ ГЕНЕРАЦИЯ УСПЕШНА
         logger.info(f"✅ Результат примерки готов: {result_url[:50]}...")
         log_photo_send(user_id, "answer_photo", 0, request_id, "apply_style_to_room")
         
-        # 🔧 [2026-01-03 20:14] КРИТИЧНО FIX:
-        # 1️⃣ УДАЛЯЕМ или РЕДАКТИРУЕМ прогресс-сообщение
-        # 2️⃣ ОТПРАВЛЯЕМ ФОТО + МЕНЮ
-        # 3️⃣ СОХРАНЯЕМ ОБЕ ID В FSM & ДБ
-        
-        # 🗑️ УДАЛЯЕМ ПРОГРЕСС-СООБЩЕНИЕ
         if progress_message_id:
             try:
-                await callback.bot.delete_message(
-                    chat_id=chat_id,
-                    message_id=progress_message_id
-                )
+                await callback.bot.delete_message(chat_id=chat_id, message_id=progress_message_id)
                 logger.info(f"🗑️ [PROGRESS] Удалено прогресс-сообщение (msg_id={progress_message_id})")
             except TelegramBadRequest as e:
                 logger.warning(f"⚠️ [PROGRESS] Не удалось удалить прогресс: {e}")
-                # Fallback: пытаемся отредактировать
                 try:
                     await callback.bot.edit_message_text(
                         chat_id=chat_id,
@@ -578,53 +383,28 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
                 except Exception as e2:
                     logger.debug(f"⚠️ [PROGRESS] Fallback не сработал: {e2}")
         
-        # 1️⃣ ОТПРАВЛЯЕМ ФОТО
-        photo_caption = (
-            "✨ *Примерка готова!*\n\n"
-            "Дизайн применен к вашей комнате с сохранением мебели и макета."
-        )
-        
-        photo_msg = await callback.message.answer_photo(
-            photo=result_url,
-            caption=photo_caption,
-            parse_mode="Markdown"
-        )
+        photo_caption = ("✨ *Примерка готова!*\n\nДизайн применен к вашей комнате с сохранением мебели и макета.")
+        photo_msg = await callback.message.answer_photo(photo=result_url, caption=photo_caption, parse_mode="Markdown")
         logger.info(f"📸 [SCREEN 12] ФОТО примерки отправлено (msg_id={photo_msg.message_id})")
         log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id, "apply_style_to_room_success")
         
-        # 2️⃣ ОТПРАВЛЯЕМ SCREEN 12 МЕНЮ С КНОПКАМИ
         data = await state.get_data()
         work_mode = data.get('work_mode', 'sample_design')
         balance = await db.get_balance(user_id)
         
-        menu_text = (
-            f"🎨 *Примерка дизайна готова!*\n\n"
-            f"Выберите действие:\n"
-            f"📝 Редактировать текстом\n"
-            f"📸 Загрузить новый образец\n"
-            f"🏠 Вернуться в меню\n\n"
-            f"💰 Баланс: *{balance}* генераций"
-        )
-        
-        menu_msg = await callback.message.answer(
-            text=menu_text,
-            reply_markup=get_post_generation_sample_keyboard(),
-            parse_mode="Markdown"
-        )
+        menu_text = (f"🎨 *Примерка дизайна готова!*\n\nВыберите действие:\n📝 Редактировать текстом\n📸 Загрузить новый образец\n🏠 Вернуться в меню\n\n💰 Баланс: *{balance}* генераций")
+        menu_msg = await callback.message.answer(text=menu_text, reply_markup=get_post_generation_sample_keyboard(), parse_mode="Markdown")
         logger.info(f"📝 [SCREEN 12] МЕНЮ отправлено (msg_id={menu_msg.message_id})")
         
-        # 3️⃣ СОХРАНЯЕМ ОБЕ ID В FSM & ДБ (as per project standard)
         await state.update_data(
             photo_message_id=photo_msg.message_id,
             menu_message_id=menu_msg.message_id,
-            last_generated_image_url=result_url  # СОХРАНЯЕМ URL для последующего редактирования!
+            last_generated_image_url=result_url
         )
         
-        # PHOTO MESSAGE
         await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation_sample_photo')
         logger.info(f"💾 [ДБ] Сохранено ФОТО: msg_id={photo_msg.message_id}")
         
-        # MENU MESSAGE
         await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_sample')
         logger.info(f"💾 [ДБ] Сохранено МЕНЮ: msg_id={menu_msg.message_id}")
         
@@ -638,14 +418,10 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 11 кнопка failed: {e}", exc_info=True)
-        await callback.answer(
-            f"❌ Ошибка. Попробуйте еще раз: {str(e)[:50]}",
-            show_alert=True
-        )
+        await callback.answer(f"❌ Ошибка. Попробуйте еще раз: {str(e)[:50]}", show_alert=True)
 
 
 async def _delete_message_after_delay(bot, chat_id: int, message_id: int, delay: int):
-    """Удалить сообщение через N секунд"""
     try:
         await asyncio.sleep(delay)
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
