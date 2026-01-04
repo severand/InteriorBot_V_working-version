@@ -158,31 +158,31 @@ def get_mode_selection_keyboard() -> InlineKeyboardMarkup:
     
     # Ряд 2: Редактировать дизайн
     builder.row(InlineKeyboardButton(
-        text="✏️ Редактировать дизайн",
+        text="      ✏️ Редактировать дизайн          ",
         callback_data="select_mode_edit_design"
     ))
     
     # Ряд 3: Примерить дизайн
     builder.row(InlineKeyboardButton(
-        text="🎁 Примерить дизайн",
+        text="          🎁 Примерить дизайн          ",
         callback_data="select_mode_sample_design"
     ))
     
     # Ряд 4: Расставить мебель
     builder.row(InlineKeyboardButton(
-        text="🛋️ Расставить мебель",
+        text="          🛋️ Расставить мебель          ",
         callback_data="select_mode_arrange_furniture"
     ))
     
     # Ряд 5: Дизайн фасада
     builder.row(InlineKeyboardButton(
-        text="🏠 Дизайн фасада дома",
+        text="          🏠 Дизайн фасада дома         ",
         callback_data="select_mode_facade_design"
     ))
 
     # Ряд 6: Личный кабинет (разделитель)
     #builder.row(InlineKeyboardButton(
-        #text="👤 Личный кабинет",
+        #text="          👤 Личный кабинет           ",
         #callback_data="show_profile"
     #))
 
