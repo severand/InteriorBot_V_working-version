@@ -36,8 +36,7 @@ from utils.texts import (
     DOWNLOAD_SAMPLE_TEXT,
     GENERATION_TRY_ON_TEXT,
     SCREEN_2_PHOTO_CAPTION,
-    SCREEN_10_PHOTO_SAMPLE,
-
+    
 )
 
 from utils.helpers import add_balance_and_mode_to_text
