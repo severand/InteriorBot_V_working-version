@@ -306,7 +306,7 @@ async def photo_handler(message: Message, state: FSMContext):
     logger.info(f"📸 [SCREEN 2] Отправляю загруженное фото")
     photo_msg = await message.answer_photo(
         photo=photo_id,
-        caption=SCREEN_2_PHOTO_CAPTION,
+        caption= SCREEN_2_PHOTO_CAPTION,
         parse_mode="Markdown"
     )
     logger.info(f"📸 [SCREEN 2] Фото отправлено (msg_id={photo_msg.message_id})")
