@@ -14,6 +14,7 @@ from keyboards.inline import get_generation_try_on_keyboard, get_post_generation
 from states.fsm import CreationStates, WorkMode
 from utils.helpers import add_balance_and_mode_to_text
 from utils.texts import GENERATION_TRY_ON_TEXT
+from utils.texts import SCREEN_10_PHOTO_SAMPLE,
 from services.kie_api import apply_style_to_room
 from config import config
 
@@ -96,6 +97,30 @@ async def download_sample_photo_handler(message: Message, state: FSMContext):
                 logger.info(f"🗑️ [SCREEN 10] Удалено старое меню (msg_id={old_menu_message_id})")
             except Exception as e:
                 logger.debug(f"⚠️ Не удалось удалить: {e}")
+
+
+
+
+        
+        # 🎁 Отправляем образец фото с подписью
+        logger.info(f"🎁 [SCREEN 10] Отправляю образец фото с сообщением")
+        
+        sample_msg = await message.answer_photo(
+            photo=photo_id,
+            caption=SCREEN_10_PHOTO_SAMPLE,  # ← ИСПОЛЬЗУЕМ ГОТОВЫЙ ТЕКСТ!
+            parse_mode="Markdown"
+        )
+        logger.info(f"🎁 [SCREEN 10] Образец фото отправлено (msg_id={sample_msg.message_id})")
+        # 🗑️ УДАЛЯЕМ ОРИГИНАЛЬНОЕ ФОТО ЮЗЕРА СРАЗУ
+        try:
+            await message.delete()
+            logger.info(f"🗑️ [SCREEN 10] Удалено оригинальное фото юзера (msg_id={message.message_id})")
+        except Exception as e:
+            logger.debug(f"⚠️ Не удалось удалить фото юзера: {e}")
+
+        
+
+        
         
         # ПЕРЕХОД НА SCREEN 11: generation_try_on
         await state.set_state(CreationStates.generation_try_on)
