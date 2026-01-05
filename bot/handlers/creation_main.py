@@ -35,8 +35,11 @@ from utils.texts import (
     ROOM_CHOICE_TEXT,
     DOWNLOAD_SAMPLE_TEXT,
     GENERATION_TRY_ON_TEXT,
+    LOADING_FACADE_SAMPLE_TEXT,
+    GENERATION_FACADE_TEXT,
     SCREEN_2_PHOTO_CAPTION,
-    
+    SCREEN_10_PHOTO_SAMPLE,
+    SCREEN_16_PHOTO_FACADE,
 )
 
 from utils.helpers import add_balance_and_mode_to_text
@@ -244,6 +247,9 @@ async def photo_handler(message: Message, state: FSMContext):
     
     🔧 [2026-01-03] FIX: Правильный поток для sample_design:
     - SCREEN 2 (загрузка основного фото) → SCREEN 10 (загрузка образца) → SCREEN 11 (примерка)
+    
+    🔧 [2026-01-05] ADD: Поток для facade_design:
+    - SCREEN 2 (загрузка основного фото) → SCREEN 16 (загрузка образца фасада) → SCREEN 17 (примерка фасада) → SCREEN 18 (результат)
     """
 
     
@@ -381,11 +387,11 @@ async def photo_handler(message: Message, state: FSMContext):
         screen = 'uploading_furniture'
         
     elif work_mode == WorkMode.FACADE_DESIGN.value:
-        await state.set_state(CreationStates.loading_facade_sample)
-        text = f"🏠 **Дизайн фасада**"
+        await state.set_state(CreationStates.loading_facade_sample)  # ← SCREEN 16!
+        text = LOADING_FACADE_SAMPLE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
         keyboard = get_loading_facade_sample_keyboard()
-        screen = 'loading_facade_sample'
+        screen = 'loading_facade_sample'  # ← SCREEN 16!
     else:
         logger.error(f"[ERROR] Неизвестный work_mode: {work_mode}")
         await message.answer("❌ Неизвестный режим. Вернитесь в главное меню.")
@@ -422,6 +428,9 @@ async def use_current_photo(callback: CallbackQuery, state: FSMContext):
     
     🔧 [2026-01-03] FIX: Правильный поток для sample_design:
     - SCREEN 2 (использовать основное фото) → SCREEN 10 (загрузка образца) → SCREEN 11 (примерка)
+    
+    🔧 [2026-01-05] ADD: Поток для facade_design:
+    - SCREEN 2 (использовать основное фото) → SCREEN 16 (загрузка образца фасада) → SCREEN 17
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -475,11 +484,11 @@ async def use_current_photo(callback: CallbackQuery, state: FSMContext):
             screen = 'uploading_furniture'
             
         elif work_mode == WorkMode.FACADE_DESIGN.value:
-            await state.set_state(CreationStates.loading_facade_sample)
-            text = f"🏠 **Дизайн фасада**"
+            await state.set_state(CreationStates.loading_facade_sample)  # ← SCREEN 16!
+            text = LOADING_FACADE_SAMPLE_TEXT
             text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
             keyboard = get_loading_facade_sample_keyboard()
-            screen = 'loading_facade_sample'
+            screen = 'loading_facade_sample'  # ← SCREEN 16!
         else:
             logger.error(f"[ERROR] Неизвестный work_mode: {work_mode}")
             await callback.answer("❌ Неизвестный режим")
@@ -515,7 +524,7 @@ async def use_current_photo(callback: CallbackQuery, state: FSMContext):
         CreationStates.edit_design,                    # Edit режим
         CreationStates.download_sample,                # Sample режим - SCREEN 10
         CreationStates.uploading_furniture,            # Furniture режим
-        CreationStates.loading_facade_sample,          # Facade режим
+        CreationStates.loading_facade_sample,          # Facade режим - SCREEN 16
     ),
     F.data == "uploading_photo"
 )
