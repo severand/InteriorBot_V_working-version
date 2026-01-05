@@ -37,10 +37,14 @@ async def delete_message_after_delay(message: Message, delay: int = 3):
 
 
 async def edit_nav_message(bot, chat_id, state: FSMContext, text: str, reply_markup=None):
-    """
-    Универсальная функция для редактирования навигационного сообщения (Пина).
-    Возвращает True, если редактирование прошло успешно.
-    """
+
+    
+    
+   # Универсальная функция для редактирования навигационного сообщения (Пина).
+   # Возвращает True, если редактирование прошло успешно.
+    
+
+    
     data = await state.get_data()
     nav_msg_id = data.get(NAV_MSG_ID_KEY)
 
@@ -92,46 +96,10 @@ async def add_balance_and_mode_to_text(
     user_id: int, 
     work_mode: str = None
 ) -> str:
-    """
-    Добавляет footer с информацией о балансе, режиме генерации и режиме работы В КОНЕЦ текста.
-    
-    Footer формат (в конце текста):
-    ──────────────────
-    Баланс: 15 | Режим: 🔧 PRO | Работа: 📋 Новый дизайн
-    
-    [2026-01-05 15:16] 🔥 CRITICAL FIX:
-    - Заменены Unicode escapes на прямые символы для совместимости с Markdown
-    - Теперь показывает: Баланс + Режим генерации (PRO/СТАНДАРТ) + Режим работы (NEW_DESIGN/EDIT_DESIGN/...)
-    - Режимы работы:
-      * new_design → 📋 Новый дизайн
-      * edit_design → ✏️ Редактирование
-      * sample_design → 🎁 Примерить
-      * arrange_furniture → 🛋️ Мебель
-      * facade_design → 🏠 Фасад
 
-    Args:
-        text: Исходный текст сообщения
-        user_id: ID пользователя
-        work_mode: Режим работы (new_design, edit_design, и т.д.) - опционально
+  
 
-    Returns:
-        Текст с добавленным footer'ом в конце
-        
-    Raises:
-        Exception: Логируется и возвращается исходный текст
-        
-    Example:
-        >>> result = await add_balance_and_mode_to_text(
-        ...     "Выбери стиль дизайна:",
-        ...     user_id=123,
-        ...     work_mode="new_design"
-        ... )
-        >>> print(result)
-        Выбери стиль дизайна:
-        
-        ──────────────────
-        Баланс: 15 | Режим: 🔧 PRO | Работа: 📋 Новый дизайн
-    """
+    
     try:
         # Получаем баланс и настройки режима генерации
         balance = await db.get_balance(user_id)
@@ -139,7 +107,7 @@ async def add_balance_and_mode_to_text(
         
         # Режим генерации (PRO/СТАНДАРТ)
         is_pro = pro_settings.get('pro_mode', False)
-        mode_icon = "🔧" if is_pro else "📋"  # 🔧 PRO / 📋 СТАНДАРТ
+        mode_icon = "🔧" if is_pro else "📋"  # 🔧 PRO / 🔧 СТАНДАРТ
         mode_name = "PRO" if is_pro else "СТАНДАРТ"
         
         # ✅ НОВОЕ: Режим работы (NEW_DESIGN, EDIT_DESIGN, и т.д.)
