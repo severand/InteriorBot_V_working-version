@@ -7,6 +7,7 @@
 # [2026-01-03 19:37] 🔧 CRITICAL FIX: Добавлено жесткое сохранение геометрии и размеров комнаты
 # [2026-01-03 22:51] ✨ ENHANCED: Обновлен APPLY_STYLE_PROMPT для максимального реализма
 # [2026-01-03 23:04] 🔧 HOTFIX: Исправлена синтаксис кортежа APPLY_STYLE_PROMPT
+# [2026-01-05 12:10] 🏠 ADD: APPLY_FACADE_STYLE_PROMPT для дизайна фасадов
 # ========================================
 
 import logging
@@ -72,9 +73,6 @@ You can't:
 # Вход: основное фото комнаты + образец дизайна
 # Выход: новый дизайн с ПОЛНОЙ трансформацией по образцу
 
-# ========================================
-# СТАРЫЙ ПРОМПТ (ЗАКОММЕНТИРОВАН 2026-01-03 22:51)
-# ========================================
 APPLY_STYLE_PROMPT = (
      "You are a professional interior designer. "
      "Completely transform the room in the first image to match the reference design shown in the second image. "
@@ -113,10 +111,51 @@ APPLY_STYLE_PROMPT = (
  )
 
 # ========================================
-# НОВЫЙ ПРОМПТ (ОБНОВЛЕН 2026-01-03 22:51)
+# 🏠 ПРОМПТ ДЛЯ ДИЗАЙНА ФАСАДОВ
 # ========================================
-#APPLY_STYLE_PROMPT = "Completely remove all interior details from this space and Create an ultra-photorealistic design for a glossy design magazine that will look exactly as if the reference style was applied to THAT SPECIFIC ROOM, while maintaining the exact dimensions, geometry and structure of the room."
-#APPLY_STYLE_PROMPT = "Completely remove all interior details from this room and create an ultra-photorealistic design for a glossy design magazine. Transfer the design from the sample photo to the specific room. Strictly adhere to the dimensions, geometry, structure, and focal point of the room."
+# [2026-01-05 12:10] НОВОЕ: Для функции apply_facade_style_to_house()
+# Описание: Полностью преобразить фасад дома по образцу
+# Используется в: SCREEN 17 - Кнопка "🎨 Применить фасад"
+# Вход: основное фото фасада + образец дизайна фасада
+# Выход: новый дизайн фасада с трансформацией по образцу
+
+APPLY_FACADE_STYLE_PROMPT = (
+     "You are a professional architect and exterior designer. "
+     "Completely transform the house facade in the first image to match the reference facade design shown in the second image. "
+     
+     "WHAT TO CHANGE (transform everything):\n"
+     "- Replace the facade materials, cladding, and surface finishes to match the reference\n"
+     "- Transform all windows and doors to match the reference design\n"
+     "- Redesign the roof style and materials to match the reference\n"
+     "- Update all decorative elements, trims, and architectural details\n"
+     "- Apply the exact color scheme and color palette from the reference\n"
+     "- Add landscaping, plants, and outdoor elements matching the reference\n"
+     "- Update the entryway, porch, and entrance area to match the reference\n"
+     "- Redesign any balconies, terraces, or outdoor structures\n"
+     "- Apply the same architectural style (modern, classic, cottage, etc.)\n"
+     "- Recreate lighting fixtures and outdoor lighting\n"
+     "- Match the overall aesthetic and mood of the reference design\n"
+     
+     "WHAT TO PRESERVE (keep EXACTLY from original - DO NOT CHANGE):\n"
+     "- MUST maintain the exact house dimensions and footprint\n"
+     "- MUST keep the same building geometry and wall layout EXACTLY\n"
+     "- MUST preserve the exact positions of structural elements\n"
+     "- MUST maintain the overall structure and form of the house - NO CHANGES ALLOWED\n"
+     "- MUST NOT change the house's overall dimensions or proportions\n"
+     "- MUST NOT remove or add structural walls or extensions\n"
+     "- MUST NOT distort or warp the building's original geometry\n"
+     "- Adapt all design elements to fit the current house structure EXACTLY\n"
+     
+     "STRICT RULES (CRITICAL - DO NOT BREAK):\n"
+     "- The house's basic structure CANNOT be changed\n"
+     "- Building dimensions are SACRED - maintain them precisely\n"
+     "- Only facade styling, colors, and materials can change\n"
+     "- Preserve the exact aspect ratio and proportions of the original facade\n"
+     "- The house's footprint is FIXED and IMMUTABLE\n"
+     
+    "GOAL: Create an ultra-photorealistic house facade for a glossy architectural magazine that will look exactly as if the reference design was applied to THAT SPECIFIC HOUSE, while maintaining the exact dimensions, geometry and structure of the building."
+ )
+
 # ========================================
 # ПРОМПТ ДЛЯ ОЧИСТКИ ПРОСТРАНСТВА
 # ========================================
@@ -215,6 +254,44 @@ async def build_apply_style_prompt(translate: bool = True) -> str:
         logger.info(f"🌐 Translating apply-style prompt to English...")
         prompt = await translate_prompt_to_english(prompt)
         logger.info(f"✅ Apply-style prompt translated successfully")
+    
+    return prompt
+
+
+async def build_apply_facade_style_prompt(translate: bool = True) -> str:
+    """
+    🏠 [2026-01-05 12:10] НОВОЕ: Собирает промпт для примерки фасада (Facade Try-On)
+    
+    Описание:
+    ПОЛНОСТьЮ преобразует фасад дома по образцу:
+    - Заменяет материалы фасада, окна, двери
+    - Применяет стиль архитектуры, цвета из образца
+    - СОХРАНЯЕТ ТОЛЬКО геометрию дома и основную структуру
+    - Адаптирует дизайн элементы под размер дома
+    - Создает ультра фотореалистичный дизайн для журнального качества
+    
+    Используется в:
+    - SCREEN 17: Кнопка "🎨 Применить фасад"
+    - Функция: apply_facade_style_to_house() в kie_api.py
+    - Вход: [основное фото фасада, образец фасада]
+    - Выход: ПОЛНАЯ трансформация фасада по образцу
+    
+    Args:
+        translate: включить ли перевод на английский (по умолчанию True)
+    
+    Returns:
+        Готовый промпт на английском языке (для KIE.AI)
+    
+    Пример:
+        >>> prompt = await build_apply_facade_style_prompt()
+        >>> # Результат: "Create an ultra-photorealistic house facade..."
+    """
+    prompt = APPLY_FACADE_STYLE_PROMPT
+    
+    if translate:
+        logger.info(f"🌐 Translating apply-facade-style prompt to English...")
+        prompt = await translate_prompt_to_english(prompt)
+        logger.info(f"✅ Apply-facade-style prompt translated successfully")
     
     return prompt
 
