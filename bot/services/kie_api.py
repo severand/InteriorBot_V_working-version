@@ -1,7 +1,7 @@
 # ========================================
 # ФАЙЛ: bot/services/kie_api.py
 # НАЗНАЧЕНИЕ: Интеграция с Kie.ai API (Nano Banana)
-# ВЕРСИЯ: 3.8 (2026-01-03 21:20) - ADD: apply_style_to_room() для Sample Design Try-On (Screen 11)
+# ВЕРСИЯ: 3.9 (2026-01-05 12:10) - ADD: apply_facade_style_to_house() для Facade Design (Screen 17)
 # АВТОР: Project Owner
 # https://docs.kie.ai/market/google/nano-banana
 # https://docs.kie.ai/market/google/nano-banana-edit
@@ -15,6 +15,7 @@
 # [2026-01-02 20:55] 🔥 CRITICAL FIX: В текстовом редакторе отправлять ТОЛЬКО user_prompt БЕЗ добавления контекста
 # [2026-01-02 21:04] ✨ ENHANCEMENT: Добавить префикс "Create ultra-photorealistic image" + детальный лог финального промпта
 # [2026-01-03 21:20] ✨ ADD: apply_style_to_room() для Screen 11 Sample Design Try-On
+# [2026-01-05 12:10] 🏠 ADD: apply_facade_style_to_house() для Screen 17 Facade Design Try-On
 
 import os
 import logging
@@ -27,7 +28,7 @@ from config import config
 from config_kie import config_kie
 
 from services.design_styles import get_room_name, get_style_description, is_valid_room, is_valid_style
-from services.prompts import build_design_prompt, build_clear_space_prompt, build_apply_style_prompt
+from services.prompts import build_design_prompt, build_clear_space_prompt, build_apply_style_prompt, build_apply_facade_style_prompt
 from services.translator import translate_prompt_to_english as translate_to_english
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ MODELS = {
     },
 }
 
-# [2026-01-02 21:04] ✨ ПРЕФИКС ДЛЯ ТЕКСТОВОГО РЕДАКТОРА
+# [2026-01-02 21:04] ✨ ПРЕФИКс ДЛЯ ТЕКСТОВОГО РЕДАКТОРА
 #TEXT_EDITOR_PROMPT_PREFIX = "Create ultra-photorealistic image. Apply the following prompt: "
 TEXT_EDITOR_PROMPT_PREFIX = "Create an ultra-photorealistic image just like you'd find in a glossy magazine, preserving all the details and settings of the original photo. Follow the next prompt: "
 
@@ -345,7 +346,7 @@ class NanoBananaClient(KieApiClient):
         resolution: Optional[str] = None,  # [НОВОЕ 2025-12-24]
     ) -> Optional[str]:
         """
-        Примениме редактирование изображения.
+        редактирование изображения.
         [НОВОЕ 2025-12-24] Поддерживает PRO режим.
         """
         logger.info("="*70)
@@ -354,9 +355,9 @@ class NanoBananaClient(KieApiClient):
         use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
         
         if use_pro_mode:
-            logger.info("🔝 ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana PRO)")
+            logger.info("🔝 ПОВТОРНОЕ РЕНДЕРОВАНИЕ (Google Nano Banana PRO)")
         else:
-            logger.info("📈 ПОВТОРНОЕ РЕНДЕРИНГ (Google Nano Banana BASE)")
+            logger.info("📈 ПОВТОРНОЕ РЕНДЕРОВАНИЕ (Google Nano Banana BASE)")
         
         logger.info(f"   Промпт: {prompt[:100]}...")
         logger.info(f"   Кол-во изображений: {len(image_urls)}")
@@ -502,8 +503,8 @@ async def apply_style_to_room(
     "🎨 Примерить дизайн".
     
     Это отличается от generate_interior_with_nano_banana():
-    - generate_interior_with_nano_banana() но вновь сохраняет мебель и выставляет ее
-    - apply_style_to_room() СОХРАНЯЕТ мебель и макет, применяя онда образца
+    - generate_interior_with_nano_banana() сохраняет мебель и выставляет её
+    - apply_style_to_room() СОХРАНЯЕТ мебель и макет, применяя ОНА образца
     
     Вход:
     - main_photo_file_id: Основное фото комнаты (Telegram file_id)
@@ -527,7 +528,7 @@ async def apply_style_to_room(
         ...     print(f"✅ Новый дизайн: {result}")
     """
     logger.info("="*70)
-    logger.info("🎁 ПРИМЕНЕНИЕ СТИЛЯ ОБРАЗЦА К КОМНАТЕ [SCREEN 11]")
+    logger.info("🎁 ПОЛНОСТьЮ ПОНОВИТь ГОСТИНУЇ У ПО ОБРАЗЦУ [SCREEN 11]")
     logger.info("="*70)
 
     try:
@@ -552,14 +553,14 @@ async def apply_style_to_room(
         logger.info(f"   Образец: {sample_image_url[:50]}...")
         
         # Получаем промпт
-        logger.info("📄 Получение промпта ПОЧОВ...")
+        logger.info("📄 Получение промпта...")
         prompt = await build_apply_style_prompt(translate=True)
         logger.info(f"📄 Промпт получен (длина: {len(prompt)} символов)")
         
         # Установить режим PRO
         use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
         
-        # Вызываем edit_image с трёмя фото (основные + образец)
+        # Вызываем edit_image с трюмя фото (основные + образец)
         logger.info("📈 Отправка запроса к KIE.AI...")
         
         client = NanoBananaClient(use_pro=use_pro_mode)
@@ -574,7 +575,7 @@ async def apply_style_to_room(
         )
         
         if result:
-            logger.info(f"✅ Применение стиля ПОЧОв: {result}")
+            logger.info(f"✅ Применение стиля: {result}")
         else:
             logger.error("❌ Не удалось применить стиль")
         
@@ -582,6 +583,108 @@ async def apply_style_to_room(
 
     except Exception as e:
         logger.error(f"❌ Ошибка при применении стиля: {e}", exc_info=True)
+        return None
+
+
+# 🏠 [2026-01-05 12:10] НОВАЯ: ФУНКЦИЯ ПОНОВЛЕНИЯ ФАСАДА ДОМА ПО ОБРАЗЦУ
+# Используется в: SCREEN 17 - Кнопка "🎨 Применить фасад"
+
+async def apply_facade_style_to_house(
+    main_facade_file_id: str,
+    sample_facade_file_id: str,
+    bot_token: str,
+    use_pro: Optional[bool] = None,
+) -> Optional[str]:
+    """
+    🏠 [2026-01-05 12:10] НОВАЯ ФУНКЦИЯ: Поновить дизайн фасада дома по образцу
+    
+    Описание:
+    Эта функция запускается на SCREEN 17 когда пользователь нажимает кнопку
+    "🎨 Применить фасад".
+    
+    Полностью трансформирует фасад дома по образцу:
+    - Заменяет материалы фасада, окна, двери
+    - Применяет стиль архитектуры, цвета из образца
+    - СОХРАНЯЕТ ОСНОВНОЙ геометрие дома и структуру
+    - Адаптирует дизайн элементы под размер дома
+    
+    Вход:
+    - main_facade_file_id: Основное фото фасада (Telegram file_id)
+    - sample_facade_file_id: Образец фото дизайна фасада (Telegram file_id)
+    - bot_token: Токен бота Telegram
+    - use_pro: Использовать PRO режим
+    
+    Выход:
+    - URL сгенерированного изображения фасада или None
+    
+    Вызов из:
+    - handlers/creation_facade_design.py: generate_facade_handler()
+    
+    Пример:
+        >>> result = await apply_facade_style_to_house(
+        ...     main_facade_file_id=user_house_photo,
+        ...     sample_facade_file_id=user_sample_facade,
+        ...     bot_token=config.BOT_TOKEN
+        ... )
+        >>> if result:
+        ...     print(f"✅ Новый фасад: {result}")
+    """
+    logger.info("="*70)
+    logger.info("🏠 ПОНОВЛЕНИЕ ФАСАДА ПО ОБРАЗЦУ [SCREEN 17]")
+    logger.info("="*70)
+
+    try:
+        # Получаем URL основного фото фасада
+        logger.info("📃 Получение основного фото фасада...")
+        main_facade_url = await get_telegram_file_url(main_facade_file_id, bot_token)
+        
+        if not main_facade_url:
+            logger.error("❌ Не удалось получить URL основного фото")
+            return None
+        
+        # Получаем URL образца фасада
+        logger.info("🏠 Получение образца фасада...")
+        sample_facade_url = await get_telegram_file_url(sample_facade_file_id, bot_token)
+        
+        if not sample_facade_url:
+            logger.error("❌ Не удалось получить URL образца")
+            return None
+        
+        logger.info(f"🃄 Оба фото готовы:")
+        logger.info(f"   Основное: {main_facade_url[:50]}...")
+        logger.info(f"   Образец: {sample_facade_url[:50]}...")
+        
+        # Получаем промпт для фасада
+        logger.info("📄 Получение промпта фасада...")
+        prompt = await build_apply_facade_style_prompt(translate=True)
+        logger.info(f"📄 Промпт получен (длина: {len(prompt)} символов)")
+        
+        # Установить режим PRO
+        use_pro_mode = use_pro if use_pro is not None else config_kie.USE_PRO_MODEL
+        
+        # Вызываем edit_image с двумя фото (основное фасад + образец фасад)
+        logger.info("📈 Отправка запроса к KIE.AI...")
+        
+        client = NanoBananaClient(use_pro=use_pro_mode)
+        result = await client.edit_image(
+            image_urls=[main_facade_url, sample_facade_url],  # [Основное, Ображец]
+            prompt=prompt,
+            output_format="png",
+            image_size="auto",
+            use_pro=use_pro_mode,
+            aspect_ratio=config_kie.KIE_NANO_BANANA_PRO_ASPECT if use_pro_mode else None,
+            resolution=config_kie.KIE_NANO_BANANA_PRO_RESOLUTION if use_pro_mode else None,
+        )
+        
+        if result:
+            logger.info(f"✅ Поновление фасада: {result}")
+        else:
+            logger.error("❌ Не удалось поновить фасад")
+        
+        return result
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка при поновлении фасада: {e}", exc_info=True)
         return None
 
 
@@ -629,8 +732,8 @@ async def generate_interior_with_text_nano_banana(
             logger.error("❌ Не удалось получить URL фото")
             return None
 
-        # ✅ ИСПРАВЛЕНО: Образом в начало файла, используем напрямую
-        logger.info("📄 Перевод промпта на английский...")
+        # ✅ ИСПРАВЛЕНО: Переводите на английский и аддинг префикса
+        logger.info("🌐 Перевод промпта на английский...")
         try:
             english_prompt = await translate_to_english(user_prompt)
             logger.info(f"✅ Промпт переведен на английский")
@@ -649,7 +752,7 @@ async def generate_interior_with_text_nano_banana(
         logger.info("")
         logger.info("🔤 СТРУКТУРА ПРОМПТА:")
         logger.info(f"   [ПРЕФИКС] {TEXT_EDITOR_PROMPT_PREFIX}")
-        logger.info(f"   [ПОЛЬЗОВАТЕЛЬСКИЙ ТЕКСТ] {english_prompt}")
+        logger.info(f"   [ПОЛЬЗОВАТЕЛВСКОИ ТЕКСТ] {english_prompt}")
         logger.info("")
         logger.info("📄 ПОЛНЫЙ ПРОМПТ (как получит модель):")
         logger.info("-"*70)
