@@ -20,7 +20,7 @@ async def edit_menu(
     state: FSMContext,
     text: str,
     keyboard: InlineKeyboardMarkup = None,
-    parse_mode: str = "Markdown",
+    parse_mode: str = "HTML",             # "Markdown",
     show_balance: bool = True,
     screen_code: str = 'main_menu'
 ) -> bool:
