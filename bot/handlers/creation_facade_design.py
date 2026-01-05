@@ -151,7 +151,7 @@ async def new_facade_from_screen_18(callback: CallbackQuery, state: FSMContext):
         text = LOADING_FACADE_SAMPLE_TEXT
         text = await add_balance_and_mode_to_text(text, user_id, work_mode='facade_design')
         keyboard = get_loading_facade_sample_keyboard()
-        logger.info(f"📸 [SCREEN 18→16] НАЖАТА КНОПКА 'НОВЫЙ ОБРАЗЕЦ' - возврат на SCREEN 16")
+        logger.info(f"📷 [SCREEN 18→16] НАЖАТА КНОПКА 'НОВЫЙ ОБРАЗЕЦ' - возврат на SCREEN 16")
         await callback.message.edit_text(text=text, reply_markup=keyboard, parse_mode="Markdown")
         await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'loading_facade_sample')
         logger.info(f"✅ [SCREEN 18→16] Меню SCREEN 16 доставлено")
@@ -183,10 +183,10 @@ async def text_input_from_screen_18_facade(callback: CallbackQuery, state: FSMCo
         )
         
         real_photo_id = uploaded_photo.photo[-1].file_id
-        logger.info(f"✅ [ДБ] Получен реальный file_id: {real_photo_id[:30]}...")
+        logger.info(f"✅ [БД] Получен реальный file_id: {real_photo_id[:30]}...")
         
         await db.save_user_photo(user_id, real_photo_id)
-        logger.info(f"✅ [ДБ] Сохранено сгенерированное фото фасада с реальным file_id")
+        logger.info(f"✅ [БД] Сохранено сгенерированное фото фасада с реальным file_id")
         
         await state.update_data(photo_id=real_photo_id, menu_message_id=callback.message.message_id)
         logger.info(f"📝 [FSM] Обновлено: photo_id = {real_photo_id[:30]}...")
@@ -264,8 +264,9 @@ async def generate_facade_handler(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Ошибка: основное фото не найдено. Загрузите фото еще раз.", show_alert=True)
             return
         
-        await callback.answer("⏳ Подождите... генерируем фасад", show_alert=False)
+        await callback.answer("⏳ Подождите... генерирую фасад", show_alert=False)
         
+        # STEP 0: Show progress (update existing message)
         progress_message_id = callback.message.message_id
         if progress_message_id:
             try:
@@ -285,7 +286,7 @@ async def generate_facade_handler(callback: CallbackQuery, state: FSMContext):
         )
         
         if not result_url:
-            logger.error("❌ Генерация провалилась")
+            logger.error("❌ Генерация провалила")
             error_text = "❌ Ошибка генерации. Пожалуйста, попробуйте еще раз."
             try:
                 await callback.message.edit_text(text=error_text, reply_markup=get_generation_facade_keyboard())
@@ -296,7 +297,6 @@ async def generate_facade_handler(callback: CallbackQuery, state: FSMContext):
         logger.info(f"✅ Результат генерации фасада готов: {result_url[:50]}...")
         log_photo_send(user_id, "answer_photo", 0, request_id, "apply_facade_style_to_house")
         
-        # 🔧 CORRECT ORDER: PHOTO FIRST, then SCREEN 18 MENU
         # STEP 1: Send PHOTO
         photo_caption = "✨ *Дизайн фасада готов!*\n\nФасад оформлен с учетом вашего выбора."
         photo_msg = await callback.message.answer_photo(photo=result_url, caption=photo_caption, parse_mode="Markdown")
@@ -309,12 +309,19 @@ async def generate_facade_handler(callback: CallbackQuery, state: FSMContext):
 Выберите действие:
 
 ✏️ **Редактировать текстом** - уточните дизайн текстовым описанием
-📸 **Загрузить новый образец** - примеряйте другой стиль
+📷 **Загрузить новый образец** - примеряйте другой стиль
 🏠 **Главное меню** - вернуться в главное меню
 """
         menu_text = await add_balance_and_mode_to_text(menu_text, user_id, work_mode='facade_design')
         menu_msg = await callback.message.answer(text=menu_text, reply_markup=get_post_generation_facade_keyboard(), parse_mode="Markdown")
         logger.info(f"📝 [SCREEN 18] МЕНЮ отправлено ниже фото (msg_id={menu_msg.message_id})")
+        
+        # STEP 3: Delete progress message
+        try:
+            await callback.bot.delete_message(chat_id=chat_id, message_id=progress_message_id)
+            logger.info(f"🗑️ [PROGRESS] Удалено сообщение о прогрессе (msg_id={progress_message_id})")
+        except Exception as e:
+            logger.debug(f"⚠️ Не удалось удалить сообщение о прогрессе: {e}")
         
         await state.update_data(
             photo_message_id=photo_msg.message_id,
@@ -329,6 +336,7 @@ async def generate_facade_handler(callback: CallbackQuery, state: FSMContext):
         logger.info(f"✅ [SCREEN 17→18] COMPLETED!")
         logger.info(f"   ✅ ПОРЯДОК: ФОТО (msg_id={photo_msg.message_id}) → МЕНЮ (msg_id={menu_msg.message_id})")
         logger.info(f"   ✅ Баланс: {balance} генераций")
+        logger.info(f"   ✅ ПРОГРЕСС удален (msg_id={progress_message_id})")
         
     except Exception as e:
         logger.error(f"[ERROR] SCREEN 17 кнопка failed: {e}", exc_info=True)
