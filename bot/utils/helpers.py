@@ -6,6 +6,7 @@
 # [2025-12-24 22:01] ОПТИМИЗИРОВАНА: линия сокращена с 36 на 18 символов для мобильной версии
 # [2025-12-27 09:41] КРИТИЧНО ИСПРАВЛЕНО: Surrogate characters заменены на правильные Unicode escapes (U+1F527, U+1F4CB)
 # [2025-12-30 01:26] 🔥 CRITICAL FIX: Добавлен 3-й аргумент work_mode для отображения режима работы
+# [2026-01-05 15:16] 🔥 CRITICAL FIX: Заменены Unicode escapes на прямые символы для совместимости с Markdown парсингом Telegram
 
 import asyncio
 import logging
@@ -84,7 +85,7 @@ async def add_balance_to_text(text: str, user_id: int) -> str:
 
 
 # ===== НОВАЯ ИСПРАВЛЕННАЯ ФУНКЦИЯ ДЛЯ FOOTER С РЕЖИМОМ И БАЛАНСОМ =====
-# [2025-12-30 01:26] 🔥 CRITICAL FIX: Добавлен 3-й аргумент work_mode
+# [2026-01-05 15:16] 🔥 CRITICAL FIX: Заменены Unicode escapes на прямые символы
 
 async def add_balance_and_mode_to_text(
     text: str, 
@@ -98,8 +99,8 @@ async def add_balance_and_mode_to_text(
     ──────────────────
     Баланс: 15 | Режим: 🔧 PRO | Работа: 📋 Новый дизайн
     
-    [2025-12-30 01:26] 🔥 CRITICAL FIX:
-    - Добавлен 3-й аргумент work_mode (опциональный)
+    [2026-01-05 15:16] 🔥 CRITICAL FIX:
+    - Заменены Unicode escapes на прямые символы для совместимости с Markdown
     - Теперь показывает: Баланс + Режим генерации (PRO/СТАНДАРТ) + Режим работы (NEW_DESIGN/EDIT_DESIGN/...)
     - Режимы работы:
       * new_design → 📋 Новый дизайн
@@ -138,28 +139,28 @@ async def add_balance_and_mode_to_text(
         
         # Режим генерации (PRO/СТАНДАРТ)
         is_pro = pro_settings.get('pro_mode', False)
-        mode_icon = "\U0001f527" if is_pro else "\U0001f4cb"  # 🔧 PRO / 📋 СТАНДАРТ
+        mode_icon = "🔧" if is_pro else "📋"  # 🔧 PRO / 📋 СТАНДАРТ
         mode_name = "PRO" if is_pro else "СТАНДАРТ"
         
         # ✅ НОВОЕ: Режим работы (NEW_DESIGN, EDIT_DESIGN, и т.д.)
         work_mode_text = ""
         if work_mode:
             work_mode_map = {
-                "new_design": "\U0001f4cb \u041d\u043e\u0432\u044b\u0439 \u0434\u0438\u0437\u0430\u0439\u043d",  # 📋
-                "edit_design": "\u270f\ufe0f \u0420\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435",  # ✏️
-                "sample_design": "\U0001f381 \u041f\u0440\u0438\u043c\u0435\u0440\u0438\u0442\u044c",  # 🎁
-                "arrange_furniture": "\U0001f6cb\ufe0f \u041c\u0435\u0431\u0435\u043b\u044c",  # 🛋️
-                "facade_design": "\U0001f3e0 \u0424\u0430\u0441\u0430\u0434",  # 🏠
+                "new_design": "📋 Новый дизайн",
+                "edit_design": "✏️ Редактирование",
+                "sample_design": "🎁 Примерить",
+                "arrange_furniture": "🛋️ Мебель",
+                "facade_design": "🏠 Фасад",
             }
             work_mode_display = work_mode_map.get(work_mode, work_mode)
-            work_mode_text = f" | \u0420\u0430\u0431\u043e\u0442\u0430: {work_mode_display}"
+            work_mode_text = f" | Работа: {work_mode_display}"
         
         # Формируем footer
         separator = "─" * 18
-        footer = f"\n\n{separator}\n\u0411\u0430\u043b\u0430\u043d\u0441: {balance} | \u0420\u0435\u0436\u0438\u043c: {mode_icon} {mode_name}{work_mode_text}"
+        footer = f"\n\n{separator}\nБаланс: {balance} | Режим: {mode_icon} {mode_name}{work_mode_text}"
         
         logger.debug(
-            f"Footer \u0441\u0444\u043e\u0440\u043c\u0438\u0440\u043e\u0432\u0430\u043d \u0434\u043b\u044f user {user_id}: "
+            f"Footer сформирован для user {user_id}: "
             f"{mode_name} mode, balance {balance}, work_mode={work_mode}"
         )
         
