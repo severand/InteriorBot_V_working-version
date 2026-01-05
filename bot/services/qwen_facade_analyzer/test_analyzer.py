@@ -36,7 +36,7 @@ def test_analyzer(image_path: str) -> None:
     # 2. Initialize analyzer
     print(f"\n📥 Initializing Qwen-VL analyzer...")
     try:
-        analyzer = get_facade_analyzer(model_size="7b")
+        analyzer = get_facade_analyzer()
         print("✅ Analyzer initialized")
     except Exception as e:
         print(f"❌ Failed to initialize: {e}")

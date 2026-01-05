@@ -79,7 +79,7 @@ ROOMS_WITH_EMOJI = [
 # РЕЖИМ ПРО _ НАСТПРОЙКИ
 # --- Параметры PRO MODE ---
 ASPECT_RATIOS = ["16:9", "4:3", "1:1", "9:16"]
-RESolutions = ["1K", "2K", "4K"]
+RESOLUTIONS = ["1K", "2K", "4K"]
 
 
 
@@ -152,31 +152,31 @@ def get_mode_selection_keyboard() -> InlineKeyboardMarkup:
 
     # Ряд 1: Создать новый дизайн
     builder.row(InlineKeyboardButton(
-        text="        📋 Создать новый дизайн       ",
+        text="📋 Создать новый дизайн помещения   ",
         callback_data="select_mode_new_design"
     ))
     
     # Ряд 2: Редактировать дизайн
     builder.row(InlineKeyboardButton(
-        text="      ✏️ Редактировать дизайн          ",
+        text="✏️ Редактировать дизайн текстом    ",
         callback_data="select_mode_edit_design"
     ))
     
     # Ряд 3: Примерить дизайн
     builder.row(InlineKeyboardButton(
-        text="          🎁 Примерить дизайн          ",
+        text="🎁 Примерить дизайн на помещение    ",
         callback_data="select_mode_sample_design"
     ))
     
     # Ряд 4: Расставить мебель
     builder.row(InlineKeyboardButton(
-        text="          🛋️ Расставить мебель          ",
+        text="🛋️ Расставить мебель в помещении   ",
         callback_data="select_mode_arrange_furniture"
     ))
     
     # Ряд 5: Дизайн фасада
     builder.row(InlineKeyboardButton(
-        text="          🏠 Дизайн фасада дома         ",
+        text="🏠 Дизайн фасада дома",
         callback_data="select_mode_facade_design"
     ))
 
