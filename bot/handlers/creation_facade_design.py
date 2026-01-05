@@ -296,7 +296,14 @@ async def generate_facade_handler(callback: CallbackQuery, state: FSMContext):
         logger.info(f"✅ Результат генерации фасада готов: {result_url[:50]}...")
         log_photo_send(user_id, "answer_photo", 0, request_id, "apply_facade_style_to_house")
         
-        # 🔧 FIX: EDIT MENU FIRST, then send PHOTO
+        # 🔧 CORRECT ORDER: PHOTO FIRST, then SCREEN 18 MENU
+        # STEP 1: Send PHOTO
+        photo_caption = "✨ *Дизайн фасада готов!*\n\nФасад оформлен с учетом вашего выбора."
+        photo_msg = await callback.message.answer_photo(photo=result_url, caption=photo_caption, parse_mode="Markdown")
+        logger.info(f"📸 [SCREEN 18] ФОТО отправлено (msg_id={photo_msg.message_id})")
+        log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id, "apply_facade_style_to_house_success")
+        
+        # STEP 2: Send MENU below PHOTO
         menu_text = """🏠 *Дизайн фасада готов!*
 
 Выберите действие:
@@ -306,29 +313,21 @@ async def generate_facade_handler(callback: CallbackQuery, state: FSMContext):
 🏠 **Главное меню** - вернуться в главное меню
 """
         menu_text = await add_balance_and_mode_to_text(menu_text, user_id, work_mode='facade_design')
-        
-        # STEP 1: Edit menu on SCREEN 17
-        await callback.message.edit_text(text=menu_text, reply_markup=get_post_generation_facade_keyboard(), parse_mode="Markdown")
-        logger.info(f"📝 [SCREEN 18] МЕНЮ редактировано (msg_id={callback.message.message_id})")
-        
-        # STEP 2: Send photo separately
-        photo_caption = "✨ *Дизайн фасада готов!*\n\nФасад оформлен с учетом вашего выбора."
-        photo_msg = await callback.message.answer_photo(photo=result_url, caption=photo_caption, parse_mode="Markdown")
-        logger.info(f"📸 [SCREEN 18] ФОТО отправлено ниже меню (msg_id={photo_msg.message_id})")
-        log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id, "apply_facade_style_to_house_success")
+        menu_msg = await callback.message.answer(text=menu_text, reply_markup=get_post_generation_facade_keyboard(), parse_mode="Markdown")
+        logger.info(f"📝 [SCREEN 18] МЕНЮ отправлено ниже фото (msg_id={menu_msg.message_id})")
         
         await state.update_data(
             photo_message_id=photo_msg.message_id,
-            menu_message_id=callback.message.message_id,
+            menu_message_id=menu_msg.message_id,
             last_generated_facade_url=result_url
         )
         
-        await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'post_generation_facade')
         await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation_facade_photo')
+        await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_facade')
         await state.set_state(CreationStates.post_generation_facade)
         
         logger.info(f"✅ [SCREEN 17→18] COMPLETED!")
-        logger.info(f"   ✅ ПОРЯДОК: МЕНЮ → ФОТО (правильный!)")
+        logger.info(f"   ✅ ПОРЯДОК: ФОТО (msg_id={photo_msg.message_id}) → МЕНЮ (msg_id={menu_msg.message_id})")
         logger.info(f"   ✅ Баланс: {balance} генераций")
         
     except Exception as e:
