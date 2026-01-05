@@ -159,20 +159,17 @@ async def new_sample_from_screen_12(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(StateFilter(CreationStates.post_generation_sample), F.data == "text_input")
-async def text_input_from_screen_12(callback: CallbackQuery, state: FSMContext):
+async def text_input_from_screen_12_sample(callback: CallbackQuery, state: FSMContext):
     """
-    ✏️ [SCREEN 12→8] КРИТИЧЕСКИЙ FIX [2026-01-05 00:45]
+    ✏️ [SCREEN 12→8] ПЕРЕИМЕНОВАНА для различия с text_input_from_screen_18_facade
     
-    ПРОБЛЕМА: Сохранялся прямой URL как photo_id
-    Telegram отказывает: "wrong file_id or the file is temporarily unavailable"
-    
-    РЕШЕНИЕ: Загрузить фото в Telegram, получить реальный file_id
+    ИСХОДНОЕ ИМЯ: text_input_from_screen_12 (дубль был заметен)
+    НОВОЕ ИМЯ: text_input_from_screen_12_sample (ясность что это для sample_design)
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
 
     try:
-        # ШАГ 1: Получить URL сгенерированного фото
         data = await state.get_data()
         last_generated_url = data.get('last_generated_image_url')
         
@@ -184,34 +181,27 @@ async def text_input_from_screen_12(callback: CallbackQuery, state: FSMContext):
         logger.info(f"✏️ [SCREEN 12→8] НАЖАТА КНОПКА 'ТЕКСТОВОЕ РЕДАКТИРОВАНИЕ'")
         logger.info(f"   🔄 Загружаю фото в Telegram, чтобы получить реальный file_id")
         
-        # ШАГ 2: КРИТИЧЕСКО! Загрузить фото в Telegram и получить file_id
-        # (вместо сохранения прямого URL)
         uploaded_photo = await callback.message.answer_photo(
             photo=last_generated_url,
             caption="⏳ Подготавливаю к редактированию..."
         )
         
-        # Получить реальный file_id из загруженного фото
         real_photo_id = uploaded_photo.photo[-1].file_id
         logger.info(f"✅ [ДБ] Получен реальный file_id: {real_photo_id[:30]}...")
         
-        # ШАГ 3: Сохранить в БД (РЕАЛЬНЫЙ file_id, не URL!)
         await db.save_user_photo(user_id, real_photo_id)
         logger.info(f"✅ [ДБ] Сохранено сгенерированное фото с реальным file_id")
         
-        # ШАГ 4: Обновить FSM со ВСЕМИ полями для SCREEN 8
         await state.update_data(
-            photo_id=real_photo_id,  # ✅ РЕАЛЬНЫЙ file_id из Telegram!
+            photo_id=real_photo_id,
             room_type='living_room',
             style_type='modern',
             menu_message_id=callback.message.message_id
         )
         logger.info(f"📝 [FSM] Обновлено: photo_id = {real_photo_id[:30]}...")
         
-        # ШАГ 5: Переходим на SCREEN 8
         await state.set_state(CreationStates.edit_design)
         
-        # ШАГ 6: Показываем SCREEN 8 меню (отредактируем загруженное сообщение)
         from keyboards.inline import get_edit_design_keyboard
         
         edit_design_menu_text = """✏️ **Редактируем дизайн**
@@ -230,7 +220,6 @@ async def text_input_from_screen_12(callback: CallbackQuery, state: FSMContext):
         
         logger.info(f"📄 [SCREEN 12→8] Отправляю меню SCREEN 8")
         
-        # Удалить временное сообщение и показать меню
         await uploaded_photo.delete()
         menu_msg = await callback.message.edit_text(
             text=edit_design_menu_text,
@@ -244,7 +233,7 @@ async def text_input_from_screen_12(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         
     except Exception as e:
-        logger.error(f"[ERROR] text_input_from_screen_12 failed: {e}", exc_info=True)
+        logger.error(f"[ERROR] text_input_from_screen_12_sample failed: {e}", exc_info=True)
         await callback.answer(f"❌ Ошибка: {str(e)[:50]}", show_alert=True)
 
 
@@ -260,9 +249,9 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
 
     try:
         logger.info(f"🎁 [SCREEN 11] КНОПКА НАЖАТА: user_id={user_id}")
-        logger.info(f"{'═' * 80}")
+        logger.info(f"{'-' * 80}")
         logger.info(f"📊 [SCREEN 11] ДИАГНОСТИКА ЗАГРУЗКИ ФОТО")
-        logger.info(f"{'═' * 80}")
+        logger.info(f"{'-' * 80}")
         
         data = await state.get_data()
         sample_photo_id = data.get('sample_photo_id')
@@ -319,7 +308,7 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
             logger.error(f"   ❌ ОСНОВНОЕ ФОТО НЕ НАЙДЕНО")
         
         logger.info(f"\n✅ ОБРАЗЕЦ ФОТО: {sample_photo_id[:40]}...")
-        logger.info(f"{'═' * 80}")
+        logger.info(f"{'-' * 80}")
         
         if not main_photo_id:
             await callback.answer("❌ Ошибка: основное фото не найдено. Загрузите фото комнаты еще раз.", show_alert=True)
@@ -392,7 +381,9 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         work_mode = data.get('work_mode', 'sample_design')
         balance = await db.get_balance(user_id)
         
-        menu_text = (f"🎨 *Примерка дизайна готова!*\n\nВыберите действие:\n📝 Редактировать текстом\n📸 Загрузить новый образец\n🏠 Вернуться в меню\n\n💰 Баланс: *{balance}* генераций")
+        menu_text = f"🎨 *Примерка дизайна готова!*\n\nВыберите действие:\n📝 Редактировать текстом\n📸 Загрузить новый образец\n🏠 Вернуться в меню"
+        menu_text = await add_balance_and_mode_to_text(menu_text, user_id, work_mode='sample_design')
+        
         menu_msg = await callback.message.answer(text=menu_text, reply_markup=get_post_generation_sample_keyboard(), parse_mode="Markdown")
         logger.info(f"📝 [SCREEN 12] МЕНЮ отправлено (msg_id={menu_msg.message_id})")
         
@@ -414,6 +405,7 @@ async def generate_try_on_handler(callback: CallbackQuery, state: FSMContext):
         logger.info(f"   ✅ ПРОГРЕСС: удалено (msg_id={progress_message_id})")
         logger.info(f"   ✅ ФОТО: msg_id={photo_msg.message_id}")
         logger.info(f"   ✅ МЕНЮ: msg_id={menu_msg.message_id}")
+        logger.info(f"   ✅ FOOTER: Баланс + Режим работы добавлены")
         logger.info(f"   ✅ ОБЕ ID сохранены в FSM & ДБ")
         
     except Exception as e:
