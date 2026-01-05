@@ -9,6 +9,7 @@
 # [2026-01-03 23:04] 🔧 HOTFIX: Исправлена синтаксис кортежа APPLY_STYLE_PROMPT
 # [2026-01-05 12:10] 🏠 ADD: APPLY_FACADE_STYLE_PROMPT для дизайна фасадов
 # [2026-01-05 13:32] 🏗️ OPTIMIZE: Replace APPLY_FACADE_STYLE_PROMPT with V3 (MINIMAL_CLEAR)
+# [2026-01-05 13:40] 🏗️ FALLBACK: Replace V3 (MINIMAL_CLEAR) with V1 (CONSTRAINT_BASED) - more detailed
 # ========================================
 
 import logging
@@ -112,48 +113,93 @@ APPLY_STYLE_PROMPT = (
  )
 
 # ========================================
-# 🏠 ПРОМПТ ДЛЯ ДИЗАЙНА ФАСАДОВ (VERSION 3 - MINIMAL CLEAR)
+# 🏠 ПРОМПТ ДЛЯ ДИЗАЙНА ФАСАДОВ (VERSION 1 - CONSTRAINT-BASED)
 # ========================================
 # [2026-01-05 12:10] НОВОЕ: Для функции apply_facade_style_to_house()
-# [2026-01-05 13:32] 🏗️ OPTIMIZE: Переписан на VERSION 3 (MINIMAL_CLEAR)
-# Описание: Полностью преобразить фасад дома по образцу с профессиональной терминологией
+# [2026-01-05 13:32] 🏗️ V3 (MINIMAL_CLEAR): 867 символов - НЕ СРАБОТАЛО
+# [2026-01-05 13:40] 🏗️ FALLBACK: Переписан на VERSION 1 (CONSTRAINT-BASED)
+# Описание: Полностью преобразить фасад дома по образцу с детальной структурой
 # Используется в: SCREEN 17 - Кнопка "🎨 Применить фасад"
 # Вход: основное фото фасада + образец дизайна фасада
 # Выход: новый дизайн фасада с трансформацией по образцу
-# ОПТИМИЗАЦИЯ: Сокращено с 1247 до 867 символов (30% меньше)
-#              Constraints: с 19 на 5 групп элементов
-#              Добавлены профессиональные термины: руст, карниз, наличник, цоколь, лепнина, пилястра
-# ЦЕЛЕВОЙ РЕЗУЛЬТАТ: Predictable, consistent, Nano Banana friendly
+# ПОДХОД: Constraint-based с явной иерархией элементов и профессиональной терминологией
+# ЦЕЛЕВОЙ РЕЗУЛЬТАТ: Predictable, consistent, архитектурно корректные результаты
 
 APPLY_FACADE_STYLE_PROMPT = (
-    "You are a professional facade designer.\n\n"
+    "You are a professional architect and facade designer with expertise in architectural restoration and transformation. \n\n"
     
-    "Transform this house facade to look like the reference design.\n\n"
+    "Your task: Completely transform the house facade in the first image to match the reference facade design shown in the second image. \n\n"
     
-    "PRESERVE (DO NOT CHANGE):\n"
-    "- House structure, dimensions, proportions\n"
-    "- Roof shape and position\n"
-    "- Window and door positions\n\n"
+    "ARCHITECTURAL STYLE - CRITICAL:\n"
+    "Identify and apply the exact architectural style from the reference image:\n"
+    "- Classical: symmetrical, ornate details, carnice (карниз), plinth (цоколь), rustic finish (рустовка)\n"
+    "- Modern: clean lines, minimal ornamentation, flat surfaces, contemporary materials\n"
+    "- Country/Cottage: natural materials, pitched roofs, decorative shutters (ставни)\n"
+    "- Eclectic: mixed styles with intentional combinations\n\n"
     
-    "COPY FROM REFERENCE:\n"
-    "1. Cladding materials & colors (brick type, stone, plaster colors)\n"
+    "CANNOT CHANGE (SACRED - DO NOT MODIFY UNDER ANY CIRCUMSTANCES):\n"
+    "- House structure, footprint, and overall building outline\n"
+    "- Roof pitch, angle, ridge position, and slope direction\n"
+    "- All window and door positions, sizes, and openings - FIXED AND IMMUTABLE\n"
+    "- Building dimensions: height, width, depth - MUST PRESERVE EXACTLY\n"
+    "- Building geometry and wall layout\n"
+    "- Structural elements and load-bearing walls\n\n"
     
-    "2. Decorative elements:\n"
-    "   - Cornice (карниз) at roof edge\n"
-    "   - Plinth (цоколь) at base\n"
-    "   - Window trims/moldings (наличник)\n"
-    "   - Door trims/moldings (наличник)\n"
-    "   - Rustic finish (рустовка) if classical style\n"
-    "   - Columns/pilasters (колонны/пилястры) if present\n"
-    "   - Architectural details and ornaments (лепнина)\n\n"
+    "APPLY FROM REFERENCE - Facade Materials & Cladding (40% of visual impact):\n"
+    "- Cladding type: brick, stone, plaster, concrete, wood, or combinations\n"
+    "- Cladding color and tone: match exact color palette from reference\n"
+    "- Surface texture: smooth, rough, grooved, textured patterns\n"
+    "- Rustic finish (рустовка - grooved pattern) if present in reference - CRITICAL for classical style\n"
+    "- Brick or stone pattern and bond type if applicable\n"
+    "- Material transitions and accents\n\n"
     
-    "3. Functional elements:\n"
-    "   - Window and door frames\n"
-    "   - Gutters/drainage system (водосток)\n"
-    "   - Shutters/blinds (ставни) if present\n"
-    "   - Door canopy (козырек) if present\n\n"
+    "APPLY FROM REFERENCE - Decorative Elements (15% of visual impact) - Critical for Style:\n"
+    "- Cornice (карниз): decorative molding at roof edge - VERY IMPORTANT for character\n"
+    "- Plinth (цоколь): baseboard or lower facade element at foundation\n"
+    "- Window trim/molding (наличник): decorative frame around each window\n"
+    "- Door trim/molding (наличник): decorative frame around each door\n"
+    "- Pilasters (пилястры): vertical decorative elements if present in reference\n"
+    "- Columns (колонны): round or square columns supporting elements if present\n"
+    "- Ornamental details (лепнина): bas-relief, stucco work, medallions\n"
+    "- Frieze bands (фризы): horizontal decorative bands\n"
+    "- Belt courses (пояски): horizontal stripe patterns\n"
+    "- Corner treatments (уголки): quoins or decorative corner elements\n\n"
     
-    "Create photorealistic result that matches the reference design."
+    "APPLY FROM REFERENCE - Functional Elements (10% of visual impact):\n"
+    "- Window frame color and material\n"
+    "- Door frame color and material\n"
+    "- Gutter/water drainage system (водосток): style, material, color\n"
+    "- Shutters/blinds (ставни): style, color, material if present in reference\n"
+    "- Door canopy (козырек): hood, overhang, or roof element above entrance\n\n"
+    
+    "APPLY FROM REFERENCE - Windows & Doors (30% of visual impact):\n"
+    "- Window style: casement, double-hung, fixed, arched, decorative patterns\n"
+    "- Window frame profile and muntins (grid pattern) if present\n"
+    "- Door style: panel style, material, hardware style (if visible)\n"
+    "- Entrance treatment: special architecture at main entrance\n\n"
+    
+    "APPLY FROM REFERENCE - Roof & Upper Elements (10% of visual impact):\n"
+    "- Roofing material: tiles, shingles, slate color and pattern\n"
+    "- Roof edge treatment and overhang style\n"
+    "- Chimney treatment if visible in reference\n\n"
+    
+    "STRICT TECHNICAL RULES (CRITICAL - DO NOT BREAK):\n"
+    "- Maintain exact window count and positions - DO NOT ADD OR REMOVE WINDOWS\n"
+    "- Maintain exact door count and positions - DO NOT ADD OR REMOVE DOORS\n"
+    "- Preserve aspect ratio of all openings\n"
+    "- Scale all architectural elements proportionally to current building dimensions\n"
+    "- Ensure structural logic: columns support elements above, proper weight distribution\n"
+    "- Maintain building's original proportions and mass\n\n"
+    
+    "QUALITY REQUIREMENTS:\n"
+    "- Ultra-photorealistic quality (magazine/professional photography standard)\n"
+    "- Shadows and highlights follow logical light direction\n"
+    "- Material textures appear natural and convincing\n"
+    "- Color palette is cohesive and architecturally appropriate\n"
+    "- All details are sharp and well-defined\n"
+    "- Result should look like a professional architectural transformation\n\n"
+    
+    "GOAL: Create a transformation that looks exactly as if a professional architect applied the reference design's aesthetic, materials, and architectural language to THIS SPECIFIC HOUSE while maintaining its exact structure, dimensions, and building geometry. The result should be a photorealistic facade that could be featured in an architectural magazine."
 )
 
 # ========================================
@@ -261,30 +307,23 @@ async def build_apply_style_prompt(translate: bool = True) -> str:
 async def build_apply_facade_style_prompt(translate: bool = True) -> str:
     """
     🏠 [2026-01-05 12:10] НОВОЕ: Собирает промпт для примерки фасада (Facade Try-On)
-    🏗️ [2026-01-05 13:32] OPTIMIZE: Переписан на VERSION 3 (MINIMAL_CLEAR)
+    🏗️ [2026-01-05 13:40] FALLBACK: Переписан на VERSION 1 (CONSTRAINT-BASED)
     
     Описание:
-    ПОЛНОСТьЮ преобразует фасад дома по образцу с профессиональной терминологией:
+    ПОЛНОСТьЮ преобразует фасад дома по образцу с детальной структурой:
     - Заменяет материалы фасада, окна, двери
     - Применяет стиль архитектуры, цвета из образца
     - СОХРАНЯЕТ ТОЛЬКО геометрию дома и основную структуру
     - Адаптирует дизайн элементы под размер дома
     - Создает ультра фотореалистичный дизайн для журнального качества
     
-    ОПТИМИЗАЦИЯ:
-    - Сокращено с 1247 до 867 символов (30% меньше)
-    - Constraints: с 19 на 5 групп элементов
-    - Добавлены профессиональные архитектурные термины:
-      * Руст/Рустовка (Rustic finish) - ОЧЕНЬ ВАЖНО для классики
-      * Карниз (Cornice) - верхний край
-      * Наличник (Trim/Molding) - вокруг окон/дверей
-      * Цоколь (Plinth) - нижняя часть
-      * Лепнина (Ornaments) - декоративные элементы
-      * Пилястра/Колонна (Pilaster/Column) - вертикальные элементы
-      * Водосток (Gutter) - система дренажа
-      * Ставни (Shutters) - функциональные элементы
-      * Козырек (Canopy) - навесы
-    - ЦЕЛЕВОЙ РЕЗУЛЬТАТ: Predictable, consistent, Nano Banana friendly
+    ПОДХОД (VERSION 1 - CONSTRAINT-BASED):
+    - Явная иерархия элементов с указанием % визуального воздействия
+    - Детальное описание ДО НЕ 19 элементов (было в первой версии)
+    - Профессиональная терминология: руст, карниз, наличник, цоколь, лепнина, пилястра, водосток, ставни, козырек
+    - Strictные правила для Nano Banana
+    - Иерархия: 40% облицовка, 30% окна, 15% дверь, 15% декор
+    - Четкие CANNOT CHANGE constraints
     
     Используется в:
     - SCREEN 17: Кнопка "🎨 Применить фасад"
@@ -300,7 +339,7 @@ async def build_apply_facade_style_prompt(translate: bool = True) -> str:
     
     Пример:
         >>> prompt = await build_apply_facade_style_prompt()
-        >>> # Результат: "Create an ultra-photorealistic house facade..."
+        >>> # Результат: "You are a professional architect..."
     """
     prompt = APPLY_FACADE_STYLE_PROMPT
     
