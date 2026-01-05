@@ -38,6 +38,12 @@ PHASE 3 TASK 10: ИСПРАВЛЕНЫ FSM STATES (2025-12-24 20:41)
 - Added add_balance_and_mode_to_text() to all 3 edit_menu calls
 - Changed show_balance=True to show_balance=False (consistent with other modules)
 - Ensures uniform footer display across entire bot
+
+[2026-01-05 15:02] FIX PROFILE SETTINGS ERROR:
+- Fixed get_mode_selection_keyboard() → get_pro_mode_selection_keyboard()
+- Resolved TypeError: unexpected keyword argument 'current_mode_is_pro'
+- Updated import statement
+- Fixed 3 function calls: show_mode_selection(), select_standard_mode(), back_to_mode_selection()
 """
 
 from aiogram import Router, F
@@ -47,7 +53,7 @@ from aiogram.filters import StateFilter
 
 from states.fsm import ProModeStates
 from keyboards.inline import (
-    get_mode_selection_keyboard,
+    get_pro_mode_selection_keyboard,
     get_pro_params_keyboard
 )
 from utils.navigation import edit_menu
@@ -113,7 +119,7 @@ async def show_mode_selection(callback: CallbackQuery, state: FSMContext):
             callback=callback,
             state=state,
             text=text,
-            keyboard=get_mode_selection_keyboard(
+            keyboard=get_pro_mode_selection_keyboard(
                 current_mode_is_pro=current_mode_is_pro
             ),
             show_balance=False,  # 🔥 Changed from True to False
@@ -173,7 +179,7 @@ async def select_standard_mode(callback: CallbackQuery, state: FSMContext):
             callback=callback,
             state=state,
             text=text,
-            keyboard=get_mode_selection_keyboard(current_mode_is_pro=False),
+            keyboard=get_pro_mode_selection_keyboard(current_mode_is_pro=False),
             show_balance=False,  # 🔥 Changed from True to False
             screen_code='profile_settings'
         )
@@ -452,7 +458,7 @@ async def back_to_mode_selection(callback: CallbackQuery, state: FSMContext):
             callback=callback,
             state=state,
             text=text,
-            keyboard=get_mode_selection_keyboard(
+            keyboard=get_pro_mode_selection_keyboard(
                 current_mode_is_pro=current_mode_is_pro
             ),
             show_balance=False,  # 🔥 Changed from True to False
