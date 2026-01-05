@@ -44,6 +44,12 @@ PHASE 3 TASK 10: ИСПРАВЛЕНЫ FSM STATES (2025-12-24 20:41)
 - Resolved TypeError: unexpected keyword argument 'current_mode_is_pro'
 - Updated import statement
 - Fixed 3 function calls: show_mode_selection(), select_standard_mode(), back_to_mode_selection()
+
+[2026-01-05 15:09] FIX MARKDOWN PARSING ERROR:
+- Removed double asterisks (**) from text that caused parse error
+- Changed **СТАНДАРТ** and **PRO** to plain text
+- Fixed "can't parse entities: Can't find end of the entity" error
+- Menu now displays correctly without Telegram parse errors
 """
 
 from aiogram import Router, F
@@ -102,11 +108,11 @@ async def show_mode_selection(callback: CallbackQuery, state: FSMContext):
         # 4. Текст меню
         text = """⚙️ ВЫБОР РЕЖИМА ГЕНЕРАЦИИ
 
-📋 **СТАНДАРТ** — быстрые генерации
+📋 СТАНДАРТ — быстрые генерации
 • Соотношение: 16:9 (фиксировано)
 • Разрешение: 1K (1280×720)
 
-🔧 **PRO** — профессиональное качество
+🔧 PRO — профессиональное качество
 • Выбирайте соотношение: 16:9, 4:3, 1:1, 9:16
 • Выбирайте разрешение: 1K, 2K, 4K
 """
@@ -441,11 +447,11 @@ async def back_to_mode_selection(callback: CallbackQuery, state: FSMContext):
         # 4. Текст
         text = """⚙️ ВЫБОР РЕЖИМА ГЕНЕРАЦИИ
 
-📋 **СТАНДАРТ** — быстрые генерации
+📋 СТАНДАРТ — быстрые генерации
 • Соотношение: 16:9 (фиксировано)
 • Разрешение: 1K (1280×720)
 
-🔧 **PRO** — профессиональное качество
+🔧 PRO — профессиональное качество
 • Выбирайте соотношение: 16:9, 4:3, 1:1, 9:16
 • Выбирайте разрешение: 1K, 2K, 4K
 """
