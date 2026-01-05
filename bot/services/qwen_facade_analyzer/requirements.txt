@@ -1,0 +1,15 @@
+# Qwen-VL Facade Analyzer Requirements
+
+# Core dependencies
+torch>=2.0.0
+transformers>=4.36.0
+Pillow>=9.0.0
+qwen-vl-utils>=0.0.1
+
+# Optional acceleration
+accelerate>=0.24.0  # For faster inference on GPU
+bitsandbytes>=0.41.0  # For quantized inference (8-bit, 4-bit)
+
+# Development
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
