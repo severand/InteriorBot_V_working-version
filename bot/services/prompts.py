@@ -19,49 +19,53 @@ import asyncio
 from services.design_styles import get_room_name, get_style_description
 from services.translator import translate_prompt_to_english
 
+from services.room_furniture import build_furniture_block
+
+
 logger = logging.getLogger(__name__)
 
 # ========================================
 # ПРОМПТ TEMPLATE ДЛЯ ДИЗАЙНА
 # ========================================
 
-CUSTOM_PROMPT_TEMPLATE = """
+CUSTOM_PROMPT_TEMPLATE = f"""
 You are a professional interior designer.
 You know all the latest interior design trends.
 
 You create practical design styles for everyday people.
 
-Create a unique design for this room ({room_name}).
+Create a unique design for this room ({{room_name}}).
 
 Replace all the furniture in the photo with new furniture.
 
 - Create furniture in accordance with the chosen style.
 - Create new furniture.
-- Maintain the proportions of room ({room_name}).
-- Maintain the length and width of room ({room_name}).
-- Create a ceiling in room ({room_name}).
-- Create a new wall color in room ({room_name}).
-- Create clear and expressive lines in room ({room_name}).
+- Maintain the proportions of room ({{room_name}}).
+- Maintain the length and width of room ({{room_name}}).
+- Create a ceiling in room ({{room_name}}).
+- Create a new wall color in room ({{room_name}}).
+- Create clear and expressive lines in room ({{room_name}}).
 - Hang curtains or blinds to match the style.
 - If there are no window sills, create some.
 - You can create a radiator cover.
-- Add accents and create a bright spot in room ({room_name}).
+- Add accents and create a bright spot in room ({{room_name}}).
 
 You can't:
-- Creating rugs on the floor in {room_name}.
-- Changing the position of doors in {room_name}.
-- Changing the position of windows in {room_name}.
-- Enlarging or decreasing the area of the {room_name}.
+- Creating rugs on the floor in {{room_name}}.
+- Changing the position of doors in {{room_name}}.
+- Changing the position of windows in {{room_name}}.
+- Enlarging or decreasing the area of the {{room_name}}.
 - Removing walls or protruding corners.
-- Changing the geometry of the {room_name}.
+- Changing the geometry of the {{room_name}}.
 - Building new walls.
 - Creating new windows.
 - Creating new doors.
 - Blocking windows with furniture.
 - Redrawing an old design.
 
+{{furniture_block}}
 
-{style_description}
+{{style_description}}
 """.strip()
 
 # ========================================
@@ -219,9 +223,11 @@ async def build_design_prompt(style: str, room: str, translate: bool = True) -> 
     try:
         style_desc = get_style_description(style)
         room_name = get_room_name(room)
+        furniture_block = build_furniture_block(room, style)  # ← НОВОЕ!
 
         final_prompt = CUSTOM_PROMPT_TEMPLATE.format(
             room_name=room_name,
+            furniture_block=furniture_block,  # ← НОВОЕ!
             style_description=style_desc
         )
         

@@ -422,7 +422,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             
             progress_msg = await callback.message.answer(
                 text=balance_text,
-                parse_mode="Markdown"
+                #parse_mode="Markdown"
             )
             logger.warning(f"📊 [SCREEN 6] Progress msg sent")
             
