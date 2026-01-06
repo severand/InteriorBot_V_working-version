@@ -212,7 +212,7 @@ STYLE_PROMPTS = {
                'DECOR: Beach-inspired decor - coral and shells (tastefully displayed), driftwood, coastal artwork, striped textiles, plants in natural baskets, blue and white ceramics. '
                'Overall impression: breezy, relaxed, fresh, airy, vacation-like, casual elegance, like a sophisticated beach house.',
 
-    'Loft':   'A loft is an industrial building (former factory, warehouse, or attic) converted into housing.'
+    'loft':   'A loft is an industrial building (former factory, warehouse, or attic) converted into housing.'
               ' The space itself contains history. Lofts originated from the American tradition of converting '
               'actual industrial buildings into residential spaces.'
               ' WALLS: Exposed brick (natural) or concrete, often preserving the buildings '
@@ -231,7 +231,7 @@ STYLE_PROMPTS = {
                 ' OVERALL IMPRESSION: Lively, creative, like a living space in a converted industrial building.',
 
     
-    'Organic Modern':   'Style: This is the most viral trend of 2026 – a combination of clean, modern lines with the warmth of natural materials and muted colors.'
+    'organic modern':   'Style: This is the most viral trend of 2026 – a combination of clean, modern lines with the warmth of natural materials and muted colors.'
                         'It balances the natural with the contemporary, the raw with the polished. ' 
                         'The atmosphere is calm and sophisticated, like a trendy spa hotel.'
                      'WALLS: Smooth, matte – cream, warm white, light gray, natural beige, sand. Textured surfaces made of natural materials (raw plaster, clay panels) are allowed for depth.'

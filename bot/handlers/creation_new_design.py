@@ -410,7 +410,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     progress_msg = None
     current_msg = callback.message
     balance_text = await add_balance_and_mode_to_text(
-        f"⚡ Генерирую {style} дизайн...",
+        f"⚡ Генерирую {style} дизайн для {room}. Это может занять до 3 минут ...",
         user_id,
         work_mode
     )
