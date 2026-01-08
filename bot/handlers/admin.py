@@ -237,20 +237,29 @@ async def show_users_page(callback: CallbackQuery, page: int, admins: list[int])
         await callback.answer("❌ У вас нет прав администратора.", show_alert=True)
         return
 
-    users, total_pages = await db.get_all_users_paginated(page=page, per_page=10)
+    all_users = await db.get_recent_users(limit=1000)
 
-    if not users:
+    if not all_users:
         await callback.answer("📭 Пользователей нет.", show_alert=True)
         return
 
-    users_text = f"👥 **СПИСОК ПОЛЬЗОВАТЕЛЕЙ** (стр. {page}/{total_pages})\n\n"
-    for idx, user in enumerate(users, start=1):
-        user_id_str = user['user_id']
-        username = user['username']
-        balance = user['balance']
+    per_page = 10
+    total_pages = (len(all_users) + per_page - 1) // per_page
 
-        username_clean = (username or "Без username").replace('@', '').replace('_', '\\_').replace('*', '\\*').replace(
-            '[', '\\[').replace(']', '\\]').replace('`', '\\`')
+    if page < 1 or page > total_pages:
+        page = 1
+
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    users = all_users[start_idx:end_idx]
+
+    users_text = f"👥 **СПИСОК ПОЛЬЗОВАТЕЛЕЙ** (стр. {page}/{total_pages})\n\n"
+    for idx, user in enumerate(users, start=start_idx + 1):
+        user_id_str = user.get('user_id', 'N/A')
+        username = user.get('username', '')
+        balance = user.get('balance', 0)
+
+        username_clean = (username or "Без username").replace('@', '').replace('_', '\\\\_').replace('*', '\\\\*')
 
         users_text += f"{idx}. ID: `{user_id_str}` | {username_clean} | 💰 {balance}\n"
 
@@ -260,9 +269,7 @@ async def show_users_page(callback: CallbackQuery, page: int, admins: list[int])
             reply_markup=get_users_list_keyboard(page, total_pages),
             parse_mode="Markdown"
         )
-        # Сохраняем screen_code
         await db.save_chat_menu(chat_id, user_id, callback.message.message_id, f'admin_users_page_{page}')
-
     except Exception as e:
         logger.error(f"Ошибка показа пользователей: {e}")
 
@@ -509,24 +516,22 @@ async def show_payments_history(callback: CallbackQuery, admins: list[int]):
         await callback.answer("❌ У вас нет прав администратора.", show_alert=True)
         return
 
-    payments = await db.get_all_payments(limit=20)
+    recent_payments = await db.get_user_recent_payments(None, limit=20)
 
-    if not payments:
+    if not recent_payments:
         await callback.answer("📭 Платежей пока нет.", show_alert=True)
         return
 
     payments_text = "💰 **ИСТОРИЯ ПЛАТЕЖЕЙ** (последние 20)\n\n"
-    for idx, payment in enumerate(payments, start=1):
-        status_emoji = "✅" if payment['status'] == 'succeeded' else "⏳"
-        username_clean = (payment['username'] or "Без username").replace('_', '\\_').replace('*', '\\*').replace('[',
-                                                                                                                 '\\[').replace(
-            ']', '\\]').replace('`', '\\`')
+    for idx, payment in enumerate(recent_payments, start=1):
+        status_emoji = "✅" if payment.get('status') == 'succeeded' else "⏳"
+        username_clean = (payment.get('username', '') or "Без username").replace('_', '\\\\_').replace('*', '\\\\*')
 
         payments_text += (
-            f"{idx}. {status_emoji} `{payment['user_id']}` | "
+            f"{idx}. {status_emoji} `{payment.get('user_id', 'N/A')}` | "
             f"{username_clean} | "
-            f"**{payment['amount']} руб.** | "
-            f"{payment['tokens']} токенов\n"
+            f"**{payment.get('amount', 0)} руб.** | "
+            f"{payment.get('tokens', 0)} токенов\n"
         )
 
     try:
@@ -535,14 +540,11 @@ async def show_payments_history(callback: CallbackQuery, admins: list[int]):
             reply_markup=get_back_to_admin_menu(),
             parse_mode="Markdown"
         )
-        # Сохраняем screen_code
         await db.save_chat_menu(chat_id, user_id, callback.message.message_id, 'admin_payments')
-
     except Exception as e:
         logger.error(f"Ошибка показа платежей: {e}")
 
     await callback.answer()
-
 
 # ===== КОМАНДЫ =====
 

@@ -611,6 +611,44 @@ class Database:
                 rows = await cursor.fetchall()
                 return {row['key']: row['value'] for row in rows}
 
+# 💰 Получить общую выручку из успешных платежей
+#===============================================
+    async def get_total_revenue(self) -> int:
+
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                    "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'succeeded'"
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
+
+# Количество новых пользователей за последние N дней
+#========================================================
+    async def get_new_users_count(self, days: int = 1) -> int:
+        """👥 Количество новых пользователей за последние N дней"""
+        from datetime import datetime, timedelta
+        date_threshold = datetime.now() - timedelta(days=days)
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                    "SELECT COUNT(*) FROM users WHERE created_at >= ?",
+                    (date_threshold.isoformat(),)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
+
+#Количество успешных платежей
+#===============================
+    async def get_successful_payments_count(self) -> int:
+        """💳 Количество успешных платежей"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                    "SELECT COUNT(*) FROM payments WHERE status = 'succeeded'"
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
 
 # Объект
 db = Database()

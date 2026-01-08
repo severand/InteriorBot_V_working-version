@@ -7,15 +7,6 @@
 # https://docs.kie.ai/market/google/nano-banana-edit
 # https://docs.kie.ai/market/google/pro-image-to-image [НОВОЕ 2025-12-24]
 # ========================================
-# [2025-12-23 15:30] ОБНОВЛЕНО: интеграция с translator.py
-# [2025-12-23 23:02] ДОБАВЛЕНО: generate_interior_with_text_nano_banana() для поддержки текстовых промптов
-# [2025-12-23 23:20] ИСПРАВЛЕНО: переместить импорт translate_to_english в начало файла
-# [2025-12-24 08:18] ДОБАВЛЕНО: Поддержка KIE.AI PRO режима (nano-banana-pro)
-# [2025-12-30 10:36] 🔙 REVERT: Отменить HOTFIX SSL проверку (проблема была в VPN, не в коде)
-# [2026-01-02 20:55] 🔥 CRITICAL FIX: В текстовом редакторе отправлять ТОЛЬКО user_prompt БЕЗ добавления контекста
-# [2026-01-02 21:04] ✨ ENHANCEMENT: Добавить префикс "Create ultra-photorealistic image" + детальный лог финального промпта
-# [2026-01-03 21:20] ✨ ADD: apply_style_to_room() для Screen 11 Sample Design Try-On
-# [2026-01-05 12:10] 🏠 ADD: apply_facade_style_to_house() для Screen 17 Facade Design Try-On
 
 import os
 import logging
@@ -28,8 +19,17 @@ from config import config
 from config_kie import config_kie
 
 from services.design_styles import get_room_name, get_style_description, is_valid_room, is_valid_style
-from services.prompts import build_design_prompt, build_clear_space_prompt, build_apply_style_prompt, build_apply_facade_style_prompt
+
 from services.translator import translate_prompt_to_english as translate_to_english
+
+from services.prompts import (
+    build_design_prompt,
+    build_clear_space_prompt,
+    build_apply_style_prompt,
+    build_apply_facade_style_prompt,
+    TEXT_EDITOR_PROMPT_PREFIX
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +54,7 @@ MODELS = {
     },
 }
 
-# [2026-01-02 21:04] ✨ ПРЕФИКс ДЛЯ ТЕКСТОВОГО РЕДАКТОРА
-#TEXT_EDITOR_PROMPT_PREFIX = "Create ultra-photorealistic image. Apply the following prompt: "
-TEXT_EDITOR_PROMPT_PREFIX = "Create an ultra-photorealistic image just like you'd find in a glossy magazine, preserving all the details and settings of the original photo. Follow the next prompt: "
+
 
 
 class KieApiClient:

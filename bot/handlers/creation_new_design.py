@@ -349,7 +349,8 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     
     ⚠️ FALLBACK: Если URL не работает → загружаем файл локально через BufferedInputFile
     """
-    style = callback.data.split("_")[-1]
+   # style = callback.data.split("_")[-1
+    style = callback.data.replace("style_", "", 1)
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     menu_message_id = callback.message.message_id
@@ -406,11 +407,11 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     # ═════════════════════════════════════════════════════════════════════════
     # Отправка прогресса
     # ═════════════════════════════════════════════════════════════════════════
-    
+
     progress_msg = None
     current_msg = callback.message
     balance_text = await add_balance_and_mode_to_text(
-        f"⚡ Генерирую {style} дизайн...",
+        f"⚡ Генерирую {style} дизайн для {room}. Это может занять до 3 минут...",
         user_id,
         work_mode
     )
@@ -422,14 +423,14 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             
             progress_msg = await callback.message.answer(
                 text=balance_text,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             logger.warning(f"📊 [SCREEN 6] Progress msg sent")
             
         else:
             progress_msg = await callback.message.edit_text(
                 text=balance_text,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             logger.warning(f"📊 [SCREEN 6] Edited text menu to progress")
         
@@ -475,10 +476,11 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         room_display = ROOM_TYPES.get(room, room.replace('_', ' ').title())
         style_display = STYLE_TYPES.get(style, style.replace('_', ' ').title())
         
-        design_caption = f"""✨ <b>Ваш новый дизайн {room_display} в стиле {style_display} готов!</b>
+        design_caption = f"""✨ <b>Идея для дизайна {room_display} в стиле {style_display} готова!</b>
         """
         
-        menu_caption = f"""🎨 <b>Что дальше?</b>
+        menu_caption = f"""🎨 <b>Что дальше?
+Есть 20 готовых стилей!</b>
 
 Выберите действие:
 🔄 Создать другой стиль.
