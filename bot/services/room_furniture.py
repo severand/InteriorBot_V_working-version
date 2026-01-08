@@ -12,6 +12,9 @@ ROOM_FURNITURE = {
         'kitchen chairs (4-6 pieces)',
         'kitchen cabinets and shelves',
         'countertops',
+        'microwave',
+        'kitchen wall cabinets with facades up to the ceiling',
+        'kitchen apron on the wall',
         'range hood or ventilation'
     ],
     'bedroom': [
@@ -53,12 +56,39 @@ ROOM_FURNITURE = {
         'storage cabinet',
         'lighting fixtures'
     ],
+
+# туалет
     'toilet': [
         'toilet',
         'small sink',
         'mirror',
+        'wide washing machine',
+         'sink shelf',
+         'wall cabinets',
+         'radiator wall-mounted',
+         'towel warmer opposite the sink',
+        'towel warmer',
         'wall-mounted storage'
     ],
+
+#Прихожая
+     'entryway': [
+        'Soft ottoman or ottomans',
+        'Soft sofa with a backrest, if space allows',
+        'Wall-mounted clothes rack',
+        'Hat rack',
+        'Key holder',
+        'Mirror or tall full-length mirror',
+        'If there s a radiator, cover it with paneling',
+        'If possible, a closet',
+        'Shelf for storing shoes',
+         'wardrobe',
+        'Shelves',
+        'Drawers',
+        'Shoe racks'
+     ],
+
+# гардеробная
     'wardrobe': [
         'hanging rods',
         'shelving units',
@@ -94,12 +124,17 @@ ROOM_FURNITURE = {
         'bar stools',
         'side tables'
     ],
+
+
+
+
+
 }
 
 # СТИЛЬ-СПЕЦИФИЧНЫЕ ДЕТАЛИ
 STYLE_FURNITURE_HINTS = {
     'loft': {
-        'kitchen': 'industrial metal finishes, stainless steel appliances, metal bar stools, exposed brick shelving',
+        'kitchen': 'Industrial metal finishes, stainless steel appliances, metal bar stools, exposed brick shelving',
         'bedroom': 'metal bed frame, leather accents, industrial lighting',
         'living_room': 'leather furniture, metal coffee table, industrial lighting fixtures',
         'dining_room': 'industrial metal dining table, leather chairs, exposed bulb fixtures',

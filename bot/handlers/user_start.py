@@ -16,7 +16,7 @@ from keyboards.inline import get_main_menu_keyboard, get_mode_selection_keyboard
 from utils.texts import START_TEXT, MODE_SELECTION_TEXT, PROFILE_TEXT
 from utils.navigation import edit_menu, show_main_menu
 from utils.helpers import add_balance_to_text
-
+from utils.helpers import add_balance_and_mode_to_text
 logger = logging.getLogger(__name__)
 router = Router()
 
@@ -126,7 +126,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
         pass
 
     # ===== 7️⃣ ОТПРАВЛЯЕМ SCREEN 0: ГЛАВНОЕ МЕНИ С БАЛАНСОМ =====
-    text = await add_balance_to_text(START_TEXT, user_id)
+    text = await add_balance_and_mode_to_text(START_TEXT, user_id)
     menu_msg = await message.answer(
         text,
         reply_markup=get_main_menu_keyboard(),
@@ -238,9 +238,11 @@ async def start_creation(callback: CallbackQuery, state: FSMContext):
     # Устанавливаем состояние для выбора режима
     await state.set_state(CreationStates.selecting_mode)
 
+    #=================================
     # Показываем SCREEN 1 с 5 режимами
+    #==================================
     text = MODE_SELECTION_TEXT
-    text = await add_balance_to_text(text, user_id)
+    text = await add_balance_and_mode_to_text(text, user_id)
     
     await edit_menu(
         callback=callback,

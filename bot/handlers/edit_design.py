@@ -87,7 +87,7 @@ TEXT_INPUT_SCREEN_TEXT = """📝 **Текстовый редактор**
 """
 
 # SCREEN 9: CLEAR_CONFIRM - Подтверждение очистки
-CLEAR_SPACE_CONFIRM_TEXT = """⚠️ **ПОДТВЕРЖДЕНИЕ ОЧИСТКИ**
+CLEAR_SPACE_CONFIRM_TEXT = """⚠️ ПОДТВЕРЖДЕНИЕ ОЧИСТКИ
 
 Вы уверены, что хотите очистить помещение?
 
@@ -156,8 +156,8 @@ async def receive_text_prompt(message: Message, state: FSMContext):
     user_text = message.text.strip()
     
     # ШАГ 1: Валидация
-    if not user_text or len(user_text) < 3:
-        error_msg = await message.answer("⚠️ Введите описание (минимум 3 символа)")
+    if not user_text or len(user_text) < 3 or len(user_text) > 1500:
+        error_msg = await message.answer("⚠️ Введите описание (минимум 3 символа, но не более 1500)")
         await asyncio.sleep(2)
         try:
             await error_msg.delete()

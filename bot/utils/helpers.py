@@ -81,7 +81,7 @@ async def add_balance_to_text(text: str, user_id: int) -> str:
     """
     try:
         balance = await db.get_balance(user_id)
-        balance_footer = f"\n\n{'─' * 36}\nБаланс генераций: {balance}"
+        balance_footer = f"\n\n{'─' * 18}\nБаланс генераций: {balance}"
         return text + balance_footer
     except Exception as e:
         logger.error(f"Ошибка получения баланса для {user_id}: {e}")
@@ -97,9 +97,7 @@ async def add_balance_and_mode_to_text(
     work_mode: str = None
 ) -> str:
 
-  
 
-    
     try:
         # Получаем баланс и настройки режима генерации
         balance = await db.get_balance(user_id)
@@ -107,8 +105,8 @@ async def add_balance_and_mode_to_text(
         
         # Режим генерации (PRO/СТАНДАРТ)
         is_pro = pro_settings.get('pro_mode', False)
-        mode_icon = "🔧" if is_pro else "📋"  # 🔧 PRO / 🔧 СТАНДАРТ
-        mode_name = "PRO" if is_pro else "СТАНДАРТ"
+        mode_icon = "🔧" if is_pro else "🔧"  # 🔧 PRO / 🔧 СТАНДАРТ
+        mode_name = "PRO" if is_pro else "BASE"
         
         # ✅ НОВОЕ: Режим работы (NEW_DESIGN, EDIT_DESIGN, и т.д.)
         work_mode_text = ""

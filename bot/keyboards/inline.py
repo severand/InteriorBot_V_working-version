@@ -4,6 +4,9 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
 
 
+from aiogram.filters.callback_data import CallbackData
+from typing import Set
+from services.room_furniture import get_room_furniture
 
 # --- Настройки пакетов для покупки ---
 PACKAGES = {
@@ -60,6 +63,12 @@ STYLE_PAGE_2 = [
     ("baroque", "Барокко"),
     ("classicism", "Классицизм"),
 ]
+
+
+
+
+
+
 
 # Структура для комнат с emoji
 ROOMS_WITH_EMOJI = [
@@ -248,7 +257,7 @@ def get_uploading_photo_keyboard(has_previous_photo: bool = False) -> InlineKeyb
     
     # Кнопка "Главное меню" - ВСЕГДА показываем
     builder.row(InlineKeyboardButton(
-        text="🏠 Выбрать режим работы",
+        text="       🏠 Назад - выбрать режим работы    ",
         callback_data="select_mode"
     ))
     
@@ -784,3 +793,5 @@ def get_pro_params_keyboard(
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
     )
     return builder.as_markup()
+
+

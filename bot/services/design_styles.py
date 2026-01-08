@@ -1,4 +1,5 @@
 # ========================================
+#  design_styles.py
 # Дата создания: 2025-12-10 22:40 (UTC+3)
 # Описание: Модуль стилей и названий комнат для масштабирования дизайн-функционала
 # ========================================
@@ -21,6 +22,53 @@ ROOM_NAMES = {
     'teen_room_girl': 'teenager girl room',
     'man_cave': 'man cave den',
 }
+
+# ========================================
+# НАЗВАНИЯ СТИЛЕЙ
+# ========================================
+
+STYLE_NAMES = {
+    'modern': 'Modern',
+    'minimalist': 'Minimalist',
+    'scandinavian': 'Scandinavian',
+    'industrial': 'Industrial',
+    'rustic': 'Rustic',
+    'japandi': 'Japandi',
+    'boho': 'Bohemian',
+    'midcentury': 'Mid-Century Modern',
+    'artdeco': 'Art Deco',
+    'coastal': 'Coastal',
+    'organic_modern': 'Organic Modern',
+    'loft': 'Loft',
+
+    'hitech': 'Hi-Tech',
+    'classic': 'Classic',
+    'contemporary': 'Contemporary',
+     'mediterranean': 'Mediterranean',
+    'transitional': 'Transitional',
+
+
+
+    'warm_luxury': 'Warm Luxury',
+    'neo_art_deco': 'Neo Art Deco',
+    'conscious_eclectics': 'Conscious Eclectics',
+    'tactile_maximalism': 'Tactile Maximalism',
+    'country': 'Country',
+    'grunge': 'Grunge',
+    'cyberpunk': 'Cyberpunk',
+    'eclectic': 'Eclectic',
+    'gothic': 'Gothic',
+    'futurism': 'Futurism',
+    'baroque': 'Baroque',
+    'classicism': 'Classicism',
+}
+#==============================================
+# Функция для получения названия стиля
+# Возвращает человеко-читаемое название стиля
+#================================================
+def get_style_name(style_code: str) -> str:
+   return STYLE_NAMES.get(style_code, style_code.replace('_', ' ').title())
+
 
 # ========================================
 # СТИЛИ
@@ -129,16 +177,15 @@ STYLE_PROMPTS = {
                   'DECOR: Geometric patterns in rugs and pillows (chevrons, abstract shapes), simple abstract art (Mondrian-style), vintage posters, analog clocks, indoor plants in ceramic pots. '
                   'Overall impression: clean, geometric, retro but timeless, stylish and cozy, nostalgic 1950s-1960s atmosphere.',
 
-    'artdeco': 'Люксовый, драматичный стиль с геометричными узорами, золотыми акцентами и гламуром. '
-               'Глубокий изумруд, глубокий синий, чёрный, белый, золотые или латунные металлические '
-               'акценты. Велюр, лакированные глянцевые поверхности, мрамор или мраморный эффект, стекло. '
-               'Геометричные силуэты, закруглённые формы, вертикальные линии (резные детали), '
-               'низкие спинки диванов. Геометричные узоры, зигзаги, шевроны, абстрактные рисунки, '
-               'большое зеркало в геометричной раме. Люстра из латуни или хрусталя, настенные латунные бра, '
-               'драматичное освещение, тёплые блики на металлических поверхностях. '
-               'Смелые произведения искусства, геометричная пластика, часы в стиле ар-деко. '
-               'Общее впечатление: роскошное, изысканное, драматичное, театральное, премиум, '
-               'как старинное казино или банк 1930х годов',
+    'artdeco':         'Art Deco style with bold geometric patterns and luxury materials. '
+                  'Rich color palette: gold, black, emerald green, sapphire blue, burgundy. '
+                  'Symmetrical geometric patterns and sunburst motifs. '
+                  'Luxury materials: marble, brass, velvet, mirror, lacquer. '
+                  'Streamlined furniture with stepped or curved forms. '
+                  'Statement lighting: geometric lamps, chandeliers. '
+                  'Bold graphic patterns on wallpaper, rugs, textiles. '
+                   'Glamorous accessories: figurines, sculptures, decorative mirrors. '
+                   'Overall impression: glamorous, luxurious, geometric, bold.',
 
     'hitech': 'A futuristic, high-technology style with sleek surfaces and innovative materials. '
               'WALLS: Smooth glossy white, light gray, or metallic silver panels, sometimes with integrated LED lighting. '
@@ -242,8 +289,144 @@ STYLE_PROMPTS = {
                 'FURNITURE: Modern, clean lines, made from natural materials – sofas with smooth shapes, wood and steel tables, chairs with organic contours. Often low-profile furniture, creating an airy feel.'
                 'MATERIALS: Natural materials with honest textures – untreated wood, stone, concrete, leather, linen, cotton, wool, rattan.'
                 'LIGHTING: Warm, soft, recessed or concealed – natural light is maximized, artificial lighting is soft and diffused.'
-                'SMALL DETAILS: Plants in ceramic pots (often dry branches), natural materials prominently displayed, minimal decor, but each item has a purpose.'
+                'SMALL DETAILS: Plants in ceramic pots (often dry branches), natural materials prominently displayed, minimal decor, but each item has a purpose.',
                 'OVERALL IMPRESSION: Premium, calm, natural, like a Scandinavian hotel room.'
+
+    
+     'warm_luxury': 'Warm luxury design combining richness with comfort and sophistication. '
+                    'Warm color palette: golds, warm browns, deep burgundy, rich creams, terracotta. '
+                    'Luxury materials: velvet, silk, marble, brass, leather. '
+                    'Layered textures and sumptuous fabrics. '
+               'Rich artwork, decorative objects, curated collections. '
+               'Warm lighting with statement chandeliers and lamps. '
+               'Elegant furniture with curved lines and details. '
+               'Mix of antique and contemporary pieces. '
+               'Overall impression: luxurious, warm, sophisticated, inviting.',
+
+
+
+    'warm_luxury': 'A luxurious, enveloping style combining rich materials with warm, inviting tones creating an atmosphere of refined comfort. '
+                   'WALLS: Warm textured plaster (taupe, caramel, warm beige), fabric wall panels, or warm-toned wallpaper with subtle patterns. '
+                   'FLOOR: Rich hardwood (walnut, mahogany), plush carpets in warm tones, or warm stone (travertine, warm marble). '
+                   'CEILING: Warm white or cream with decorative molding, possibly coffered ceiling, warm integrated lighting. '
+                   'COLOR PALETTE: Warm neutrals (caramel, cognac, warm taupe, cream, champagne), accents of deep burgundy, forest green, warm gold. '
+                   'FURNITURE: Luxurious upholstered furniture in rich fabrics, deep comfortable seating, refined wood pieces with warm finishes. '
+                   'MATERIALS: Velvet, cashmere, silk, rich leather, warm woods (walnut, cherry), brass, warm metals, marble. '
+                   'LIGHTING: Warm ambient lighting, brass or gold fixtures, layered lighting creating intimate glow, crystal accents. '
+                   'DECOR: Luxurious textiles (throws, pillows), rich artwork, fresh flowers, decorative objects, books in leather bindings. '
+                   'Overall impression: enveloping, warm, luxurious yet comfortable, refined elegance, inviting sophistication.',
+
+    'neo_art_deco': 'A contemporary interpretation of Art Deco combining classic geometric glamour with modern sensibility and updated materials. '
+                    'WALLS: Bold geometric wallpaper or paint in jewel tones, metallic accents, vertical linear elements, modern interpretation. '
+                    'FLOOR: Geometric tiles in bold patterns, polished concrete with inlays, glossy stone, contemporary patterned rugs. '
+                    'CEILING: Bold geometric ceiling design, modern metallic fixtures, dramatic contemporary lighting installations. '
+                    'COLOR PALETTE: Deep jewel tones (emerald, sapphire, amethyst), black, white, contemporary metallics (rose gold, brushed brass, gunmetal). '
+                    'FURNITURE: Geometric modern shapes inspired by Art Deco, luxurious materials, clean lines with vintage references, statement pieces. '
+                    'MATERIALS: Velvet, modern metallics, glass, lacquered surfaces, marble, contemporary interpretations of classic materials. '
+                    'LIGHTING: Dramatic geometric fixtures, modern takes on classic chandeliers, layered lighting, contemporary metallic finishes. '
+                    'DECOR: Bold geometric art, modern sculptures, mirrors with geometric frames, contemporary luxury accessories. '
+                    'Overall impression: bold, glamorous, contemporary luxury, geometric sophistication, modern interpretation of classic elegance.',
+
+    'conscious_eclectics': 'A thoughtful, intentional eclectic style combining sustainable materials, vintage finds, and modern pieces with environmental consciousness. '
+                           'WALLS: Natural plaster finishes, reclaimed wood panels, eco-friendly paint in earthy tones, mixed sustainable materials. '
+                           'FLOOR: Reclaimed wood, sustainable bamboo, natural cork, vintage rugs, eco-friendly materials with character. '
+                           'CEILING: Natural finishes, exposed sustainable materials, reclaimed beams, eco-conscious lighting solutions. '
+                           'COLOR PALETTE: Natural earth tones (terracotta, sage, ochre, natural white), organic colors, sustainable dyes, vintage color combinations. '
+                           'FURNITURE: Mix of vintage pieces, upcycled furniture, sustainable modern designs, handcrafted items, secondhand treasures. '
+                           'MATERIALS: Reclaimed wood, natural fibers (organic cotton, linen, jute), recycled materials, vintage fabrics, sustainable sources. '
+                           'LIGHTING: Energy-efficient fixtures, vintage lamps, handmade lighting, natural materials, sustainable solutions. '
+                           'DECOR: Thrifted and vintage finds, handmade items, plants in reclaimed containers, meaningful collected objects, sustainable art. '
+                           'Overall impression: intentional, sustainable, collected with purpose, environmentally conscious, thoughtfully curated personality.',
+
+    'tactile_maximalism': 'A sensory-rich style celebrating abundance of textures, patterns, and tactile materials creating a luxurious, layered environment. '
+                          'WALLS: Richly textured surfaces - velvet panels, 3D textured wallpaper, carved wood, mixed materials creating depth. '
+                          'FLOOR: Layered rugs with different textures, plush carpeting, tactile materials, multiple textured layers. '
+                          'CEILING: Textured finishes, fabric draping, decorative molding, layered visual and tactile interest. '
+                          'COLOR PALETTE: Rich, saturated colors (deep jewel tones, warm earth tones), bold color combinations, pattern mixing. '
+                          'FURNITURE: Upholstered in rich tactile fabrics (velvet, bouclé, mohair, leather), carved wood details, layered textures. '
+                          'MATERIALS: Velvet, bouclé, mohair, leather, silk, wool, carved wood, brass, mixed luxurious tactile materials. '
+                          'LIGHTING: Layered lighting, fixtures with textured materials, dramatic shadows creating depth, warm ambient glow. '
+                          'DECOR: Abundant layered textiles (throws, pillows in mixed textures), tactile art, sculptures, abundant pattern mixing. '
+                          'Overall impression: rich, abundant, sensory experience, luxurious layering, tactile indulgence, maximalist comfort.',
+
+    'country': 'A warm, rustic style inspired by countryside living with natural materials, handcrafted details, and comfortable farmhouse charm. '
+               'WALLS: Painted wood panels (white, cream, soft pastels), rustic plaster, shiplap, wallpaper with country patterns. '
+               'FLOOR: Wide plank wood floors (natural or painted), terracotta tiles, natural stone, vintage rugs. '
+               'CEILING: Exposed wooden beams (natural or painted white), white painted ceiling, rustic chandelier or lantern fixtures. '
+               'COLOR PALETTE: Soft country colors (cream, soft blue, sage green, warm white), natural wood tones, floral accents. '
+               'FURNITURE: Solid wood farmhouse furniture, painted wooden pieces, comfortable upholstered seating, vintage country finds. '
+               'MATERIALS: Natural wood (pine, oak), cotton, linen, wrought iron, ceramic, terracotta, handcrafted materials. '
+               'LIGHTING: Rustic chandeliers, lantern-style fixtures, ceramic table lamps, warm country-style lighting. '
+               'DECOR: Floral patterns, gingham, checks, vintage country items, fresh flowers, ceramic pieces, handcrafted objects. '
+               'Overall impression: warm, welcoming, rustic comfort, countryside charm, handcrafted authenticity, cozy farmhouse living.',
+
+    'grunge': 'A raw, edgy style with distressed materials, dark moody colors, and deliberately unfinished aesthetic inspired by urban decay. '
+              'WALLS: Exposed brick (unpainted), distressed concrete, peeling paint textures, raw unfinished surfaces, graffiti or street art. '
+              'FLOOR: Worn concrete, distressed wood, industrial flooring, deliberately aged materials, raw finishes. '
+              'CEILING: Exposed structures, peeling paint, raw concrete, industrial pipes and ducts visible, unfinished aesthetic. '
+              'COLOR PALETTE: Dark moody tones (charcoal, deep gray, black, rust, dark brown), muted colors, distressed finishes. '
+              'FURNITURE: Distressed leather, worn metal frames, salvaged industrial pieces, deliberately aged furniture, rough textures. '
+              'MATERIALS: Distressed leather, worn metal, raw concrete, aged wood, chain-link, industrial salvage, deliberately weathered materials. '
+              'LIGHTING: Bare bulbs, industrial fixtures, exposed wiring, dramatic shadows, moody low lighting, vintage industrial lamps. '
+              'DECOR: Street art, band posters, vintage records, musical instruments, urban decay aesthetic, raw artistic expression. '
+              'Overall impression: raw, edgy, deliberately unfinished, urban decay aesthetic, rebellious attitude, authentically rough.',
+
+    'cyberpunk': 'A futuristic dystopian style combining high-tech elements with gritty urban aesthetics, neon lighting, and dark industrial base. '
+                 'WALLS: Dark surfaces (black, charcoal), metallic panels, exposed tech elements, neon accent strips, urban grid patterns. '
+                 'FLOOR: Dark polished concrete, metallic tiles, reflective surfaces, industrial grating, tech-integrated flooring. '
+                 'CEILING: Exposed tech infrastructure, LED strip lighting, metallic ducts, neon accents, industrial cyberpunk aesthetic. '
+                 'COLOR PALETTE: Dark base (black, charcoal, gunmetal), neon accents (electric blue, hot pink, acid green, purple), metallic chrome. '
+                 'FURNITURE: Industrial metal furniture, tech-integrated pieces, sleek dark materials, neon accent lighting, futuristic dystopian style. '
+                 'MATERIALS: Brushed metal, chrome, dark glass, carbon fiber, synthetic materials, LED-integrated surfaces, industrial tech. '
+                 'LIGHTING: Neon strips (pink, blue, purple), LED accents, dramatic colored lighting, exposed bulbs, cyberpunk glow. '
+                 'DECOR: Screens and monitors, tech gadgets, urban tech art, neon signs, futuristic dystopian accessories, cables as design. '
+                 'Overall impression: futuristic dystopian, high-tech meets urban grit, neon-lit darkness, cyberpunk atmosphere, tech-noir aesthetic.',
+
+    'gothic': 'A dramatic, dark romantic style with medieval influences, ornate details, and mysterious atmosphere of Gothic architecture. '
+              'WALLS: Dark dramatic colors (deep burgundy, charcoal, black), rich textured wallpaper, Gothic arched details, dark wood paneling. '
+              'FLOOR: Dark hardwood, black or dark stone tiles, deep colored rugs with ornate patterns, Gothic floor designs. '
+              'CEILING: Dark painted ceiling, ornate Gothic molding, arched elements, dramatic ceiling fixtures, medieval-inspired details. '
+              'COLOR PALETTE: Deep dramatic colors (burgundy, deep purple, black, charcoal, dark green), metallic accents (aged brass, dark iron). '
+              'FURNITURE: Dark carved wood furniture, velvet upholstery in deep colors, ornate Gothic details, throne-like seating, dramatic pieces. '
+              'MATERIALS: Dark carved wood, velvet, heavy brocade, wrought iron, aged brass, dark stone, stained glass accents. '
+              'LIGHTING: Wrought iron chandeliers, candelabras, dramatic pendant lights, moody atmospheric lighting, candlelight aesthetic. '
+              'DECOR: Gothic arches, ornate mirrors, dramatic artwork, candles, medieval-inspired objects, religious iconography, dark romantic elements. '
+              'Overall impression: dark, dramatic, romantic mystery, Gothic grandeur, medieval atmosphere, theatrical elegance, moody sophistication.',
+
+    'futurism': 'A bold forward-thinking style with dynamic forms, innovative materials, and celebration of technology and movement. '
+                'WALLS: Smooth flowing surfaces, innovative materials, dynamic shapes, white or metallic finishes, futuristic curves. '
+                'FLOOR: Seamless flowing flooring, innovative materials, metallic finishes, integrated lighting, futuristic surfaces. '
+                'CEILING: Dynamic shapes, flowing forms, integrated LED systems, innovative ceiling design, futuristic architecture. '
+                'COLOR PALETTE: White, metallic silver, chrome, occasional bold accent colors (electric blue, bright orange), high-tech palette. '
+                'FURNITURE: Dynamic curved forms, innovative shapes, space-age materials, flowing lines, sculptural futuristic pieces. '
+                 'MATERIALS: Chrome, brushed aluminum, acrylic, carbon fiber, innovative synthetics, glass, LED-integrated materials. '
+                'LIGHTING: Integrated LED systems, dynamic lighting, futuristic fixtures, color-changing technology, innovative lighting solutions. '
+                'DECOR: Abstract futuristic art, sculptural objects, tech displays, innovative materials as decoration, forward-thinking design. '
+                'Overall impression: innovative, forward-thinking, dynamic movement, space-age aesthetic, technological optimism, futuristic vision.',
+
+    'baroque': 'An opulent, dramatic style with elaborate ornamentation, rich materials, and theatrical grandeur inspired by 17th-century European palaces. '
+               'WALLS: Rich dramatic colors or gilded surfaces, ornate molding and trim, detailed carved panels, luxurious wallpaper, frescoed ceilings. '
+               'FLOOR: Marble with ornate patterns, inlaid wood parquet in elaborate designs, rich carpets with baroque patterns. '
+               'CEILING: Ornately decorated with molding, frescoes or painted details, gilded accents, elaborate ceiling medallions, theatrical grandeur. '
+               'COLOR PALETTE: Rich jewel tones (deep red, royal blue, emerald green, purple), gold gilding, ivory, dramatic contrasts. '
+               'FURNITURE: Heavily ornate carved wood, gilded details, luxurious upholstery in rich fabrics, curved legs, elaborate baroque forms. '
+               'MATERIALS: Carved and gilded wood, marble, velvet, silk, brocade, gold leaf, ornate metals, luxurious baroque materials. '
+               'LIGHTING: Crystal chandeliers, ornate candelabras, gilded sconces, theatrical dramatic lighting, baroque grandeur. '
+               'DECOR: Ornate gilded mirrors, elaborate artwork in heavy frames, sculptures, fresh flowers in ornate vases, theatrical baroque accessories. '
+               'Overall impression: opulent, theatrical, dramatic grandeur, palace-like luxury, elaborate ornamentation, baroque magnificence.',
+
+    'classicism': 'A refined, harmonious style inspired by ancient Greek and Roman architecture with symmetry, proportion, and timeless elegance. '
+                  'WALLS: Neutral elegant colors (cream, soft gray, ivory, pale blue), classical molding and columns, balanced proportions. '
+                  'FLOOR: Marble or marble-look tiles, herringbone wood parquet, neutral stone, classical symmetrical patterns. '
+                  'CEILING: White with classical molding, coffered ceiling with symmetrical design, ceiling medallions, classical proportions. '
+                  'COLOR PALETTE: Classical neutrals (cream, ivory, soft gray, white), accents of classical blue or burgundy, gold details. '
+                  'FURNITURE: Symmetrical arrangements, classical proportions, refined wood pieces, upholstered seating with classical lines. '
+                  'MATERIALS: Marble, fine wood (mahogany, cherry), linen, silk, plaster, classical metals (brass, bronze), quality materials. '
+                  'LIGHTING: Symmetrical placement, classical chandeliers, balanced sconces, elegant proportion, classical fixtures. '
+                  'DECOR: Classical sculptures or busts, symmetrical arrangements, Greek key patterns, columns or pilasters, refined classical art. '
+                  'Overall impression: refined, harmonious, symmetrical elegance, timeless classical beauty, balanced proportions, enduring sophistication.',
+
+
 
 }
 

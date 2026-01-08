@@ -203,7 +203,7 @@ async def set_work_mode(callback: CallbackQuery, state: FSMContext):
         )
         await state.set_state(CreationStates.uploading_photo)
         
-        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загружка фото")
+        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode.value, "📄 Загрузка фото")
         
         await edit_menu(
             callback=callback,

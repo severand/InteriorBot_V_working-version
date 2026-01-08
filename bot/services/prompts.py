@@ -1,4 +1,5 @@
 # ========================================
+# prompts.py
 # Дата создания: 2025-12-10 22:41 (UTC+3)
 # Описание: Модуль текстовых промптов и шаблонов для работы с Replicate API
 
@@ -6,7 +7,7 @@
 
 import logging
 import asyncio
-from services.design_styles import get_room_name, get_style_description
+from services.design_styles import get_room_name, get_style_description, get_style_name
 from services.translator import translate_prompt_to_english
 
 from services.room_furniture import build_furniture_block
@@ -15,48 +16,335 @@ from services.room_furniture import build_furniture_block
 logger = logging.getLogger(__name__)
 
 # ========================================
-# ПРОМПТ TEMPLATE ДЛЯ ДИЗАЙНА
+# ПРОМПТ TEMPLATE ДЛЯ СОЗДАНИЯ НОВОГО ДИЗАЙНА
 # ========================================
 
 CUSTOM_PROMPT_TEMPLATE = f"""
-You are a professional interior designer.
-You know all the latest interior design trends.
+Professional interior redesign of {{room_name}} in {{style_name}} style. 
+Transform ONLY the visual style while strictly preserving ALL architectural
+ structure, dimensions, and layout.
 
-You create practical design styles for everyday people.
+CRITICAL - PRESERVE EXACT STRUCTURE (HIGHEST PRIORITY):
+- Keep EXACT room dimensions: same length, width, and height - do NOT enlarge or shrink space
+- Keep EXACT ceiling height - do NOT raise ceiling or add ceiling levels
+- Keep door SIMPLE if original door is simple - do NOT add ornate carvings, do NOT change door to decorative baroque/classical style
+- Preserve ALL door positions, sizes, and locations - do NOT move or resize doors
+- Preserve ALL window positions, sizes, and locations - do NOT move, resize, add or remove windows
+- If NO windows exist, do NOT add windows - keep walls solid
+- Maintain EXACT room geometry: same wall angles, corners, and proportions
+- Keep floor area IDENTICAL - same square meters as original
+- Preserve ALL architectural elements: columns, niches, protruding corners exactly as shown
+- Do NOT change spatial layout or floor plan
+- PRESERVE EXACT FLOOR MATERIAL AND PATTERN - if original has tiles, keep tiles; if wood, keep wood; maintain same pattern and layout
+- Do NOT add architectural decorative elements: no columns, no arches, no pilasters, no structural ornamentation
+- Keep door in same style category (simple door stays simple, decorative stays decorative)
 
-Create a unique design for this room ({{room_name}}).
+{{ROOM_SPECIFIC_REQUIREMENTS}}
 
-Replace all the furniture in the photo with new furniture.
+ {{furniture_block}}
 
-- Create furniture in accordance with the chosen style.
-- Create new furniture.
-- Maintain the proportions of room ({{room_name}}).
-- Maintain the length and width of room ({{room_name}}).
-- Create a ceiling in room ({{room_name}}).
-- Create a new wall color in room ({{room_name}}).
-- Create clear and expressive lines in room ({{room_name}}).
-- Hang curtains or blinds to match the style.
-- If there are no window sills, create some.
-- You can create a radiator cover.
-- Add accents and create a bright spot in room ({{room_name}}).
+REDESIGN REQUIREMENTS (VISUAL STYLE ONLY):
+- Replace existing furniture with new {{style_name}} furniture pieces scaled appropriately for THIS space size
+- Change wall color, finishes, and materials to match {{style_name}} aesthetic
+- Update ceiling finish and lighting fixtures suitable for EXISTING ceiling height
+- Add window treatments (curtains/blinds) ONLY if windows exist in original space
+- Install window sills if absent and windows exist
+- Add radiator covers if radiators are visible
+- Create focal point with accent elements and statement pieces appropriate for space scale
+- Apply {{style_name}} color palette, materials, and decorative elements
 
-You can't:
-- Creating rugs on the floor in {{room_name}}.
-- Changing the position of doors in {{room_name}}.
-- Changing the position of windows in {{room_name}}.
-- Enlarging or decreasing the area of the {{room_name}}.
-- Removing walls or protruding corners.
-- Changing the geometry of the {{room_name}}.
-- Building new walls.
-- Creating new windows.
-- Creating new doors.
-- Blocking windows with furniture.
-- Redrawing an old design.
+STRICT DESIGN CONSTRAINTS:
+- Scale ALL new furniture to fit ACTUAL room size - no oversized pieces
+- NO floor rugs or carpets
+- Ensure windows remain unblocked by furniture
+- Design must be realistic and proportional to ACTUAL room dimensions
+- All elements must respect the COMPACT/SPACIOUS nature of original space
+- Floor material changes are FORBIDDEN - preserve original floor type and pattern
 
-{{furniture_block}}
+VISUAL QUALITY:
+Photorealistic interior design photography, eye-level view matching 
+original perspective, balanced composition, natural lighting matching 
+original light sources, 8K resolution, sharp focus, realistic textures and 
+materials, high-end interior design magazine quality, 
+professional architectural photography style.
 
-{{style_description}}
+Your result: create a unique design, unique online,
+ a practical, livable remodeling project {{room_name}} that respects 
+ the original architectural and space constraints while 
+ ensuring the highest quality of contemporary interior design {{style_name}}.
+
 """.strip()
+
+# ========================================
+# ROOM-SPECIFIC ДОПОЛНЕНИЯ
+# ========================================
+
+ROOM_SPECIFIC_REQUIREMENTS = {
+
+    'entryway': """
+ENTRYWAY SPECIFIC REQUIREMENTS:
+- Use high-traffic, durable flooring materials (preserve existing type but ensure durability is visible)
+- Include practical storage solutions: coat hooks, shoe storage, console table with drawers
+- Ensure surfaces appear easy-to-clean and resistant to outdoor dirt/moisture
+- Maintain welcoming, well-lit atmosphere with adequate lighting
+- Keep compact, space-efficient furniture appropriate for entryway use
+""",
+
+    'bathroom': """
+BATHROOM SPECIFIC REQUIREMENTS (CRITICAL):
+- PRESERVE wall tiles if they exist in original photo - maintain same tile coverage areas
+- If original has tiled walls, KEEP tiled walls - only change tile style/color to match {{style_name}}
+- ALL materials must appear waterproof and moisture-resistant
+- Maintain existing wet zones (shower/bath area) exactly as positioned in original
+- Keep existing plumbing fixture positions (sink, toilet, shower) - only update their style
+- Anti-slip flooring appearance is mandatory
+- Include visible moisture-resistant finishes
+- Do NOT add fabric elements, wood furniture, or moisture-sensitive materials
+- Ensure proper ventilation visible (exhaust fan or window)
+- Ceramic, porcelain, glass, and waterproof materials only
+""",
+
+
+'kitchen': """
+KITCHEN SPECIFIC REQUIREMENTS (CRITICAL):
+- PRESERVE existing kitchen layout: if original has L-shape/U-shape/galley, maintain that exact configuration
+- KEEP kitchen cabinets in same positions - only update cabinet style/color to match {{style_name}}
+- PRESERVE backsplash/splashback area if it exists - maintain same coverage, only update tile/material style
+- PRESERVE countertop positions - only update material/color to match {{style_name}}
+- Keep all appliances (stove, hood, sink) in exact original positions - only update their style
+
+MODERN KITCHEN DESIGN ELEMENTS (HIGH-END QUALITY):
+- Use handleless/integrated handle cabinets OR sleek contemporary handles (slim metal profiles)
+- Premium countertop materials: quartz, granite, or marble appearance with clean edges
+- Contemporary backsplash: subway tiles, large format tiles, or stone slabs matching modern aesthetic
+- Integrated/built-in appliances with flush installation (oven, microwave, dishwasher)
+- Under-cabinet LED lighting visible as subtle glow
+- Soft-close cabinet mechanisms suggested by clean, seamless appearance
+- Contemporary fixtures: modern faucet in black/chrome/brass finish with clean lines
+- Glass-front cabinets for upper storage (if space allows)
+- Minimalist hardware: either handleless design OR slim, contemporary pulls
+- Task lighting over work zones: pendant lights or track lighting
+- Clean, uncluttered countertops with minimal visible items
+
+MATERIAL QUALITY AND FINISH:
+- High-gloss or matte lacquer cabinet finishes in contemporary colors
+- Stone or quartz countertops with waterfall edges (if design allows)
+- Stainless steel, black, or panel-ready appliances for integrated look
+- Large format tiles or engineered wood for flooring (preserve existing material)
+- Backsplash extending full height between countertop and upper cabinets
+- Grout lines minimal and clean
+
+FUNCTIONAL MODERN FEATURES:
+- Maintain existing work triangle (stove-sink-fridge) configuration
+- Adequate task lighting over prep areas
+- Pull-out organizers suggested in lower cabinets
+- Vertical storage solutions for maximizing space
+- Contemporary range hood that complements cabinet style
+- Touchless or modern single-lever faucets
+
+DINING/SEATING AREA - MANDATORY INCLUSION (CRITICAL):
+- REQUIRED: Include dining furniture if space permits - this is a MANDATORY element, NOT optional
+- Analyze available floor space in original photo and determine appropriate seating configuration:
+  
+  FOR SMALL KITCHENS (compact spaces, <8m² floor area):
+  - 2-4 person compact dining table OR high-top bar counter with 2-3 stools
+  - Minimalist chairs matching cabinet style
+  - Position along one wall to not block kitchen work zones
+  
+  FOR MEDIUM KITCHENS (standard spaces, 8-15m² floor area):
+  - 4-6 person dining table matching {{style_name}} aesthetic
+  - 4-6 contemporary chairs with clean lines
+  - Position to allow comfortable circulation
+  
+  FOR LARGE KITCHENS (spacious layouts, >15m² floor area):
+  - 6-8 person dining table OR breakfast nook with seating
+  - Additional options: island with overhang seating + separate dining table
+  - Multiple seating zones for flexibility
+  
+- Choose seating style matching {{style_name}}:
+  * Modern/Contemporary: Sleek table with upholstered or wooden chairs
+  * Scandinavian: Light wood table with natural finish chairs
+  * Minimalist: Geometric dining set with clean lines
+  * Industrial: Metal frame table with upholstered seating
+  * Mediterranean: Warm wood table with woven or rattan chairs
+
+SEATING POSITIONING RULES:
+- Dining furniture MUST be visible and prominent in the final image
+- Position to avoid blocking work triangle (stove-sink-fridge)
+- Maintain traffic flow to/from kitchen entrance
+- Ensure adequate clearance (at least 90cm) around dining table for chair movement
+- If island exists: can include bar seating on kitchen side + dining table elsewhere
+- If breakfast nook: incorporate into overall kitchen layout naturally
+
+CRITICAL MUST-HAVE REQUIREMENT:
+- Final image MUST include dining/seating furniture as functional kitchen component
+- If seating is missing, the design is INCOMPLETE
+- Dining area appearance must match overall {{style_name}} design aesthetic
+- All seating must be proportional to actual room dimensions shown in original photo
+
+FUNCTIONAL CONSTRAINTS:
+- Heat-resistant and grease-resistant materials only
+- Easy-to-clean surfaces throughout
+- NO fabric elements on seating EXCEPT cushions on chairs/stools (if applicable)
+- NO large rugs or floor carpets
+- Practical, functional design with contemporary aesthetics
+- Professional, high-end kitchen showroom quality
+""",
+
+'toilet': """
+RESTROOM/POWDER ROOM SPECIFIC REQUIREMENTS:
+- Create elegant, compact bathroom space for quick use
+- PRESERVE wall tiles if they exist - maintain same tile coverage areas
+- ALL materials must appear waterproof and moisture-resistant
+- Minimal space requirements: typically just sink and toilet
+- Keep existing plumbing fixture positions (sink, toilet) - only update their style
+- Anti-slip flooring appearance is mandatory
+- Contemporary fixtures with clean lines appropriate for compact space
+- Excellent task lighting around mirror/sink area
+- Keep surfaces uncluttered and easy-to-clean
+- NO storage requirements beyond essential items
+- Professional, polished appearance for guest areas
+- Ceramic, porcelain, glass, and waterproof materials only
+""",
+
+    'living_room': """
+LIVING ROOM SPECIFIC REQUIREMENTS:
+- Design for social interaction and comfortable seating arrangements
+- Include focal point (TV area, fireplace, or feature wall) if present in original
+- Balance aesthetics with functionality for entertainment and relaxation
+- Ensure adequate seating scaled to actual room size
+- Include coffee table and side tables appropriately sized
+- Maintain traffic flow paths through the space
+- Lighting should support multiple activities (ambient + task lighting)
+""",
+
+    'bedroom': """
+BEDROOM SPECIFIC REQUIREMENTS:
+- Emphasize comfort, relaxation, and tranquil atmosphere
+- Soft textiles welcome: curtains, bedding, cushions (NO floor rugs)
+- Warm, cozy lighting scheme (bedside lamps, ambient lighting)
+- Calm, soothing color palette appropriate for rest
+- Include nightstands on both sides of bed if space allows
+- Ensure bed is appropriately sized for actual room dimensions
+- Consider storage solutions (wardrobe/closet) if present in original
+""",
+
+    'kids_room': """
+KIDS ROOM SPECIFIC REQUIREMENTS (SAFETY CRITICAL):
+- SAFETY FIRST: Furniture with rounded corners, no sharp edges visible
+- Non-toxic, child-safe materials appearance
+- Durable, easy-to-clean surfaces that can withstand active use
+- Bright, age-appropriate colors that stimulate creativity
+- Include ample storage solutions for toys, books, and clothes
+- Ensure furniture is sturdy and appears stable (no tippy pieces)
+- Consider growth: avoid overly juvenile themes if for older children
+- Safety features visible: corner guards, secure mounting for shelves
+""",
+
+    'home_office': """
+HOME OFFICE SPECIFIC REQUIREMENTS:
+- Design for focus, productivity, and professional appearance
+- Excellent lighting: natural light preservation + adequate task lighting over desk
+- Ergonomic desk and chair appropriately sized for space
+- Minimal visual distractions, professional color palette
+- Include adequate storage for books/files/supplies
+- Cable management solutions visible (desk grommets, cable trays)
+- Consider video call background if desk faces wall
+- Proper desk positioning relative to windows (avoid screen glare)
+""",
+
+    'balcony': """
+BALCONY/OUTDOOR SPACE SPECIFIC REQUIREMENTS (CRITICAL):
+- ALL furniture and materials must appear weather-resistant and UV-protected
+- Use ONLY outdoor-rated furniture suitable for exterior use
+- Outdoor textiles only: weather-resistant cushions, fade-resistant fabrics
+- Flooring must be exterior-grade (composite decking, outdoor tiles, existing material)
+- Include drainage considerations - avoid items that block water flow
+- Consider sun/shade requirements for plants and seating
+- NO indoor furniture, regular fabrics, or non-weatherproof materials
+- Ensure railing/barrier preservation exactly as in original
+""",
+
+    'dining_room': """
+DINING ROOM SPECIFIC REQUIREMENTS:
+- Create inviting atmosphere optimized for dining and conversation
+- Dining table sized appropriately for actual space (measure carefully)
+- Adequate seating for realistic number of people for room size
+- Lighting centered over dining table (chandelier or pendant)
+- Easy-to-clean flooring for food spills (preserve existing material)
+- Consider sideboard/buffet for storage if space allows
+- Ensure chairs can be pulled out without hitting walls
+- Maintain circulation space around table (minimum 90cm clearance)
+""",
+
+
+ 'walk_in_closet': """ 
+WALK-IN CLOSET SPECIFIC REQUIREMENTS:
+- Maximize storage with custom organization systems
+- Excellent zoned lighting for visibility in each area
+- Include full-length mirrors for outfit viewing
+- Proper ventilation to prevent odors and moisture
+- Durable materials for high-use areas
+- Efficient use of vertical space with shelving
+- Consider hanging rods, drawers, and shoe storage
+""",
+
+
+'studio': """
+STUDIO/OPEN PLAN APARTMENT SPECIFIC REQUIREMENTS (CRITICAL):
+- Maximize functionality in compact, multi-purpose space
+- Use ZONE-BASED DESIGN: clearly define sleeping, living, and kitchen areas through layout and styling
+- OPEN PLAN LAYOUT: maintain unobstructed sightlines and open flow between zones
+- NO physical walls or partitions - use furniture placement and color to define zones
+
+SLEEPING ZONE:
+- Bed appropriately sized for space (twin or full, not oversized)
+- Minimal nightstands or integrated wall shelving
+- Headboard or accent wall to define sleeping area
+- Consider privacy with sheer curtains or room dividers if needed
+
+LIVING/WORK ZONE:
+- Compact sofa or seating area scaled to actual space
+- Small coffee table or side table
+- TV area or work desk positioned to not dominate space
+- Adequate task and ambient lighting
+
+KITCHEN ZONE:
+- Kitchenette: compact, efficient layout
+- PRESERVE backsplash and countertop materials
+- Minimal, streamlined cabinetry to save visual space
+- Modern appliances appropriately sized (compact fridge, slim range)
+- Open shelving or glass-front cabinets for visual lightness
+
+STORAGE SOLUTIONS (HIGH PRIORITY):
+- Vertical storage utilizing walls and ceiling
+- Built-in shelving and compact cabinetry
+- Under-bed storage solutions
+- Wall-mounted units and storage
+- Minimize floor clutter for spacious appearance
+
+VISUAL CONTINUITY:
+- Consistent flooring throughout space (preserve existing material)
+- Cohesive color palette tying zones together
+- Unified lighting scheme with layered ambient + task lighting
+- Minimal visual separation creates sense of larger space
+- Furniture scaled to space to avoid overcrowding
+
+LIGHTING DESIGN:
+- Ambient ceiling lighting for overall space
+- Task lighting for kitchen and work areas
+- Accent lighting to define zones
+- Minimize dark corners to maximize perceived space
+
+CRITICAL CONSTRAINTS:
+- NO floor rugs or heavy carpeting - preserve flooring material
+- Furniture must be appropriately scaled for compact space
+- Open sight lines and clear pathways maintained
+- Multi-functional furniture where possible
+- Professional, contemporary studio living aesthetic
+- Clean, uncluttered appearance despite compact nature
+""",
+}
 
 # ========================================
 # 🎁 ПРОМПТ ДЛЯ ПРИМЕРКИ ДИЗАЙНА (SAMPLE DESIGN - TRY-ON)
@@ -68,39 +356,12 @@ You can't:
 
 APPLY_STYLE_PROMPT = (
      "You are a professional interior designer. "
-     "Completely transform the room in the first image to match the reference design shown in the second image. "
+     "Completely transform the room in the first image "
+     "to match the reference design shown in the second image. "
+     "Take a sample of the walls and copy them completely onto the walls of the first image."
+    
      
-     "WHAT TO CHANGE (transform everything):\n"
-     "- Replace ALL furniture with furniture matching the reference design\n"
-     "- Replace ALL decor, accessories, and decorative elements\n"
-     "- Apply the exact color scheme, materials, and textures from the reference\n"
-     "- Match the lighting, atmosphere, and mood of the reference design\n"
-     "- Adopt the same style aesthetic (modern, classic, minimalist, etc.) as the reference\n"
-     "- Recreate wall treatments, finishes, and surface materials from the reference\n"
-     "- Match flooring style and material to the reference design\n"
-     "- Apply the same window treatments (curtains, blinds, etc.)\n"
-     "- Recreate ceiling design and lighting fixtures from the reference\n"
-     "- Include similar plants, artwork, and decorative accents\n"
-     
-     "WHAT TO PRESERVE (keep EXACTLY from original - DO NOT CHANGE):\n"
-     "- MUST maintain the exact room dimensions and floor area\n"
-     "- MUST keep the same room geometry and wall layout EXACTLY\n"
-     "- MUST preserve the exact positions of doors and windows - DO NOT MOVE THEM\n"
-     "- MUST maintain the overall room proportions and spatial configuration - NO CHANGES ALLOWED\n"
-     "- MUST NOT enlarge or decrease the room size\n"
-     "- MUST NOT change the room's height or width\n"
-     "- MUST NOT remove or add walls\n"
-     "- MUST NOT distort or warp the room's original geometry\n"
-     "- Adapt furniture scale and placement to fit the current room size EXACTLY\n"
-     
-     "STRICT RULES (CRITICAL - DO NOT BREAK):\n"
-     "- The room's basic structure CANNOT be changed\n"
-     "- Window and door positions are FIXED and IMMUTABLE\n"
-     "- Room dimensions are SACRED - maintain them precisely\n"
-     "- Only furniture arrangement and styling can change\n"
-     "- Preserve the exact aspect ratio and proportions of the original room\n"
-     
-    "GOAL: Create an ultra-photorealistic design for a glossy design magazine that will look exactly as if the reference style was applied to THAT SPECIFIC ROOM, while maintaining the exact dimensions, geometry and structure of the room."
+
  )
 
 # ========================================
@@ -159,6 +420,19 @@ APPLY_FACADE_STYLE_PROMPT = (
     "GOAL: Create an ultra-photorealistic architectural design for a glossy architecture magazine that will look exactly as if the reference facade style was applied to THAT SPECIFIC BUILDING, while maintaining the exact dimensions, geometry, window/door layout, and structural integrity of the original house."
 )
 
+#======================================================
+# ПРЕФИКС ДЛЯ ТЕКСТОВОГО РЕДАКТОРА
+#======================================================
+TEXT_EDITOR_PROMPT_PREFIX = """Photorealistic edit preserving ALL existing elements in the image. 
+Match the EXACT style, colors, materials, and lighting already present in this photo. 
+Change ONLY what is specified in the following instruction, keep everything else identical. 
+Maintain architectural structure, proportions, and perspective. 
+Seamlessly blend the edit with existing design. 
+High-end interior design magazine quality, 8K resolution, sharp focus, realistic textures.
+
+Follow this instruction: """
+
+
 # ========================================
 # ПРОМПТ ДЛЯ ОЧИСТКИ ПРОСТРАНСТВА
 # ========================================
@@ -201,12 +475,16 @@ async def build_design_prompt(style: str, room: str, translate: bool = True) -> 
     try:
         style_desc = get_style_description(style)
         room_name = get_room_name(room)
-        furniture_block = build_furniture_block(room, style)  # ← НОВОЕ!
+        furniture_block = build_furniture_block(room, style)
+        style_name = get_style_name(style)
+        room_specific = ROOM_SPECIFIC_REQUIREMENTS.get(room, '')
 
         final_prompt = CUSTOM_PROMPT_TEMPLATE.format(
             room_name=room_name,
             furniture_block=furniture_block,  # ← НОВОЕ!
-            style_description=style_desc
+            style_description=style_desc,
+            style_name = style_name,
+            ROOM_SPECIFIC_REQUIREMENTS=room_specific
         )
         
         # [2025-12-23] НОВОЕ: Перевод на английский
@@ -359,11 +637,9 @@ def build_design_prompt_sync(style: str, room: str) -> str:
         raise
 
 
+
+# Синхронная версия build_clear_space_prompt БЕЗ перевода (для обратной совместимости).
+# Returns: Промпт БЕЗ перевода
+
 def build_clear_space_prompt_sync() -> str:
-    """
-    Синхронная версия build_clear_space_prompt БЕЗ перевода (для обратной совместимости).
-    
-    Returns:
-        Промпт БЕЗ перевода
-    """
     return CLEAR_SPACE_PROMPT
