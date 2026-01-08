@@ -1,4 +1,5 @@
 # bot/database/db.py
+# --- ОБНОВЛЕНО: 2026-01-09 01:09 - CRITICAL FIX: Удалены вложенные функции из init_db, исправлен lifecycle пула ---
 # --- ОБНОВЛЕНО: 2026-01-03 18:56 - CLEAN: Убрано все миграции, таблица со всеми полями авто с начала ---
 # --- ОБНОВЛЕНО: 2026-01-03 17:51 - КРИТИЧНО: Добавлены методы save_sample_photo и get_user_photos ---
 # --- ОБНОВЛЕНО: 2026-01-02 22:42 - НОВОЕ: edit_old_menu_if_exists() - редактирование вместо удаления ---
@@ -59,35 +60,57 @@ from database.models import (
 
 logger = logging.getLogger(__name__)
 
-
 class Database:
     def __init__(self, db_path: str = "bot.db"):
         self.db_path = db_path
+        self.pool = None
+
+    async def init_pool(self) -> None:
+        """🔧 Инициализация пула (1 соединение на весь бот)"""
+        if self.pool is None:
+            self.pool = await aiosqlite.connect(self.db_path)
+            await self.pool.execute("PRAGMA journal_mode=WAL")
+            await self.pool.execute("PRAGMA busy_timeout=5000")
+            await self.pool.commit()
+            logger.info("✅ Пул соединений создан")
+
+    async def close_pool(self) -> None:
+        """🔧 Закрытие пула при выключении бота"""
+        if self.pool:
+            await self.pool.close()
+            self.pool = None
+            logger.info("✅ Пул соединений закрыт")
+
+    async def _get_db(self) -> aiosqlite.Connection:
+        """🔧 Получить соединение (не закрывать его!)"""
+        if self.pool is None:
+            await self.init_pool()
+        return self.pool
 
     async def init_db(self):
         """Инициализация таблиц БД"""
-        async with aiosqlite.connect(self.db_path) as db:
-            # Создаем все таблицы
-            await db.execute(CREATE_USERS_TABLE)
-            await db.execute(CREATE_PAYMENTS_TABLE)
-            await db.execute(CREATE_GENERATIONS_TABLE)
-            await db.execute(CREATE_USER_ACTIVITY_TABLE)
-            await db.execute(CREATE_ADMIN_NOTIFICATIONS_TABLE)
-            await db.execute(CREATE_USER_SOURCES_TABLE)
-            await db.execute(CREATE_CHAT_MENUS_TABLE)
-            await db.execute(CREATE_USER_PHOTOS_TABLE)  # Тут уже со всеми полями!
-            await db.execute(CREATE_USER_SESSION_MODES_TABLE)
-            await db.execute(CREATE_REFERRAL_EARNINGS_TABLE)
-            await db.execute(CREATE_REFERRAL_EXCHANGES_TABLE)
-            await db.execute(CREATE_REFERRAL_PAYOUTS_TABLE)
-            await db.execute(CREATE_SETTINGS_TABLE)
+        db = await self._get_db()
+        # Создаем все таблицы
+        await db.execute(CREATE_USERS_TABLE)
+        await db.execute(CREATE_PAYMENTS_TABLE)
+        await db.execute(CREATE_GENERATIONS_TABLE)
+        await db.execute(CREATE_USER_ACTIVITY_TABLE)
+        await db.execute(CREATE_ADMIN_NOTIFICATIONS_TABLE)
+        await db.execute(CREATE_USER_SOURCES_TABLE)
+        await db.execute(CREATE_CHAT_MENUS_TABLE)
+        await db.execute(CREATE_USER_PHOTOS_TABLE)  # Тут уже со всеми полями!
+        await db.execute(CREATE_USER_SESSION_MODES_TABLE)
+        await db.execute(CREATE_REFERRAL_EARNINGS_TABLE)
+        await db.execute(CREATE_REFERRAL_EXCHANGES_TABLE)
+        await db.execute(CREATE_REFERRAL_PAYOUTS_TABLE)
+        await db.execute(CREATE_SETTINGS_TABLE)
 
-            # Инициализируем дефолтные настройки
-            for key, value in DEFAULT_SETTINGS.items():
-                await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        # Инициализируем дефолтные настройки
+        for key, value in DEFAULT_SETTINGS.items():
+            await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
 
-            await db.commit()
-            logger.info("✅ База данных инициализирована")
+        await db.commit()
+        logger.info("✅ База данных инициализирована")
 
     # ===== 🔧 НОВОЕ: МЕТОДЫ ДЛЯ ФОТО (2026-01-03) =====
 
@@ -104,15 +127,15 @@ class Database:
         Возвращает:
         - True если успешно сохранено, False при ошибке
         """
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(SAVE_USER_PHOTO, (user_id, photo_id))
-                await db.commit()
-                logger.info(f"📷 ОСНОВНОЕ фото сохранено для user_id={user_id}")
-                return True
-            except Exception as e:
-                logger.error(f"❌ Ошибка save_main_photo: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(SAVE_USER_PHOTO, (user_id, photo_id))
+            await db.commit()
+            logger.info(f"📷 ОСНОВНОЕ фото сохранено для user_id={user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка save_main_photo: {e}")
+            return False
 
     async def save_sample_photo(self, user_id: int, photo_id: str) -> bool:
         """
@@ -127,15 +150,15 @@ class Database:
         Возвращает:
         - True если успешно сохранено, False при ошибке
         """
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(SAVE_SAMPLE_PHOTO, (user_id, photo_id))
-                await db.commit()
-                logger.info(f"🎨 ОБРАЗЕЦ фото сохранен для user_id={user_id}")
-                return True
-            except Exception as e:
-                logger.error(f"❌ Ошибка save_sample_photo: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(SAVE_SAMPLE_PHOTO, (user_id, photo_id))
+            await db.commit()
+            logger.info(f"🎨 ОБРАЗЕЦ фото сохранен для user_id={user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка save_sample_photo: {e}")
+            return False
 
     async def get_user_photos(self, user_id: int) -> Dict[str, Optional[str]]:
         """
@@ -147,100 +170,100 @@ class Database:
             'sample_photo_id': 'file_id или None'
         }
         """
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                async with db.execute(GET_USER_PHOTOS, (user_id,)) as cursor:
-                    row = await cursor.fetchone()
-                    if row:
-                        return {
-                            'main_photo_id': row[0],
-                            'sample_photo_id': row[1]
-                        }
-
+        db = await self._get_db()
+        try:
+            async with db.execute(GET_USER_PHOTOS, (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return {
+                        'main_photo_id': row[0],
+                        'sample_photo_id': row[1]
+                    }
+                else:
                     logger.debug(f"⚠️ Фото не найдены для user_id={user_id}")
                     return {
                         'main_photo_id': None,
                         'sample_photo_id': None
                     }
-            except Exception as e:
-                logger.error(f"❌ Ошибка get_user_photos: {e}")
-                return {
-                    'main_photo_id': None,
-                    'sample_photo_id': None
-                }
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_user_photos: {e}")
+            return {
+                'main_photo_id': None,
+                'sample_photo_id': None
+            }
 
     async def save_user_photo(self, user_id: int, photo_id: str) -> bool:
         """📄 Сохранить фото (скомонат для обратной совместимости)"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(SAVE_USER_PHOTO, (user_id, photo_id))
-                await db.commit()
-                logger.info(f"📄 Фото сохранена для user_id={user_id}")
-                return True
-            except Exception as e:
-                logger.error(f"❌ Ошибка save_user_photo: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(SAVE_USER_PHOTO, (user_id, photo_id))
+            await db.commit()
+            logger.info(f"📄 Фото сохранена для user_id={user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка save_user_photo: {e}")
+            return False
 
     async def get_last_user_photo(self, user_id: int) -> Optional[str]:
         """📄 Получить последнюю фото (скомонат для обратной совместимости)"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                async with db.execute(GET_LAST_USER_PHOTO, (user_id,)) as cursor:
-                    row = await cursor.fetchone()
-                    if row:
-                        photo_id = row[0]
-                        logger.info(f"✅ Найдена фото для user_id={user_id}")
-                        return photo_id
-
+        db = await self._get_db()
+        try:
+            async with db.execute(GET_LAST_USER_PHOTO, (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    photo_id = row[0]
+                    logger.info(f"✅ Найдена фото для user_id={user_id}")
+                    return photo_id
+                else:
                     logger.debug(f"⚠️ Фото не найдена для user_id={user_id}")
                     return None
-            except Exception as e:
-                logger.error(f"❌ Ошибка get_last_user_photo: {e}")
-                return None
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_last_user_photo: {e}")
+            return None
 
     # ===== PRO MODE FUNCTIONS =====
 
     async def get_user_pro_settings(self, user_id: int) -> Dict[str, Any]:
         """Получить все параметры PRO режима пользователя"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                db.row_factory = aiosqlite.Row
-                async with db.execute(GET_USER_PRO_SETTINGS, (user_id,)) as cursor:
-                    row = await cursor.fetchone()
-                    if row:
-                        return {
-                            'pro_mode': bool(row['pro_mode']),
-                            'pro_aspect_ratio': row['pro_aspect_ratio'],
-                            'pro_resolution': row['pro_resolution'],
-                            'pro_mode_changed_at': row['pro_mode_changed_at']
-                        }
+        db = await self._get_db()
+        try:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(GET_USER_PRO_SETTINGS, (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
                     return {
-                        'pro_mode': False,
-                        'pro_aspect_ratio': '16:9',
-                        'pro_resolution': '1K',
-                        'pro_mode_changed_at': None
+                        'pro_mode': bool(row['pro_mode']),
+                        'pro_aspect_ratio': row['pro_aspect_ratio'],
+                        'pro_resolution': row['pro_resolution'],
+                        'pro_mode_changed_at': row['pro_mode_changed_at']
                     }
-            except Exception as e:
-                logger.error(f"❌ Ошибка get_user_pro_settings: {e}")
                 return {
                     'pro_mode': False,
                     'pro_aspect_ratio': '16:9',
                     'pro_resolution': '1K',
                     'pro_mode_changed_at': None
                 }
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_user_pro_settings: {e}")
+            return {
+                'pro_mode': False,
+                'pro_aspect_ratio': '16:9',
+                'pro_resolution': '1K',
+                'pro_mode_changed_at': None
+            }
 
     async def set_user_pro_mode(self, user_id: int, mode: bool) -> bool:
         """Установить режим (True = PRO, False = СТАНДАРТ)"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(SET_USER_PRO_MODE, (1 if mode else 0, user_id))
-                await db.commit()
-                mode_name = "PRO 🔧" if mode else "СТАНДАРТ 📋"
-                logger.info(f"✅ Режим изменён на {mode_name} для user_id={user_id}")
-                return True
-            except Exception as e:
-                logger.error(f"❌ Ошибка set_user_pro_mode: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(SET_USER_PRO_MODE, (1 if mode else 0, user_id))
+            await db.commit()
+            mode_name = "PRO 🔧" if mode else "СТАНДАРТ 📋"
+            logger.info(f"✅ Режим изменён на {mode_name} для user_id={user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка set_user_pro_mode: {e}")
+            return False
 
     async def set_pro_aspect_ratio(self, user_id: int, ratio: str) -> bool:
         """Установить соотношение сторон для PRO режима"""
@@ -249,15 +272,15 @@ class Database:
             logger.warning(f"❌ Неверное соотношение: {ratio}")
             return False
 
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(SET_PRO_ASPECT_RATIO, (ratio, user_id))
-                await db.commit()
-                logger.info(f"✅ Соотношение {ratio}")
-                return True
-            except Exception as e:
-                logger.error(f"❌ Ошибка set_pro_aspect_ratio: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(SET_PRO_ASPECT_RATIO, (ratio, user_id))
+            await db.commit()
+            logger.info(f"✅ Соотношение {ratio}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка set_pro_aspect_ratio: {e}")
+            return False
 
     async def set_pro_resolution(self, user_id: int, resolution: str) -> bool:
         """Установить разрешение для PRO режима"""
@@ -266,53 +289,53 @@ class Database:
             logger.warning(f"❌ Неверное разрешение: {resolution}")
             return False
 
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(SET_PRO_RESOLUTION, (resolution, user_id))
-                await db.commit()
-                logger.info(f"✅ Разрешение {resolution}")
-                return True
-            except Exception as e:
-                logger.error(f"❌ Ошибка set_pro_resolution: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(SET_PRO_RESOLUTION, (resolution, user_id))
+            await db.commit()
+            logger.info(f"✅ Разрешение {resolution}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка set_pro_resolution: {e}")
+            return False
 
     # ===== CHAT MENUS =====
 
     async def save_chat_menu(self, chat_id: int, user_id: int, menu_message_id: int,
                              screen_code: str = 'main_menu') -> bool:
         """Сохранить/обновить menu"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(SAVE_CHAT_MENU,
-                                 (chat_id, user_id, menu_message_id, screen_code))
-                await db.commit()
-                logger.debug(f"📃 Saved menu: chat={chat_id}, msgid={menu_message_id}")
-                return True
-            except Exception as e:
-                logger.error(f"❌ Ошибка save_chat_menu: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(SAVE_CHAT_MENU,
+                             (chat_id, user_id, menu_message_id, screen_code))
+            await db.commit()
+            logger.debug(f"📃 Saved menu: chat={chat_id}, msgid={menu_message_id}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка save_chat_menu: {e}")
+            return False
 
     async def get_chat_menu(self, chat_id: int) -> Optional[Dict[str, Any]]:
         """Получить данные меню"""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(GET_CHAT_MENU, (chat_id,)) as cursor:
-                row = await cursor.fetchone()
-                if row:
-                    return dict(row)
-                return None
+        db = await self._get_db()
+        db.row_factory = aiosqlite.Row
+        async with db.execute(GET_CHAT_MENU, (chat_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
 
     async def delete_chat_menu(self, chat_id: int) -> bool:
         """Удалить запись о меню"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(DELETE_CHAT_MENU, (chat_id,))
-                await db.commit()
-                logger.debug(f"🗑️ Deleted menu")
-                return True
-            except Exception as e:
-                logger.error(f"❌ Ошибка delete_chat_menu: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(DELETE_CHAT_MENU, (chat_id,))
+            await db.commit()
+            logger.debug(f"🗑️ Deleted menu")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка delete_chat_menu: {e}")
+            return False
 
     async def edit_old_menu_if_exists(self, chat_id: int, user_id: int, new_text: str, new_keyboard, bot) -> Optional[
         int]:
@@ -359,26 +382,26 @@ class Database:
     # ===== ПОЛЬЗОВАТЕЛИ =====
 
     async def create_user(self, user_id: int, username: str = None, referrer_code: str = None) -> bool:
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                async with db.execute(GET_USER, (user_id,)) as cursor:
-                    existing = await cursor.fetchone()
-                    if existing:
-                        return False
+        db = await self._get_db()
+        try:
+            async with db.execute(GET_USER, (user_id,)) as cursor:
+                existing = await cursor.fetchone()
+                if existing:
+                    return False
 
-                ref_code = secrets.token_urlsafe(8)
-                initial_balance = int(await self.get_setting('welcome_bonus') or '3')
-                await db.execute(CREATE_USER, (user_id, username, initial_balance, ref_code))
+            ref_code = secrets.token_urlsafe(8)
+            initial_balance = int(await self.get_setting('welcome_bonus') or '3')
+            await db.execute(CREATE_USER, (user_id, username, initial_balance, ref_code))
 
-                if referrer_code:
-                    await self._process_referral(db, user_id, referrer_code)
+            if referrer_code:
+                await self._process_referral(db, user_id, referrer_code)
 
-                await db.commit()
-                logger.info(f"Пользователь {user_id} создан")
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка: {e}")
-                return False
+            await db.commit()
+            logger.info(f"Пользователь {user_id} создан")
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+            return False
 
     async def _process_referral(self, db: aiosqlite.Connection, user_id: int, referrer_code: str):
         try:
@@ -401,91 +424,91 @@ class Database:
             logger.error(f"Ошибка: {e}")
 
     async def get_user_data(self, user_id: int) -> Optional[Dict[str, Any]]:
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(GET_USER, (user_id,)) as cursor:
-                row = await cursor.fetchone()
-                if row:
-                    return dict(row)
-                return None
+        db = await self._get_db()
+        db.row_factory = aiosqlite.Row
+        async with db.execute(GET_USER, (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
 
     async def get_balance(self, user_id: int) -> int:
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(GET_BALANCE, (user_id,)) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
+        db = await self._get_db()
+        async with db.execute(GET_BALANCE, (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
     async def decrease_balance(self, user_id: int) -> bool:
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(DECREASE_BALANCE, (user_id,))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(DECREASE_BALANCE, (user_id,))
+            await db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+            return False
 
     async def increase_balance(self, user_id: int, tokens: int) -> bool:
         """Увеличить баланс на N токенов"""
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(UPDATE_BALANCE, (tokens, user_id))
-                await db.commit()
-                logger.info(f"✅ Возвращено {tokens}")
-                return True
-            except Exception as e:
-                logger.error(f"❌ Ошибка: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(UPDATE_BALANCE, (tokens, user_id))
+            await db.commit()
+            logger.info(f"✅ Возвращено {tokens}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка: {e}")
+            return False
 
     async def add_tokens(self, user_id: int, tokens: int) -> bool:
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(UPDATE_BALANCE, (tokens, user_id))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(UPDATE_BALANCE, (tokens, user_id))
+            await db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+            return False
 
     # ===== ПЛАТЕЖИ =====
 
     async def create_payment(self, payment_id: str, user_id: int, amount: int, tokens: int) -> bool:
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(CREATE_PAYMENT, (user_id, payment_id, amount, tokens, 'pending'))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(CREATE_PAYMENT, (user_id, payment_id, amount, tokens, 'pending'))
+            await db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+            return False
 
     async def update_payment_status(self, payment_id: str, status: str) -> bool:
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(UPDATE_PAYMENT_STATUS, (status, payment_id))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(UPDATE_PAYMENT_STATUS, (status, payment_id))
+            await db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+            return False
 
     async def get_payment(self, payment_id: str) -> Optional[Dict[str, Any]]:
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM payments WHERE yookassa_payment_id = ?", (payment_id,)) as cursor:
-                row = await cursor.fetchone()
-                if row:
-                    return dict(row)
-                return None
+        db = await self._get_db()
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM payments WHERE yookassa_payment_id = ?", (payment_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
 
     async def get_last_pending_payment(self, user_id: int) -> Optional[Dict[str, Any]]:
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(GET_PENDING_PAYMENT, (user_id,)) as cursor:
-                row = await cursor.fetchone()
-                if row:
-                    return dict(row)
-                return None
+        db = await self._get_db()
+        db.row_factory = aiosqlite.Row
+        async with db.execute(GET_PENDING_PAYMENT, (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
 
     async def set_payment_success(self, payment_id: str) -> bool:
         return await self.update_payment_status(payment_id, 'succeeded')
@@ -494,133 +517,134 @@ class Database:
 
     async def log_generation(self, user_id: int, room_type: str, style_type: str,
                              operation_type: str = 'design', success: bool = True) -> bool:
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(CREATE_GENERATION, (user_id, room_type, style_type, operation_type, success))
-                await db.execute(INCREMENT_TOTAL_GENERATIONS, (user_id,))
-                await db.execute(UPDATE_LAST_ACTIVITY, (user_id,))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(CREATE_GENERATION, (user_id, room_type, style_type, operation_type, success))
+            await db.execute(INCREMENT_TOTAL_GENERATIONS, (user_id,))
+            await db.execute(UPDATE_LAST_ACTIVITY, (user_id,))
+            await db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+            return False
 
     async def get_total_generations(self) -> int:
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute("SELECT COUNT(*) FROM generations") as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
+        db = await self._get_db()
+        async with db.execute("SELECT COUNT(*) FROM generations") as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
     async def get_generations_count(self, days: int = 1) -> int:
         date_threshold = datetime.now() - timedelta(days=days)
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                    "SELECT COUNT(*) FROM generations WHERE created_at >= ?",
-                    (date_threshold.isoformat(),)
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
+        db = await self._get_db()
+        async with db.execute(
+                "SELECT COUNT(*) FROM generations WHERE created_at >= ?",
+                (date_threshold.isoformat(),)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
     async def get_failed_generations_count(self, days: int = 1) -> int:
         date_threshold = datetime.now() - timedelta(days=days)
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                    "SELECT COUNT(*) FROM generations WHERE success = 0 AND created_at >= ?",
-                    (date_threshold.isoformat(),)
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
+        db = await self._get_db()
+        async with db.execute(
+                "SELECT COUNT(*) FROM generations WHERE success = 0 AND created_at >= ?",
+                (date_threshold.isoformat(),)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
     async def get_conversion_rate(self) -> float:
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                    "SELECT AVG(total_generations) FROM users WHERE total_generations > 0"
-            ) as cursor:
-                row = await cursor.fetchone()
-                return round(row[0], 2) if row and row[0] else 0.0
+        db = await self._get_db()
+        async with db.execute(
+                "SELECT AVG(total_generations) FROM users WHERE total_generations > 0"
+        ) as cursor:
+            row = await cursor.fetchone()
+            return round(row[0], 2) if row and row[0] else 0.0
 
     async def get_popular_rooms(self, limit: int = 10) -> List[Dict[str, Any]]:
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                    "SELECT room_type, COUNT(*) as count FROM generations GROUP BY room_type ORDER BY count DESC LIMIT ?",
-                    (limit,)
-            ) as cursor:
-                rows = await cursor.fetchall()
-                return [{'room_type': row[0], 'count': row[1]} for row in rows]
+        db = await self._get_db()
+        async with db.execute(
+                "SELECT room_type, COUNT(*) as count FROM generations GROUP BY room_type ORDER BY count DESC LIMIT ?",
+                (limit,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [{'room_type': row[0], 'count': row[1]} for row in rows]
 
     async def get_popular_styles(self, limit: int = 10) -> List[Dict[str, Any]]:
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                    "SELECT style_type, COUNT(*) as count FROM generations GROUP BY style_type ORDER BY count DESC LIMIT ?",
-                    (limit,)
-            ) as cursor:
-                rows = await cursor.fetchall()
-                return [{'style_type': row[0], 'count': row[1]} for row in rows]
+        db = await self._get_db()
+        async with db.execute(
+                "SELECT style_type, COUNT(*) as count FROM generations GROUP BY style_type ORDER BY count DESC LIMIT ?",
+                (limit,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [{'style_type': row[0], 'count': row[1]} for row in rows]
 
     # ===== АКТИВНОСТЬ =====
 
     async def log_activity(self, user_id: int, action_type: str) -> bool:
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(LOG_USER_ACTIVITY, (user_id, action_type))
-                await db.execute(UPDATE_LAST_ACTIVITY, (user_id,))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(LOG_USER_ACTIVITY, (user_id, action_type))
+            await db.execute(UPDATE_LAST_ACTIVITY, (user_id,))
+            await db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+            return False
 
     async def get_active_users_count(self, days: int = 1) -> int:
         date_threshold = datetime.now() - timedelta(days=days)
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                    "SELECT COUNT(DISTINCT user_id) FROM user_activity WHERE created_at >= ?",
-                    (date_threshold.isoformat(),)
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
+        db = await self._get_db()
+        async with db.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM user_activity WHERE created_at >= ?",
+                (date_threshold.isoformat(),)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
     # ===== ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ =====
 
     async def get_total_users_count(self) -> int:
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute("SELECT COUNT(*) FROM users") as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
+        db = await self._get_db()
+        async with db.execute("SELECT COUNT(*) FROM users") as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
     async def get_setting(self, key: str) -> Optional[str]:
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(GET_SETTING, (key,)) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else None
+        db = await self._get_db()
+        async with db.execute(GET_SETTING, (key,)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
 
     async def set_setting(self, key: str, value: str) -> bool:
-        async with aiosqlite.connect(self.db_path) as db:
-            try:
-                await db.execute(SET_SETTING, (key, value))
-                await db.commit()
-                return True
-            except Exception as e:
-                logger.error(f"Ошибка: {e}")
-                return False
+        db = await self._get_db()
+        try:
+            await db.execute(SET_SETTING, (key, value))
+            await db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
+            return False
 
     async def get_all_settings(self) -> Dict[str, str]:
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(GET_ALL_SETTINGS) as cursor:
-                rows = await cursor.fetchall()
-                return {row['key']: row['value'] for row in rows}
+        db = await self._get_db()
+        db.row_factory = aiosqlite.Row
+        async with db.execute(GET_ALL_SETTINGS) as cursor:
+            rows = await cursor.fetchall()
+            return {row['key']: row['value'] for row in rows}
+
 
 # 💰 Получить общую выручку из успешных платежей
 #===============================================
     async def get_total_revenue(self) -> int:
 
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                    "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'succeeded'"
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
+        db = await self._get_db()
+        async with db.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'succeeded'"
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
 
 # Количество новых пользователей за последние N дней
@@ -629,25 +653,25 @@ class Database:
         """👥 Количество новых пользователей за последние N дней"""
         from datetime import datetime, timedelta
         date_threshold = datetime.now() - timedelta(days=days)
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                    "SELECT COUNT(*) FROM users WHERE created_at >= ?",
-                    (date_threshold.isoformat(),)
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
+        db = await self._get_db()
+        async with db.execute(
+                "SELECT COUNT(*) FROM users WHERE created_at >= ?",
+                (date_threshold.isoformat(),)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
 
 #Количество успешных платежей
 #===============================
     async def get_successful_payments_count(self) -> int:
         """💳 Количество успешных платежей"""
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                    "SELECT COUNT(*) FROM payments WHERE status = 'succeeded'"
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
+        db = await self._get_db()
+        async with db.execute(
+                "SELECT COUNT(*) FROM payments WHERE status = 'succeeded'"
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
 
 # Объект
