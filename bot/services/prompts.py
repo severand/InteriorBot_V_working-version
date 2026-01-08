@@ -11,6 +11,7 @@
 # [2026-01-05 13:32] 🏗️ OPTIMIZE: Replace APPLY_FACADE_STYLE_PROMPT with V3 (MINIMAL_CLEAR)
 # [2026-01-05 13:40] 🏗️ FALLBACK: Replace V3 (MINIMAL_CLEAR) with V1 (CONSTRAINT-BASED)
 # [2026-01-05 14:05] 🔴 V0: ULTRA-MINIMAL - only geometry, everything else optional
+# [2026-01-05 17:25] 🏗️ V1-STRICT: Ultra-detailed architectural prompt matching room style
 # ========================================
 
 import logging
@@ -114,36 +115,66 @@ APPLY_STYLE_PROMPT = (
  )
 
 # ========================================
-# 🏠 ПРОМПТ ДЛЯ ДИЗАЙНА ФАСАДОВ (VERSION 0 - ULTRA-MINIMAL)
+# 🏠 ПРОМПТ ДЛЯ ДИЗАЙНА ФАСАДОВ (VERSION 1-STRICT - ULTRA-DETAILED)
 # ========================================
 # [2026-01-05 12:10] НОВОЕ: Для функции apply_facade_style_to_house()
 # [2026-01-05 13:40] FALLBACK: Переписан на V1 (CONSTRAINT-BASED) - не сработало
-# [2026-01-05 14:05] 🔴 EMERGENCY: Упрощен до АБСОЛЮТНОГО МИНИМУМА (V0)
-# Описание: ТОЛЬКО сохранение геометрии дома (100% приоритет) + опциональные цвета/стили (20%)
+# [2026-01-05 14:05] 🔴 EMERGENCY: Упрощен до АБСОЛЮТНОГО МИНИМУМА (V0) - тоже не сработало
+# [2026-01-05 17:25] 🏗️ V1-STRICT: Полная переработка - детальный архитектурный промпт как для комнат
+# Описание: МАКСИМАЛЬНО ДЕТАЛЬНЫЙ промпт с жесткими архитектурными constraints
 # Используется в: SCREEN 17 - Кнопка "🎨 Применить фасад"
 # Вход: основное фото фасада + образец дизайна фасада
-# Выход: фасад с СОХРАНЕННОЙ геометрией + применены стили если возможно
-# ПОДХОД: Максимальное упрощение - если это не сработает, то проблема в API, не в промпте
-# ЦЕЛЕВОЙ РЕЗУЛЬТАТ: Геометрия 100% сохранена, цвета/стили - bonus
-# Размер: 297 символов (vs 3200+ в V1)
+# Выход: фасад с ПОЛНОЙ трансформацией по образцу + СТРОГОЕ сохранение структуры
+# ПОДХОД: Аналогично APPLY_STYLE_PROMPT но для архитектуры
+# ЦЕЛЕВОЙ РЕЗУЛЬТАТ: Копия образца на структуре оригинала
+# Размер: ~2000+ символов (детальный, как для комнат)
 
 APPLY_FACADE_STYLE_PROMPT = (
-    "Transform the house facade to match the reference design.\n\n"
+    "You are a professional architect and facade designer. "
+    "Completely transform the house facade in the first image to match the reference design shown in the second image. "
     
-    "CRITICAL (DO NOT BREAK - 100% PRIORITY):\n"
-    "- Keep exact house shape and structure\n"
-    "- Keep exact roof shape and angle\n"
-    "- Keep exact window positions and sizes\n"
-    "- Keep exact door positions and sizes\n"
-    "- Keep exact building height, width, proportions\n"
-    "- Do NOT add or remove any parts of the house\n\n"
+    "WHAT TO CHANGE (transform everything):\n"
+    "- Replace ALL facade materials (brick, stone, stucco, siding, panels, etc.) with materials from the reference\n"
+    "- Replace ALL window frames, styles, and treatments to match the reference design\n"
+    "- Replace ALL door designs, styles, and materials to match the reference\n"
+    "- Apply the exact color scheme, textures, and material finishes from the reference facade\n"
+    "- Match the architectural style (modern, classic, contemporary, traditional, etc.) from the reference\n"
+    "- Recreate all decorative elements: cornices, moldings, trim, shutters, columns from the reference\n"
+    "- Apply the same roof style, material, and color from the reference design\n"
+    "- Match balcony railings, terraces, and external architectural features\n"
+    "- Recreate landscaping elements visible on the facade (plants, lighting, etc.)\n"
+    "- Apply the same lighting fixtures, house numbers, and exterior accessories\n"
+    "- Match the foundation finish and base treatment from the reference\n"
     
-    "OPTIONAL (Can do if possible):\n"
-    "- Apply colors from reference\n"
-    "- Apply materials from reference\n"
-    "- Apply decorative style from reference\n\n"
+    "WHAT TO PRESERVE (keep EXACTLY from original - DO NOT CHANGE):\n"
+    "- MUST maintain the exact building dimensions - width, height, and depth\n"
+    "- MUST keep the same building geometry and wall layout EXACTLY\n"
+    "- MUST preserve the exact NUMBER of windows - DO NOT ADD OR REMOVE WINDOWS\n"
+    "- MUST preserve the exact POSITIONS of all windows - DO NOT MOVE THEM\n"
+    "- MUST preserve the exact SIZE and PROPORTIONS of each window - DO NOT RESIZE\n"
+    "- MUST preserve the exact NUMBER of doors - DO NOT ADD OR REMOVE DOORS\n"
+    "- MUST preserve the exact POSITIONS of all doors - DO NOT MOVE THEM\n"
+    "- MUST preserve the exact SIZE of each door - DO NOT RESIZE\n"
+    "- MUST maintain the overall building proportions and architectural structure - NO CHANGES ALLOWED\n"
+    "- MUST NOT enlarge or decrease the building footprint or height\n"
+    "- MUST NOT change the roof angle, pitch, or structural shape\n"
+    "- MUST NOT remove or add walls, corners, or architectural protrusions\n"
+    "- MUST NOT distort or warp the building's original geometry\n"
+    "- MUST keep the exact number of floors/stories\n"
+    "- MUST preserve any balconies, terraces, or bay windows in their EXACT positions\n"
+    "- Adapt decorative elements scale to fit the current building size EXACTLY\n"
     
-    "Create photorealistic result."
+    "STRICT RULES (CRITICAL - DO NOT BREAK):\n"
+    "- The building's structural geometry CANNOT be changed\n"
+    "- Window and door positions, quantities, and sizes are FIXED and IMMUTABLE\n"
+    "- Building dimensions and proportions are SACRED - maintain them precisely\n"
+    "- Only facade materials, colors, and decorative styling can change\n"
+    "- Preserve the exact aspect ratio and proportions of the original building\n"
+    "- The number of architectural elements (windows, doors, floors) MUST stay the same\n"
+    "- DO NOT generate half of the building or cut off parts\n"
+    "- DO NOT create a completely new building - transform the existing one\n"
+    
+    "GOAL: Create an ultra-photorealistic architectural design for a glossy architecture magazine that will look exactly as if the reference facade style was applied to THAT SPECIFIC BUILDING, while maintaining the exact dimensions, geometry, window/door layout, and structural integrity of the original house."
 )
 
 # ========================================
@@ -251,33 +282,31 @@ async def build_apply_style_prompt(translate: bool = True) -> str:
 async def build_apply_facade_style_prompt(translate: bool = True) -> str:
     """
     🏠 [2026-01-05 12:10] НОВОЕ: Собирает промпт для примерки фасада (Facade Try-On)
-    🔴 [2026-01-05 14:05] EMERGENCY: Упрощен до V0 (ULTRA-MINIMAL)
+    🔴 [2026-01-05 14:05] EMERGENCY: Упрощен до V0 (ULTRA-MINIMAL) - не сработало
+    🏗️ [2026-01-05 17:25] V1-STRICT: Полная переработка - детальный архитектурный промпт
     
     Описание:
-    МАКСИМАЛЬНО УПРОЩЕН - только 2 главных правила для фасада:
-    - CRITICAL (100% приоритет): Сохрани точную геометрию дома + позиции окон/дверей
-    - OPTIONAL (20% приоритет): Примени стили/цвета если сможешь
-    
-    Логика:
-    Если даже это не сработает → проблема в API/модели, не в промпте
-    Размер: 297 символов (vs 3200+ в V1)
-    Constraints: Только 2 вместо 19
+    МАКСИМАЛЬНО ДЕТАЛЬНЫЙ архитектурный промпт для фасадов:
+    - ПОЛНАЯ трансформация материалов, цветов, стилей по образцу
+    - СТРОГОЕ сохранение геометрии здания, количества/позиций окон/дверей
+    - Адаптирует декоративные элементы под размер здания
+    - Создает ультра фотореалистичный фасад журнального качества
     
     Используется в:
     - SCREEN 17: Кнопка "🎨 Применить фасад"
     - Функция: apply_facade_style_to_house() в kie_api.py
     - Вход: [основное фото фасада, образец фасада]
-    - Выход: фасад с СОХРАНЕННОЙ геометрией + опциональные стили
+    - Выход: ПОЛНАЯ трансформация фасада с СТРОГИМ сохранением структуры
     
     Args:
         translate: включить ли перевод на английский (по умолчанию True)
     
     Returns:
-        Готовый промпт на английском языке (для KIE.AI)
+        Готовый промпт на английском языке (для KIE.AI) - ~2000+ символов
     
     Пример:
         >>> prompt = await build_apply_facade_style_prompt()
-        >>> # Результат: "Transform the house facade..."
+        >>> # Результат: "You are a professional architect..."
     """
     prompt = APPLY_FACADE_STYLE_PROMPT
     
