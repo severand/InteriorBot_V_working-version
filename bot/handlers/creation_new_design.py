@@ -78,6 +78,11 @@ def log_photo_send(user_id: int, method: str, message_id: int, request_id: str =
 async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
     """
     🏠 [SCREEN 3] Меню выбора типа помещения
+    
+    📍 ПУТЬ: [SCREEN 2: загружка фото] → "Далее" → [SCREEN 3: выбор комнаты]
+    
+    ✅ ЕСЛИ ТЕКУЩЕЕ СООБЩЕНИЕ - МЕДИА → Создаём НОВОЕ текстовое меню
+    ✅ ЕСЛИ ТЕКУЩЕЕ СООБЩЕНИЕ - ТЕКСТ → Редактируем через edit_menu()
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -85,6 +90,7 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
     try:
         data = await state.get_data()
         work_mode = data.get('work_mode')
+        balance = await db.get_balance(user_id)
         
         await state.set_state(CreationStates.room_choice)
         
@@ -138,6 +144,14 @@ async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
 async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
     """
     🏠 [SCREEN 3→4] Обработчик выбора комнаты
+    
+    📍 ПУТЬ: [SCREEN 3] → выбор комнаты → [SCREEN 4: стили стр. 1]
+    
+    📊 АЛГОРИТМ:
+    1️⃣ Извлекаем выбранную комнату из callback_data
+    2️⃣ Сохраняем selected_room в FSM
+    3️⃣ Переходим в CreationStates.choose_style_1
+    4️⃣ Отправляем меню со СТИЛЯМИ (первая страница)
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -147,6 +161,7 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
         
         data = await state.get_data()
         work_mode = data.get('work_mode')
+        balance = await db.get_balance(user_id)
         
         await state.update_data(selected_room=room)
         await state.set_state(CreationStates.choose_style_1)
@@ -201,12 +216,15 @@ async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
 async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
     """
     🎨 [SCREEN 4→5] Показать вторую страницу стилей
+    
+    📍 ПУТЬ: [SCREEN 4: стили стр. 1] → "▶️ Ещё" → [SCREEN 5: стили стр. 2]
     """
     user_id = callback.from_user.id
     
     try:
         data = await state.get_data()
         work_mode = data.get('work_mode')
+        balance = await db.get_balance(user_id)
         
         await state.set_state(CreationStates.choose_style_2)
         
@@ -256,6 +274,8 @@ async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
 async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
     """
     🎨 [SCREEN 5→4] Вернуться на первую страницу стилей
+    
+    📍 ПУТЬ: [SCREEN 5: стили стр. 2] → "⬅️ Назад" → [SCREEN 4: стили стр. 1]
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -263,6 +283,7 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
     try:
         data = await state.get_data()
         work_mode = data.get('work_mode')
+        balance = await db.get_balance(user_id)
         
         await state.set_state(CreationStates.choose_style_1)
         
@@ -311,7 +332,24 @@ async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
 async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
     """
     🔥 [SCREEN 4-5→6] ГЕНЕРИРУЕТ ДИЗАЙН
+    
+    📍 ПУТЬ: [SCREEN 4 или 5] → выбор стиля → 🔥 ГЕНЕРАЦИЯ → [SCREEN 6]
+    
+    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.post_generation
+    
+    🔥 ПРОЦЕСС:
+    1️⃣ Проверка баланса
+    2️⃣ Минусование баланса
+    3️⃣ Отправка прогресса
+    4️⃣ 🤖 Генерация дизайна (smart_generate_interior)
+    5️⃣ Отправка фото дизайна
+    6️⃣ Отправка меню с кнопками
+    7️⃣ Удаление сообщения прогресса
+    8️⃣ Переход на SCREEN 6
+    
+    ⚠️ FALLBACK: Если URL не работает → загружаем файл локально через BufferedInputFile
     """
+   # style = callback.data.split("_")[-1
     style = callback.data.replace("style_", "", 1)
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -322,6 +360,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
     await db.log_activity(user_id, f'style_{style}')
 
+    # ═════════════════════════════════════════════════════════════════════════
+    # ИЗВЛЕЧЕНИЕ ДАННЫХ
+    # ═════════════════════════════════════════════════════════════════════════
+    
     data = await state.get_data()
     photo_id = data.get('photo_id')
     room = data.get('selected_room')
@@ -336,6 +378,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         await show_main_menu(callback, state, admins)
         return
 
+    # ═════════════════════════════════════════════════════════════════════════
+    # ПРОВЕРКА БАЛАНСА
+    # ═════════════════════════════════════════════════════════════════════════
+    
     is_admin = user_id in admins
     if not is_admin:
         balance = await db.get_balance(user_id)
@@ -351,8 +397,16 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             )
             return
 
+    # ═════════════════════════════════════════════════════════════════════════
+    # МИНУСОВАНИЕ БАЛАНСА
+    # ═════════════════════════════════════════════════════════════════════════
+    
     if not is_admin:
         await db.decrease_balance(user_id)
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # Отправка прогресса
+    # ═════════════════════════════════════════════════════════════════════════
 
     progress_msg = None
     current_msg = callback.message
@@ -386,6 +440,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     
     await callback.answer()
 
+    # ═════════════════════════════════════════════════════════════════════════
+    # ГЕНЕРАЦИЯ
+    # ═════════════════════════════════════════════════════════════════════════
+    
     pro_settings = await db.get_user_pro_settings(user_id)
     use_pro = pro_settings.get('pro_mode', False)
     logger.info(f"🔧 PRO MODE для user_id={user_id}: {use_pro}")
@@ -407,6 +465,10 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         operation_type='design',
         success=success
     )
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # ✅ [SCREEN 6] МЕНЮ ПОСЛЕ ГЕНЕРАЦИИ
+    # ═════════════════════════════════════════════════════════════════════════
 
     if result_image_url:
         balance = await db.get_balance(user_id)
@@ -469,7 +531,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         except Exception as url_error:
             logger.warning(f"📊 [SCREEN 6] FAILED ATTEMPT 1: {url_error}")
 
-            # ПОПЫТКА 2: Загружка локально
+            # ПОПЫТКА 2: Загрузка локально
             try:
                 logger.warning(f"📊 [SCREEN 6] ATTEMPT 2: BufferedInputFile")
 
@@ -565,6 +627,15 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
     """
     🔄 [SCREEN 6→4] Смена стиля после генерации
+    
+    📍 ПУТЬ: [SCREEN 6] → "🔄 Другой стиль" → [SCREEN 4: выбор стилей]
+    
+    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.choose_style_1
+    
+    📋 ЛОГИКА:
+    - РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ (не генерируем дизайн)
+    - ФОТО ОСТАЕТСЯ БЕЗ ИЗМЕНЕНИЙ
+    - При выборе стиля → style_choice_handler() генерирует новый дизайн
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
@@ -574,6 +645,7 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     work_mode = data.get('work_mode')
+    balance = await db.get_balance(user_id)
 
     try:
         await state.set_state(CreationStates.choose_style_1)
@@ -613,6 +685,17 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
 async def new_photo_after_gen(callback: CallbackQuery, state: FSMContext):
     """
     📈 [SCREEN 6→2] Загружка нового фото после генерации
+    
+    📍 ПУТЬ: [SCREEN 6] → "📈 Новое фото" → [SCREEN 2: загружка фото]
+    
+    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.uploading_photo
+    
+    📋 ЛОГИКА:
+    - РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ (не генерируем дизайн)
+    - ФОТО СТАРОГО дизайна остается для истории
+    - При загружке нового фото → процесс начнется заново
+    
+    🔏 НОВОЕ (2026-01-02): Передаём has_previous_photo=True в клавиатуру!
     """
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
