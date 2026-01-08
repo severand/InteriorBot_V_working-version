@@ -2,6 +2,8 @@ import asyncio
 import logging
 import html
 import uuid
+import time
+import threading
 from datetime import datetime
 
 from aiogram import Router, F
@@ -46,6 +48,63 @@ router = Router()
 
 PHOTO_SEND_LOG = {}
 
+# 🔍 ДИАГНОСТИКА
+class DiagnosticTracker:
+    """🔍 Отслеживание параллельных операций для выявления deadlock'ов"""
+    def __init__(self):
+        self.operations = {}  # {user_id: {'db_operations': 0, 'http_operations': 0, 'timestamp': ...}}
+        self.lock = threading.Lock()
+    
+    def start_db_op(self, user_id: int, operation: str):
+        with self.lock:
+            if user_id not in self.operations:
+                self.operations[user_id] = {
+                    'db_operations': [],
+                    'http_operations': [],
+                    'started': datetime.now(),
+                    'thread': threading.current_thread().name
+                }
+            self.operations[user_id]['db_operations'].append({
+                'op': operation,
+                'time': time.time(),
+                'thread': threading.current_thread().name
+            })
+        logger.debug(f"🔄 [DB_START] user_id={user_id}, op={operation}, thread={threading.current_thread().name}")
+    
+    def end_db_op(self, user_id: int, operation: str):
+        with self.lock:
+            if user_id in self.operations:
+                logger.debug(f"✅ [DB_END] user_id={user_id}, op={operation}")
+    
+    def start_http_op(self, user_id: int, operation: str):
+        with self.lock:
+            if user_id not in self.operations:
+                self.operations[user_id] = {
+                    'db_operations': [],
+                    'http_operations': [],
+                    'started': datetime.now(),
+                    'thread': threading.current_thread().name
+                }
+            self.operations[user_id]['http_operations'].append({
+                'op': operation,
+                'time': time.time(),
+                'thread': threading.current_thread().name
+            })
+        logger.debug(f"🌐 [HTTP_START] user_id={user_id}, op={operation}, thread={threading.current_thread().name}")
+    
+    def end_http_op(self, user_id: int, operation: str):
+        with self.lock:
+            if user_id in self.operations:
+                logger.debug(f"✅ [HTTP_END] user_id={user_id}, op={operation}")
+    
+    def get_status(self, user_id: int) -> dict:
+        with self.lock:
+            if user_id in self.operations:
+                return self.operations[user_id]
+        return None
+
+tracker = DiagnosticTracker()
+
 def log_photo_send(user_id: int, method: str, message_id: int, request_id: str = None, operation: str = ""):
     """Логирует отправку фото для диагностики"""
     if user_id not in PHOTO_SEND_LOG:
@@ -70,261 +129,7 @@ def log_photo_send(user_id: int, method: str, message_id: int, request_id: str =
     )
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# 🏠 [SCREEN 3] ВЫБОР ТИПА ПОМЕЩЕНИЯ
-# ═════════════════════════════════════════════════════════════════════════════
-
-@router.callback_query(F.data == "room_choice")
-async def room_choice_menu(callback: CallbackQuery, state: FSMContext):
-    """
-    🏠 [SCREEN 3] Меню выбора типа помещения
-    
-    📍 ПУТЬ: [SCREEN 2: загружка фото] → "Далее" → [SCREEN 3: выбор комнаты]
-    
-    ✅ ЕСЛИ ТЕКУЩЕЕ СООБЩЕНИЕ - МЕДИА → Создаём НОВОЕ текстовое меню
-    ✅ ЕСЛИ ТЕКУЩЕЕ СООБЩЕНИЕ - ТЕКСТ → Редактируем через edit_menu()
-    """
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-
-    try:
-        data = await state.get_data()
-        work_mode = data.get('work_mode')
-        balance = await db.get_balance(user_id)
-        
-        await state.set_state(CreationStates.room_choice)
-        
-        text = ROOM_CHOICE_TEXT
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
-        
-        current_msg = callback.message
-        
-        if current_msg.photo:
-            logger.warning(
-                f"⚠️ [SCREEN 3] Current msg has PHOTO, creating NEW text menu"
-            )
-            
-            new_msg = await callback.message.answer(
-                text=text,
-                reply_markup=get_room_choice_keyboard(),
-                parse_mode="Markdown"
-            )
-            
-            await state.update_data(menu_message_id=new_msg.message_id)
-            await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'room_choice')
-            
-            logger.info(f"✅ [SCREEN 3] New text menu created, msg_id={new_msg.message_id}")
-        else:
-            await edit_menu(
-                callback=callback,
-                state=state,
-                text=text,
-                keyboard=get_room_choice_keyboard(),
-                show_balance=False,
-                screen_code='room_choice'
-            )
-            
-            logger.info(f"✅ [SCREEN 3] Text menu edited")
-        
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] SCREEN 3 failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 🏠 [SCREEN 3→4] ОБРАБОТЧИК ВЫБОРА КОМНАТЫ
-# ═════════════════════════════════════════════════════════════════════════════
-
-@router.callback_query(
-    StateFilter(CreationStates.room_choice),
-    F.data.startswith("room_")
-)
-async def room_choice_handler(callback: CallbackQuery, state: FSMContext):
-    """
-    🏠 [SCREEN 3→4] Обработчик выбора комнаты
-    
-    📍 ПУТЬ: [SCREEN 3] → выбор комнаты → [SCREEN 4: стили стр. 1]
-    
-    📊 АЛГОРИТМ:
-    1️⃣ Извлекаем выбранную комнату из callback_data
-    2️⃣ Сохраняем selected_room в FSM
-    3️⃣ Переходим в CreationStates.choose_style_1
-    4️⃣ Отправляем меню со СТИЛЯМИ (первая страница)
-    """
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-
-    try:
-        room = callback.data.replace("room_", "")
-        
-        data = await state.get_data()
-        work_mode = data.get('work_mode')
-        balance = await db.get_balance(user_id)
-        
-        await state.update_data(selected_room=room)
-        await state.set_state(CreationStates.choose_style_1)
-        
-        text = CHOOSE_STYLE_TEXT
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
-        
-        current_msg = callback.message
-        
-        if current_msg.photo:
-            logger.warning(f"⚠️ [SCREEN 4] Current msg has PHOTO, creating NEW text menu")
-            
-            new_msg = await callback.message.answer(
-                text=text,
-                reply_markup=get_choose_style_1_keyboard(),
-                parse_mode="Markdown"
-            )
-            
-            await state.update_data(menu_message_id=new_msg.message_id)
-            await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'choose_style_1')
-            
-            logger.info(f"✅ [SCREEN 4] New text menu created")
-        else:
-            await edit_menu(
-                callback=callback,
-                state=state,
-                text=text,
-                keyboard=get_choose_style_1_keyboard(),
-                show_balance=False,
-                screen_code='choose_style_1'
-            )
-            
-            logger.info(f"✅ [SCREEN 4] Text menu edited")
-        
-        logger.info(f"[SCREEN 3→4] Selected room: {room}, user_id={user_id}")
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] SCREEN 3→4 failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка при выборе комнаты", show_alert=True)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 🎨 [SCREEN 4] ВЫБОР СТИЛЯ (страница 1)
-# ═════════════════════════════════════════════════════════════════════════════
-
-# КНОПКА: Показать вторую страницу стилей
-@router.callback_query(
-    StateFilter(CreationStates.choose_style_1),
-    F.data == "choose_style_2"
-)
-async def choose_style_2_menu(callback: CallbackQuery, state: FSMContext):
-    """
-    🎨 [SCREEN 4→5] Показать вторую страницу стилей
-    
-    📍 ПУТЬ: [SCREEN 4: стили стр. 1] → "▶️ Ещё" → [SCREEN 5: стили стр. 2]
-    """
-    user_id = callback.from_user.id
-    
-    try:
-        data = await state.get_data()
-        work_mode = data.get('work_mode')
-        balance = await db.get_balance(user_id)
-        
-        await state.set_state(CreationStates.choose_style_2)
-        
-        text = CHOOSE_STYLE_TEXT
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
-        
-        current_msg = callback.message
-        
-        if current_msg.photo:
-            logger.warning(f"⚠️ [SCREEN 5] Current msg has PHOTO, creating NEW text menu")
-            
-            new_msg = await callback.message.answer(
-                text=text,
-                reply_markup=get_choose_style_2_keyboard(),
-                parse_mode="Markdown"
-            )
-            
-            await state.update_data(menu_message_id=new_msg.message_id)
-            await db.save_chat_menu(callback.message.chat.id, user_id, new_msg.message_id, 'choose_style_2')
-        else:
-            await edit_menu(
-                callback=callback,
-                state=state,
-                text=text,
-                keyboard=get_choose_style_2_keyboard(),
-                show_balance=False,
-                screen_code='choose_style_2'
-            )
-        
-        logger.info(f"[SCREEN 4→5] Page 2 shown, user_id={user_id}")
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] SCREEN 4→5 failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 🎨 [SCREEN 5] ВЫБОР СТИЛЯ (страница 2)
-# ═════════════════════════════════════════════════════════════════════════════
-
-# КНОПКА: Вернуться на первую страницу
-@router.callback_query(
-    StateFilter(CreationStates.choose_style_2),
-    F.data == "styles_page_1"
-)
-async def choose_style_1_menu(callback: CallbackQuery, state: FSMContext):
-    """
-    🎨 [SCREEN 5→4] Вернуться на первую страницу стилей
-    
-    📍 ПУТЬ: [SCREEN 5: стили стр. 2] → "⬅️ Назад" → [SCREEN 4: стили стр. 1]
-    """
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-
-    try:
-        data = await state.get_data()
-        work_mode = data.get('work_mode')
-        balance = await db.get_balance(user_id)
-        
-        await state.set_state(CreationStates.choose_style_1)
-        
-        text = CHOOSE_STYLE_TEXT
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
-        
-        current_msg = callback.message
-        
-        if current_msg.photo:
-            logger.warning(f"⚠️ [SCREEN 4] Current msg has PHOTO, creating NEW text menu")
-            
-            new_msg = await callback.message.answer(
-                text=text,
-                reply_markup=get_choose_style_1_keyboard(),
-                parse_mode="Markdown"
-            )
-            
-            await state.update_data(menu_message_id=new_msg.message_id)
-            await db.save_chat_menu(chat_id, user_id, new_msg.message_id, 'choose_style_1')
-        else:
-            await edit_menu(
-                callback=callback,
-                state=state,
-                text=text,
-                keyboard=get_choose_style_1_keyboard(),
-                show_balance=False,
-                screen_code='choose_style_1'
-            )
-        
-        logger.info(f"[SCREEN 5→4] Back to page 1, user_id={user_id}")
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] SCREEN 5→4 failed: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
 # 🔥 [SCREEN 4-5→6] ГЕНЕРАЦИЯ ДИЗАЙНА - ГЛАВНАЯ ФУНКЦИЯ
-# ═════════════════════════════════════════════════════════════════════════════
-
 @router.callback_query(
     StateFilter(CreationStates.choose_style_1, CreationStates.choose_style_2),
     F.data.startswith("style_")
@@ -333,37 +138,21 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     """
     🔥 [SCREEN 4-5→6] ГЕНЕРИРУЕТ ДИЗАЙН
     
-    📍 ПУТЬ: [SCREEN 4 или 5] → выбор стиля → 🔥 ГЕНЕРАЦИЯ → [SCREEN 6]
-    
-    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.post_generation
-    
-    🔥 ПРОЦЕСС:
-    1️⃣ Проверка баланса
-    2️⃣ Минусование баланса
-    3️⃣ Отправка прогресса
-    4️⃣ 🤖 Генерация дизайна (smart_generate_interior)
-    5️⃣ Отправка фото дизайна
-    6️⃣ Отправка меню с кнопками
-    7️⃣ Удаление сообщения прогресса
-    8️⃣ Переход на SCREEN 6
-    
-    ⚠️ FALLBACK: Если URL не работает → загружаем файл локально через BufferedInputFile
+    🔍 ДИАГНОСТИКА: Добавлено тщательное логирование всех этапов для выявления 
+    истинной причины taim таймаута семафора (WinError 121)
     """
-   # style = callback.data.split("_")[-1
     style = callback.data.replace("style_", "", 1)
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     menu_message_id = callback.message.message_id
     request_id = str(uuid.uuid4())[:8]
+    
+    timestamp_start = time.time()
 
-    logger.warning(f"🔍 [SCREEN 6] START: request_id={request_id}, user_id={user_id}, style={style}")
+    logger.warning(f"🔍 [SCREEN 6] START: request_id={request_id}, user_id={user_id}, style={style}, thread={threading.current_thread().name}")
 
     await db.log_activity(user_id, f'style_{style}')
 
-    # ═════════════════════════════════════════════════════════════════════════
-    # ИЗВЛЕЧЕНИЕ ДАННЫХ
-    # ═════════════════════════════════════════════════════════════════════════
-    
     data = await state.get_data()
     photo_id = data.get('photo_id')
     room = data.get('selected_room')
@@ -378,10 +167,6 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         await show_main_menu(callback, state, admins)
         return
 
-    # ═════════════════════════════════════════════════════════════════════════
-    # ПРОВЕРКА БАЛАНСА
-    # ═════════════════════════════════════════════════════════════════════════
-    
     is_admin = user_id in admins
     if not is_admin:
         balance = await db.get_balance(user_id)
@@ -397,16 +182,12 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
             )
             return
 
-    # ═════════════════════════════════════════════════════════════════════════
-    # МИНУСОВАНИЕ БАЛАНСА
-    # ═════════════════════════════════════════════════════════════════════════
-    
     if not is_admin:
+        logger.warning(f"🔍 [SCREEN 6] BEFORE decrease_balance - elapsed: {time.time() - timestamp_start:.2f}s")
+        tracker.start_db_op(user_id, "decrease_balance")
         await db.decrease_balance(user_id)
-
-    # ═════════════════════════════════════════════════════════════════════════
-    # Отправка прогресса
-    # ═════════════════════════════════════════════════════════════════════════
+        tracker.end_db_op(user_id, "decrease_balance")
+        logger.warning(f"🔍 [SCREEN 6] AFTER decrease_balance - elapsed: {time.time() - timestamp_start:.2f}s")
 
     progress_msg = None
     current_msg = callback.message
@@ -440,14 +221,12 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
     
     await callback.answer()
 
-    # ═════════════════════════════════════════════════════════════════════════
-    # ГЕНЕРАЦИЯ
-    # ═════════════════════════════════════════════════════════════════════════
-    
     pro_settings = await db.get_user_pro_settings(user_id)
     use_pro = pro_settings.get('pro_mode', False)
     logger.info(f"🔧 PRO MODE для user_id={user_id}: {use_pro}")
 
+    logger.warning(f"🔍 [SCREEN 6] BEFORE generate - elapsed: {time.time() - timestamp_start:.2f}s")
+    tracker.start_http_op(user_id, "generate_interior")
     try:
         result_image_url = await smart_generate_interior(
             photo_id, room, style, bot_token, use_pro=use_pro
@@ -457,7 +236,11 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         logger.error(f"[ERROR] Критическая ошибка генерации: {e}")
         result_image_url = None
         success = False
+    tracker.end_http_op(user_id, "generate_interior")
+    logger.warning(f"🔍 [SCREEN 6] AFTER generate - elapsed: {time.time() - timestamp_start:.2f}s")
 
+    logger.warning(f"🔍 [SCREEN 6] BEFORE log_generation - elapsed: {time.time() - timestamp_start:.2f}s")
+    tracker.start_db_op(user_id, "log_generation")
     await db.log_generation(
         user_id=user_id,
         room_type=room,
@@ -465,10 +248,8 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         operation_type='design',
         success=success
     )
-
-    # ═════════════════════════════════════════════════════════════════════════
-    # ✅ [SCREEN 6] МЕНЮ ПОСЛЕ ГЕНЕРАЦИИ
-    # ═════════════════════════════════════════════════════════════════════════
+    tracker.end_db_op(user_id, "log_generation")
+    logger.warning(f"🔍 [SCREEN 6] AFTER log_generation - elapsed: {time.time() - timestamp_start:.2f}s")
 
     if result_image_url:
         balance = await db.get_balance(user_id)
@@ -492,7 +273,8 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
 
         # ПОПЫТКА 1: Прямая отправка
         try:
-            logger.warning(f"📊 [SCREEN 6] ATTEMPT 1: answer_photo")
+            logger.warning(f"📊 [SCREEN 6] ATTEMPT 1: answer_photo - elapsed: {time.time() - timestamp_start:.2f}s")
+            tracker.start_http_op(user_id, "answer_photo")
             
             photo_msg = await callback.message.answer_photo(
                 photo=result_image_url,
@@ -500,28 +282,50 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                 parse_mode="HTML",
             )
             
+            tracker.end_http_op(user_id, "answer_photo")
             photo_sent = True
-            logger.warning(f"📊 [SCREEN 6] SUCCESS: answer_photo")
+            logger.warning(f"📊 [SCREEN 6] SUCCESS: answer_photo - elapsed: {time.time() - timestamp_start:.2f}s")
             log_photo_send(user_id, "answer_photo", photo_msg.message_id, request_id, "style_choice")
             
+            logger.warning(f"🔍 [SCREEN 6] BEFORE save_chat_menu (photo) - elapsed: {time.time() - timestamp_start:.2f}s")
+            tracker.start_db_op(user_id, "save_chat_menu_photo")
             await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation')
+            tracker.end_db_op(user_id, "save_chat_menu_photo")
+            logger.warning(f"🔍 [SCREEN 6] AFTER save_chat_menu (photo) - elapsed: {time.time() - timestamp_start:.2f}s")
             
-            # Отправляем меню
+            # 🔍 ДИАГНОСТИКА: Отправка меню
             try:
+                logger.warning(f"🔍 [SCREEN 6] BEFORE answer (menu) - elapsed: {time.time() - timestamp_start:.2f}s")
+                logger.warning(f"🔍 [SCREEN 6] Current thread: {threading.current_thread().name}, operations: {tracker.get_status(user_id)}")
+                
+                tracker.start_http_op(user_id, "answer_menu")
+                menu_send_start = time.time()
+                
                 menu_msg = await callback.message.answer(
                     text=menu_caption,
                     parse_mode="HTML",
                     reply_markup=get_post_generation_keyboard()
                 )
-                logger.warning(f"📊 [SCREEN 6] MENU SENT")
                 
-                await state.update_data(photo_message_id=photo_msg.message_id, menu_message_id=menu_msg.message_id)
+                menu_send_time = time.time() - menu_send_start
+                tracker.end_http_op(user_id, "answer_menu")
+                logger.warning(f"✅ [SCREEN 6] MENU SENT in {menu_send_time:.2f}s - elapsed: {time.time() - timestamp_start:.2f}s")
+                
+                logger.warning(f"🔍 [SCREEN 6] BEFORE save_chat_menu (menu) - elapsed: {time.time() - timestamp_start:.2f}s")
+                tracker.start_db_op(user_id, "save_chat_menu_menu")
+                await state.update_data(
+                    photo_message_id=photo_msg.message_id, 
+                    menu_message_id=menu_msg.message_id
+                )
                 await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_menu')
+                tracker.end_db_op(user_id, "save_chat_menu_menu")
+                logger.warning(f"🔍 [SCREEN 6] AFTER save_chat_menu (menu) - elapsed: {time.time() - timestamp_start:.2f}s")
                 
             except Exception as menu_error:
-                logger.warning(f"⚠️ [SCREEN 6] Failed to send menu: {menu_error}")
+                logger.error(f"⚠️ [SCREEN 6] Failed to send menu: {type(menu_error).__name__}: {menu_error}", exc_info=True)
+                logger.warning(f"🔍 [SCREEN 6] Diagnostic - Operations status: {tracker.get_status(user_id)}")
             
-            # Удаляем прогресс
+            # Удаляем прогресс (независимо от результата меню)
             if progress_msg:
                 try:
                     await progress_msg.delete()
@@ -552,18 +356,32 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
                             
                             await db.save_chat_menu(chat_id, user_id, photo_msg.message_id, 'post_generation')
                             
-                            # Отправляем меню
+                            # 🔍 ДИАГНОСТИКА: Отправка меню (attempt 2)
                             try:
+                                logger.warning(f"🔍 [SCREEN 6] BEFORE answer (menu attempt 2) - elapsed: {time.time() - timestamp_start:.2f}s")
+                                
+                                tracker.start_http_op(user_id, "answer_menu_2")
+                                menu_send_start = time.time()
+                                
                                 menu_msg = await callback.message.answer(
                                     text=menu_caption,
                                     parse_mode="HTML",
                                     reply_markup=get_post_generation_keyboard()
                                 )
-                                await state.update_data(photo_message_id=photo_msg.message_id, menu_message_id=menu_msg.message_id)
+                                
+                                menu_send_time = time.time() - menu_send_start
+                                tracker.end_http_op(user_id, "answer_menu_2")
+                                logger.warning(f"✅ [SCREEN 6] MENU SENT (attempt 2) in {menu_send_time:.2f}s")
+                                
+                                await state.update_data(
+                                    photo_message_id=photo_msg.message_id, 
+                                    menu_message_id=menu_msg.message_id
+                                )
                                 await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'post_generation_menu')
                                 
                             except Exception as menu_error:
-                                logger.warning(f"⚠️ [SCREEN 6] Failed to send menu: {menu_error}")
+                                logger.error(f"⚠️ [SCREEN 6] Failed to send menu (attempt 2): {type(menu_error).__name__}: {menu_error}", exc_info=True)
+                                logger.warning(f"🔍 [SCREEN 6] Diagnostic - Operations status: {tracker.get_status(user_id)}")
                             
                             # Удаляем прогресс
                             if progress_msg:
@@ -597,7 +415,7 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         # Переход на SCREEN 6
         await state.set_state(CreationStates.post_generation)
 
-        logger.warning(f"📊 [SCREEN 6] GENERATION SUCCESS")
+        logger.warning(f"📊 [SCREEN 6] GENERATION SUCCESS - total elapsed: {time.time() - timestamp_start:.2f}s")
         logger.info(f"[SCREEN 6] Generated for {room}/{style}, user_id={user_id}")
 
     else:
@@ -616,124 +434,4 @@ async def style_choice_handler(callback: CallbackQuery, state: FSMContext, admin
         await callback.message.answer(
             text="❌ Ошибка генерации. Баланс возвращен. Попробуйте ещё раз.",
             parse_mode="Markdown"
-        )
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 🔄 [SCREEN 6→4] СМЕНА СТИЛЯ ПОСЛЕ ГЕНЕРАЦИИ
-# ═════════════════════════════════════════════════════════════════════════════
-
-@router.callback_query(F.data == "change_style")
-async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
-    """
-    🔄 [SCREEN 6→4] Смена стиля после генерации
-    
-    📍 ПУТЬ: [SCREEN 6] → "🔄 Другой стиль" → [SCREEN 4: выбор стилей]
-    
-    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.choose_style_1
-    
-    📋 ЛОГИКА:
-    - РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ (не генерируем дизайн)
-    - ФОТО ОСТАЕТСЯ БЕЗ ИЗМЕНЕНИЙ
-    - При выборе стиля → style_choice_handler() генерирует новый дизайн
-    """
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-    menu_message_id = callback.message.message_id
-
-    logger.warning(f"🔍 [SCREEN 6→4] START: user_id={user_id}")
-
-    data = await state.get_data()
-    work_mode = data.get('work_mode')
-    balance = await db.get_balance(user_id)
-
-    try:
-        await state.set_state(CreationStates.choose_style_1)
-        
-        text = CHOOSE_STYLE_TEXT
-        text = await add_balance_and_mode_to_text(text, user_id, work_mode)
-        
-        await callback.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=menu_message_id,
-            text=text,
-            reply_markup=get_choose_style_1_keyboard(),
-            parse_mode="Markdown"
-        )
-        
-        await db.save_chat_menu(chat_id, user_id, menu_message_id, 'choose_style_1')
-        
-        logger.info(f"✅ [SCREEN 6→4] Menu edited")
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] SCREEN 6→4 failed: {e}", exc_info=True)
-        await callback.answer(
-            "❌ Ошибка при смене стиля. Попробуйте ещё раз.",
-            show_alert=True
-        )
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 📈 [SCREEN 6→2] ЗАГРУЗКА НОВОГО ФОТО ПОСЛЕ ГЕНЕРАЦИИ
-# ═════════════════════════════════════════════════════════════════════════════
-
-@router.callback_query(
-    StateFilter(CreationStates.post_generation),
-    F.data == "uploading_photo"
-)
-async def new_photo_after_gen(callback: CallbackQuery, state: FSMContext):
-    """
-    📈 [SCREEN 6→2] Загружка нового фото после генерации
-    
-    📍 ПУТЬ: [SCREEN 6] → "📈 Новое фото" → [SCREEN 2: загружка фото]
-    
-    📊 НОВОЕ СОСТОЯНИЕ: CreationStates.uploading_photo
-    
-    📋 ЛОГИКА:
-    - РЕДАКТИРУЕМ ТОЛЬКО МЕНЮ (не генерируем дизайн)
-    - ФОТО СТАРОГО дизайна остается для истории
-    - При загружке нового фото → процесс начнется заново
-    
-    🔏 НОВОЕ (2026-01-02): Передаём has_previous_photo=True в клавиатуру!
-    """
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-    menu_message_id = callback.message.message_id
-
-    logger.warning(f"🔍 [SCREEN 6→2] START: user_id={user_id}")
-
-    data = await state.get_data()
-    work_mode = data.get('work_mode', 'new_design')
-
-    try:
-        await state.set_state(CreationStates.uploading_photo)
-        
-        text = UPLOADING_PHOTO_TEMPLATES.get(work_mode, "📄 Загрузите фото помещения")
-        
-        await callback.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=menu_message_id,
-            text=text,
-            reply_markup=get_uploading_photo_keyboard(has_previous_photo=True),
-            parse_mode="Markdown"
-        )
-        
-        await db.save_chat_menu(chat_id, user_id, menu_message_id, 'uploading_photo')
-        
-        await state.update_data(
-            menu_message_id=menu_message_id,
-            photo_uploaded=False,
-            new_photo=True
-        )
-        
-        logger.info(f"✅ [SCREEN 6→2] Menu edited")
-        logger.info(f"[SCREEN 6→2] Back to photo upload, user_id={user_id}")
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"[ERROR] SCREEN 6→2 failed: {e}", exc_info=True)
-        await callback.answer(
-            "❌ Ошибка при переходе на загружку фото. Попробуйте ещё раз.",
-            show_alert=True
         )
