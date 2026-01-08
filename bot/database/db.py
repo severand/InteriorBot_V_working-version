@@ -1,3 +1,16 @@
+# bot/database/db.py
+# --- ОБНОВЛЕНО: 2026-01-09 01:09 - CRITICAL FIX: Удалены вложенные функции из init_db, исправлен lifecycle пула ---
+# --- ОБНОВЛЕНО: 2026-01-03 18:56 - CLEAN: Убрано все миграции, таблица со всеми полями авто с начала ---
+# --- ОБНОВЛЕНО: 2026-01-03 17:51 - КРИТИЧНО: Добавлены методы save_sample_photo и get_user_photos ---
+# --- ОБНОВЛЕНО: 2026-01-02 22:42 - НОВОЕ: edit_old_menu_if_exists() - редактирование вместо удаления ---
+# --- ОБНОВЛЕНО: 2026-01-02 21:40 - ОТКАТЫВАЕМ НЕПРАВИЛЬНЫЙ FIX - вернуть delete_message с правильной обработкой ошибок ---
+# --- ОБНОВЛЕНО: 2026-01-02 11:53 - НОВОЕ: Добавлены методы save_user_photo/get_last_user_photo ---
+# --- ОБНОВЛЕНО: 2025-12-30 23:59 - Добавлена функция increase_balance() для возврата баланса ---
+# --- ОБНОВЛЕНО: 2025-12-24 20:25 - Добавлены методы get_setting/set_setting ---
+# --- ОБНОВЛЕНО: 2025-12-24 12:35 - Добавлены методы для PRO MODE функционала ---
+# --- ОБНОВЛЕНО: 2025-12-04 11:36 - Добавлены методы для уведомлений и источников трафика ---
+# Добавлены методы get_user_recent_payments и get_referrer_info для расширенного поиска
+
 import aiosqlite
 import logging
 import secrets
@@ -85,7 +98,7 @@ class Database:
         await db.execute(CREATE_ADMIN_NOTIFICATIONS_TABLE)
         await db.execute(CREATE_USER_SOURCES_TABLE)
         await db.execute(CREATE_CHAT_MENUS_TABLE)
-        await db.execute(CREATE_USER_PHOTOS_TABLE)
+        await db.execute(CREATE_USER_PHOTOS_TABLE)  # Тут уже со всеми полями!
         await db.execute(CREATE_USER_SESSION_MODES_TABLE)
         await db.execute(CREATE_REFERRAL_EARNINGS_TABLE)
         await db.execute(CREATE_REFERRAL_EXCHANGES_TABLE)
@@ -99,7 +112,7 @@ class Database:
         await db.commit()
         logger.info("✅ База данных инициализирована")
 
-    # ===== 📸 МЕТОДЫ ДЛЯ ФОТО С ПОЛНЫМ ЛОГИРОВАНИЕМ (2026-01-09) =====
+    # ===== 🔧 НОВОЕ: МЕТОДЫ ДЛЯ ФОТО (2026-01-03) =====
 
     async def save_main_photo(self, user_id: int, photo_id: str) -> bool:
         """
@@ -116,16 +129,12 @@ class Database:
         """
         db = await self._get_db()
         try:
-            logger.debug(f"📷 [SAVE_MAIN] Начало сохранения основного фото для user_id={user_id}")
-            logger.debug(f"   photo_id: {photo_id[:25]}..." if len(photo_id) > 25 else f"   photo_id: {photo_id}")
-            
             await db.execute(SAVE_USER_PHOTO, (user_id, photo_id))
             await db.commit()
-            
-            logger.info(f"✅ [SAVE_MAIN] УСПЕШНО: Основное фото сохранено для user_id={user_id}")
+            logger.info(f"📷 ОСНОВНОЕ фото сохранено для user_id={user_id}")
             return True
         except Exception as e:
-            logger.error(f"❌ [SAVE_MAIN] ОШИБКА save_main_photo user_id={user_id}: {e}", exc_info=True)
+            logger.error(f"❌ Ошибка save_main_photo: {e}")
             return False
 
     async def save_sample_photo(self, user_id: int, photo_id: str) -> bool:
@@ -143,33 +152,12 @@ class Database:
         """
         db = await self._get_db()
         try:
-            logger.debug(f"🎨 [SAVE_SAMPLE] Начало сохранения образца фото для user_id={user_id}")
-            logger.debug(f"   photo_id: {photo_id[:25]}..." if len(photo_id) > 25 else f"   photo_id: {photo_id}")
-            
-            # ⚠️ КРИТИЧНЫЙ ФИХ [2026-01-09]: Проверяем и создаём запись если нужно
-            async with db.execute(GET_USER_PHOTOS, (user_id,)) as cursor:
-                existing_row = await cursor.fetchone()
-            
-            if not existing_row:
-                logger.debug(f"   ➡️  Запись НЕ существует, создаём новую с sample_photo_id")
-                # Создаём новую запись с sample_photo_id
-                await db.execute(
-                    "INSERT INTO user_photos (user_id, sample_photo_id, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                    (user_id, photo_id)
-                )
-            else:
-                logger.debug(f"   ➡️  Запись СУЩЕСТВУЕТ, обновляем sample_photo_id")
-                # Обновляем существующую запись
-                await db.execute(
-                    "UPDATE user_photos SET sample_photo_id = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
-                    (photo_id, user_id)
-                )
-            
+            await db.execute(SAVE_SAMPLE_PHOTO, (user_id, photo_id))
             await db.commit()
-            logger.info(f"✅ [SAVE_SAMPLE] УСПЕШНО: Образец фото сохранён для user_id={user_id}")
+            logger.info(f"🎨 ОБРАЗЕЦ фото сохранен для user_id={user_id}")
             return True
         except Exception as e:
-            logger.error(f"❌ [SAVE_SAMPLE] ОШИБКА save_sample_photo user_id={user_id}: {e}", exc_info=True)
+            logger.error(f"❌ Ошибка save_sample_photo: {e}")
             return False
 
     async def get_user_photos(self, user_id: int) -> Dict[str, Optional[str]]:
@@ -184,28 +172,21 @@ class Database:
         """
         db = await self._get_db()
         try:
-            logger.debug(f"📸 [GET_PHOTOS] Запрос обоих фото для user_id={user_id}")
-            
             async with db.execute(GET_USER_PHOTOS, (user_id,)) as cursor:
                 row = await cursor.fetchone()
-            
-            if row:
-                result = {
-                    'main_photo_id': row[0],
-                    'sample_photo_id': row[1]
-                }
-                logger.debug(f"✅ [GET_PHOTOS] Найдены оба фото для user_id={user_id}:")
-                logger.debug(f"   main_photo_id: {row[0][:25] if row[0] else 'None'}..." if row[0] and len(row[0]) > 25 else f"   main_photo_id: {row[0]}")
-                logger.debug(f"   sample_photo_id: {row[1][:25] if row[1] else 'None'}..." if row[1] and len(row[1]) > 25 else f"   sample_photo_id: {row[1]}")
-                return result
-            else:
-                logger.warning(f"⚠️  [GET_PHOTOS] Фото НЕ НАЙДЕНЫ для user_id={user_id}, возвращаем None")
-                return {
-                    'main_photo_id': None,
-                    'sample_photo_id': None
-                }
+                if row:
+                    return {
+                        'main_photo_id': row[0],
+                        'sample_photo_id': row[1]
+                    }
+                else:
+                    logger.debug(f"⚠️ Фото не найдены для user_id={user_id}")
+                    return {
+                        'main_photo_id': None,
+                        'sample_photo_id': None
+                    }
         except Exception as e:
-            logger.error(f"❌ [GET_PHOTOS] ОШИБКА get_user_photos user_id={user_id}: {e}", exc_info=True)
+            logger.error(f"❌ Ошибка get_user_photos: {e}")
             return {
                 'main_photo_id': None,
                 'sample_photo_id': None
@@ -215,34 +196,29 @@ class Database:
         """📄 Сохранить фото (скомонат для обратной совместимости)"""
         db = await self._get_db()
         try:
-            logger.debug(f"📄 [SAVE_USER_PHOTO] Сохранение для user_id={user_id}")
             await db.execute(SAVE_USER_PHOTO, (user_id, photo_id))
             await db.commit()
-            logger.info(f"✅ [SAVE_USER_PHOTO] УСПЕШНО: Фото сохранена для user_id={user_id}")
+            logger.info(f"📄 Фото сохранена для user_id={user_id}")
             return True
         except Exception as e:
-            logger.error(f"❌ [SAVE_USER_PHOTO] ОШИБКА user_id={user_id}: {e}", exc_info=True)
+            logger.error(f"❌ Ошибка save_user_photo: {e}")
             return False
 
     async def get_last_user_photo(self, user_id: int) -> Optional[str]:
         """📄 Получить последнюю фото (скомонат для обратной совместимости)"""
         db = await self._get_db()
         try:
-            logger.debug(f"📄 [GET_LAST_PHOTO] Запрос для user_id={user_id}")
-            
             async with db.execute(GET_LAST_USER_PHOTO, (user_id,)) as cursor:
                 row = await cursor.fetchone()
-            
-            if row:
-                photo_id = row[0]
-                logger.info(f"✅ [GET_LAST_PHOTO] Найдена фото для user_id={user_id}")
-                logger.debug(f"   photo_id: {photo_id[:25]}..." if photo_id and len(photo_id) > 25 else f"   photo_id: {photo_id}")
-                return photo_id
-            else:
-                logger.warning(f"⚠️  [GET_LAST_PHOTO] Фото НЕ НАЙДЕНА для user_id={user_id}")
-                return None
+                if row:
+                    photo_id = row[0]
+                    logger.info(f"✅ Найдена фото для user_id={user_id}")
+                    return photo_id
+                else:
+                    logger.debug(f"⚠️ Фото не найдена для user_id={user_id}")
+                    return None
         except Exception as e:
-            logger.error(f"❌ [GET_LAST_PHOTO] ОШИБКА user_id={user_id}: {e}", exc_info=True)
+            logger.error(f"❌ Ошибка get_last_user_photo: {e}")
             return None
 
     # ===== PRO MODE FUNCTIONS =====
@@ -251,20 +227,16 @@ class Database:
         """Получить все параметры PRO режима пользователя"""
         db = await self._get_db()
         try:
-            logger.debug(f"🔧 [PRO_SETTINGS] Запрос параметров PRO для user_id={user_id}")
             db.row_factory = aiosqlite.Row
             async with db.execute(GET_USER_PRO_SETTINGS, (user_id,)) as cursor:
                 row = await cursor.fetchone()
                 if row:
-                    result = {
+                    return {
                         'pro_mode': bool(row['pro_mode']),
                         'pro_aspect_ratio': row['pro_aspect_ratio'],
                         'pro_resolution': row['pro_resolution'],
                         'pro_mode_changed_at': row['pro_mode_changed_at']
                     }
-                    logger.debug(f"✅ [PRO_SETTINGS] Найдены: mode={result['pro_mode']}, ratio={result['pro_aspect_ratio']}, res={result['pro_resolution']}")
-                    return result
-                logger.warning(f"⚠️  [PRO_SETTINGS] Нет записи PRO для user_id={user_id}, возвращаем дефолты")
                 return {
                     'pro_mode': False,
                     'pro_aspect_ratio': '16:9',
@@ -272,7 +244,7 @@ class Database:
                     'pro_mode_changed_at': None
                 }
         except Exception as e:
-            logger.error(f"❌ [PRO_SETTINGS] ОШИБКА user_id={user_id}: {e}", exc_info=True)
+            logger.error(f"❌ Ошибка get_user_pro_settings: {e}")
             return {
                 'pro_mode': False,
                 'pro_aspect_ratio': '16:9',
@@ -284,52 +256,47 @@ class Database:
         """Установить режим (True = PRO, False = СТАНДАРТ)"""
         db = await self._get_db()
         try:
-            mode_name = "PRO 🔧" if mode else "СТАНДАРТ 📋"
-            logger.debug(f"🔧 [SET_PRO_MODE] Установка режима {mode_name} для user_id={user_id}")
-            
             await db.execute(SET_USER_PRO_MODE, (1 if mode else 0, user_id))
             await db.commit()
-            
-            logger.info(f"✅ [SET_PRO_MODE] УСПЕШНО: Режим изменён на {mode_name} для user_id={user_id}")
+            mode_name = "PRO 🔧" if mode else "СТАНДАРТ 📋"
+            logger.info(f"✅ Режим изменён на {mode_name} для user_id={user_id}")
             return True
         except Exception as e:
-            logger.error(f"❌ [SET_PRO_MODE] ОШИБКА user_id={user_id}: {e}", exc_info=True)
+            logger.error(f"❌ Ошибка set_user_pro_mode: {e}")
             return False
 
     async def set_pro_aspect_ratio(self, user_id: int, ratio: str) -> bool:
         """Установить соотношение сторон для PRO режима"""
         valid_ratios = ['16:9', '4:3', '1:1', '9:16']
         if ratio not in valid_ratios:
-            logger.warning(f"❌ [SET_ASPECT] Неверное соотношение {ratio} для user_id={user_id}. Допустимые: {valid_ratios}")
+            logger.warning(f"❌ Неверное соотношение: {ratio}")
             return False
 
         db = await self._get_db()
         try:
-            logger.debug(f"📐 [SET_ASPECT] Установка соотношения {ratio} для user_id={user_id}")
             await db.execute(SET_PRO_ASPECT_RATIO, (ratio, user_id))
             await db.commit()
-            logger.info(f"✅ [SET_ASPECT] УСПЕШНО: Соотношение {ratio} установлено для user_id={user_id}")
+            logger.info(f"✅ Соотношение {ratio}")
             return True
         except Exception as e:
-            logger.error(f"❌ [SET_ASPECT] ОШИБКА user_id={user_id}: {e}", exc_info=True)
+            logger.error(f"❌ Ошибка set_pro_aspect_ratio: {e}")
             return False
 
     async def set_pro_resolution(self, user_id: int, resolution: str) -> bool:
         """Установить разрешение для PRO режима"""
         valid_resolutions = ['1K', '2K', '4K']
         if resolution not in valid_resolutions:
-            logger.warning(f"❌ [SET_RES] Неверное разрешение {resolution} для user_id={user_id}. Допустимые: {valid_resolutions}")
+            logger.warning(f"❌ Неверное разрешение: {resolution}")
             return False
 
         db = await self._get_db()
         try:
-            logger.debug(f"📺 [SET_RES] Установка разрешения {resolution} для user_id={user_id}")
             await db.execute(SET_PRO_RESOLUTION, (resolution, user_id))
             await db.commit()
-            logger.info(f"✅ [SET_RES] УСПЕШНО: Разрешение {resolution} установлено для user_id={user_id}")
+            logger.info(f"✅ Разрешение {resolution}")
             return True
         except Exception as e:
-            logger.error(f"❌ [SET_RES] ОШИБКА user_id={user_id}: {e}", exc_info=True)
+            logger.error(f"❌ Ошибка set_pro_resolution: {e}")
             return False
 
     # ===== CHAT MENUS =====
