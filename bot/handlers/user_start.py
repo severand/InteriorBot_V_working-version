@@ -1,8 +1,8 @@
-# bot/handlers/user_start.py
 import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import TelegramBadRequest
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from database.db import db
@@ -32,9 +32,117 @@ async def delete_message_safe(message: Message):
         logger.debug(f"Could not delete message: {e}")
 
 
+async def edit_or_send_main_menu(
+    message: Message,
+    chat_id: int,
+    user_id: int,
+    text: str,
+    is_new_user: bool
+):
+    """
+    🔥 РЕДАКТИРОВАНИЕ или СОЗДАНИЕ SCREEN 0
+    
+    ЛОГИКА:
+    1. Получаем последний menu_message_id из БД (chat_menus)
+    2. Если есть → редактируем старое сообщение через bot.edit_message_text()
+    3. Если нет или редактирование не сработало → создаём новое
+    """
+    
+    # 1️⃣ Получаем последнее меню из БД
+    old_menu = await db.get_chat_menu(chat_id)
+    old_menu_message_id = old_menu.get('menu_message_id') if old_menu else None
+    
+    menu_message_id = None
+    
+    # 2️⃣ Если было старое меню — пытаемся отредактировать
+    if old_menu_message_id:
+        try:
+            logger.info(
+                f"✏️ [START] РЕДАКТИРОВАНИЕ: пытаемся отредактировать старое сообщение "
+                f"msg_id={old_menu_message_id}, user_id={user_id}"
+            )
+            
+            await message.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=old_menu_message_id,
+                text=text,
+                reply_markup=get_main_menu_keyboard(),
+                parse_mode="Markdown"
+            )
+            
+            menu_message_id = old_menu_message_id
+            logger.info(f"✅ [START] Успешно отредактировано msg_id={menu_message_id}")
+            
+        except TelegramBadRequest as e:
+            err = str(e).lower()
+            
+            # Сообщение не изменилось — это нормально
+            if "message is not modified" in err:
+                menu_message_id = old_menu_message_id
+                logger.info(f"ℹ️ [START] Сообщение не изменилось (тот же контент), используем old msg_id={menu_message_id}")
+            
+            # Сообщение с медиа — пытаемся редактировать caption
+            elif "no text in the message to edit" in err:
+                try:
+                    logger.info(f"📇 [START] Сообщение с медиа, пытаемся отредактировать caption msg_id={old_menu_message_id}")
+                    
+                    await message.bot.edit_message_caption(
+                        chat_id=chat_id,
+                        message_id=old_menu_message_id,
+                        caption=text,
+                        reply_markup=get_main_menu_keyboard(),
+                        parse_mode="Markdown"
+                    )
+                    
+                    menu_message_id = old_menu_message_id
+                    logger.info(f"✅ [START] Успешно отредактирован caption msg_id={menu_message_id}")
+                    
+                except Exception as e_cap:
+                    logger.warning(
+                        f"⚠️ [START] Не удалось отредактировать caption msg_id={old_menu_message_id}: {e_cap}, "
+                        f"создаём новое сообщение"
+                    )
+                    menu_message_id = None
+            
+            # Сообщение удалено, старое или другая ошибка — создаём новое
+            else:
+                logger.warning(
+                    f"⚠️ [START] Не удалось отредактировать старое сообщение msg_id={old_menu_message_id}: {e}, "
+                    f"создаём новое"
+                )
+                menu_message_id = None
+        
+        except Exception as e:
+            logger.error(
+                f"❌ [START] Неожиданная ошибка при редактировании msg_id={old_menu_message_id}: {e}, "
+                f"создаём новое сообщение"
+            )
+            menu_message_id = None
+    
+    # 3️⃣ Если не удалось отредактировать — создаём новое сообщение
+    if menu_message_id is None:
+        try:
+            logger.info(f"📝 [START] Создаём НОВОЕ сообщение для user_id={user_id}")
+            
+            menu_msg = await send_message_with_retry(
+                message,
+                text,
+                reply_markup=get_main_menu_keyboard(),
+                parse_mode="Markdown"
+            )
+            menu_message_id = menu_msg.message_id
+            logger.info(f"✅ [START] Новое сообщение создано msg_id={menu_message_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ [START] Ошибка при создании нового сообщения: {e}")
+            raise
+    
+    return menu_message_id
+
+
 @router.message(F.text.startswith("/start"))
 async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
-    """SCREEN 0: ГЛАВНОЕ МЕНИ с 3 кнопками"""
+    """SCREEN 0: ГЛАВНОЕ МЕНЮ с 3 кнопками"""
     chat_id = message.chat.id
     user_id = message.from_user.id
     username = message.from_user.username
@@ -42,6 +150,7 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     start_param = message.text.split()[1] if len(message.text.split()) > 1 else None
 
     if start_param == "payment_success":
+        # ✅ payment_success остаётся как было
         await db.delete_old_menu_if_exists(chat_id, message.bot)
 
         user_data = await db.get_user_data(user_id)
@@ -67,15 +176,26 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
             logger.info(f"✅ [PAYMENT_SUCCESS] User {user_id}, msg_id={menu_msg.message_id}")
             return
 
-    await db.delete_old_menu_if_exists(chat_id, message.bot)
+    # ════════════════════════════════════════════════════════════════════════════════
+    # 🔥 ОСНОВНОЙ ПУТЬ /start
+    # ════════════════════════════════════════════════════════════════════════════════
+
+    # 1. Получаем старый menu_message_id ДО clear()
+    data = await state.get_data()
+    old_menu_message_id_from_state = data.get('menu_message_id')
+
+    # 2. Очищаем FSM и устанавливаем флаг session_started
     await state.clear()
     await state.update_data(session_started=True)
     logger.info(f"🔴 [/START] session_started=True для user_id={user_id}")
 
+    # 3. Получаем данные пользователя
     user_data = await db.get_user_data(user_id)
     is_new_user = user_data is None
 
     if is_new_user:
+        logger.info(f"👤 [/START] Новый пользователь: user_id={user_id}")
+        
         referrer_code = None
         if start_param and start_param.startswith('ref_'):
             referrer_code = start_param.replace('ref_', '')
@@ -101,23 +221,39 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
         except Exception as e:
             logger.error(f"Error notifying admins: {e}")
 
+    # 4. Удаляем только сообщение пользователя /start (чтобы чистить экран от команд)
+    logger.info(f"🗑️ [/START] Удаляем сообщение /start от пользователя")
     await delete_message_safe(message)
 
+    # 5. Собираем текст для SCREEN 0 с балансом и режимом
+    logger.info(f"📝 [/START] Формируем текст SCREEN 0")
+    text = await add_balance_and_mode_to_text(START_TEXT, user_id)
+
+    # 6. 🔥 КРИТИЧЕСКАЯ ЛОГИКА: редактируем старое или создаём новое
+    logger.info(f"⏱️ [/START] Начало операции РЕДАКТИРОВАНИЕ или СОЗДАНИЕ")
+    
     try:
-        text = await add_balance_and_mode_to_text(START_TEXT, user_id)
-        menu_msg = await send_message_with_retry(
-            message,
-            text,
-            reply_markup=get_main_menu_keyboard(),
-            parse_mode="Markdown"
+        menu_message_id = await edit_or_send_main_menu(
+            message=message,
+            chat_id=chat_id,
+            user_id=user_id,
+            text=text,
+            is_new_user=is_new_user
         )
     except Exception as e:
-        logger.error(f"Failed to send main menu message: {e}")
+        logger.error(f"❌ [/START] Ошибка при редактировании/создании меню: {e}")
         return
 
-    await state.update_data(menu_message_id=menu_msg.message_id)
-    await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'main_menu')
-    logger.info(f"✅ [START] User {user_id}: SCREEN 0, msg_id={menu_msg.message_id}, new={is_new_user}")
+    # 7. Обновляем FSM и БД с актуальным menu_message_id
+    logger.info(f"🔄 [/START] Обновляем FSM и БД с menu_message_id={menu_message_id}")
+    await state.update_data(menu_message_id=menu_message_id)
+    await db.save_chat_menu(chat_id, user_id, menu_message_id, 'main_menu')
+
+    logger.info(
+        f"✅ [START] Успешно: user_id={user_id}, msg_id={menu_message_id}, "
+        f"new={is_new_user}, SCREEN=0"
+    )
+    logger.info("=" * 80)
 
 
 @router.callback_query(F.data == "main_menu")
