@@ -1,9 +1,10 @@
 import logging
+import asyncio
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 
 from database.db import db
 from config import config
@@ -16,6 +17,9 @@ from utils.helpers import add_balance_and_mode_to_text
 logger = logging.getLogger(__name__)
 router = Router()
 
+# ════════════════════════════════════════════════════════════════════════════════
+# 🔥 ФИКСЫ БАГОВ
+# ════════════════════════════════════════════════════════════════════════════════
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5), reraise=True)
 async def send_message_with_retry(message: Message, text: str, **kwargs):
@@ -42,6 +46,11 @@ async def edit_or_send_main_menu(
     """
     🔥 РЕДАКТИРОВАНИЕ или СОЗДАНИЕ SCREEN 0
     
+    ✅ FIXES:
+    1. Таймаут 5 сек на всю операцию
+    2. При ошибке редактирования → используем старый msg_id (НЕ создаём новое)
+    3. Логируем old_menu_message_id на входе
+    
     ЛОГИКА:
     1. Получаем последний menu_message_id из БД (chat_menus)
     2. Если есть → редактируем старое сообщение через bot.edit_message_text()
@@ -51,6 +60,11 @@ async def edit_or_send_main_menu(
     # 1️⃣ Получаем последнее меню из БД
     old_menu = await db.get_chat_menu(chat_id)
     old_menu_message_id = old_menu.get('menu_message_id') if old_menu else None
+    
+    logger.info(
+        f"📌 [EDIT_OR_SEND] Входные параметры: "
+        f"chat_id={chat_id}, user_id={user_id}, old_menu_message_id={old_menu_message_id}"
+    )
     
     menu_message_id = None
     
@@ -62,16 +76,28 @@ async def edit_or_send_main_menu(
                 f"msg_id={old_menu_message_id}, user_id={user_id}"
             )
             
-            await message.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=old_menu_message_id,
-                text=text,
-                reply_markup=get_main_menu_keyboard(),
-                parse_mode="Markdown"
+            # ⏱️ ТАЙМАУТ: 5 сек на редактирование
+            await asyncio.wait_for(
+                message.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=old_menu_message_id,
+                    text=text,
+                    reply_markup=get_main_menu_keyboard(),
+                    parse_mode="Markdown"
+                ),
+                timeout=5.0
             )
             
             menu_message_id = old_menu_message_id
             logger.info(f"✅ [START] Успешно отредактировано msg_id={menu_message_id}")
+            
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"⏱️ [START] TIMEOUT редактирования старого сообщения msg_id={old_menu_message_id}, "
+                f"но используем его же (НЕ создаём новое)"
+            )
+            # ✅ ФИХ: Используем старый msg_id несмотря на timeout
+            menu_message_id = old_menu_message_id
             
         except TelegramBadRequest as e:
             err = str(e).lower()
@@ -86,55 +112,68 @@ async def edit_or_send_main_menu(
                 try:
                     logger.info(f"📇 [START] Сообщение с медиа, пытаемся отредактировать caption msg_id={old_menu_message_id}")
                     
-                    await message.bot.edit_message_caption(
-                        chat_id=chat_id,
-                        message_id=old_menu_message_id,
-                        caption=text,
-                        reply_markup=get_main_menu_keyboard(),
-                        parse_mode="Markdown"
+                    await asyncio.wait_for(
+                        message.bot.edit_message_caption(
+                            chat_id=chat_id,
+                            message_id=old_menu_message_id,
+                            caption=text,
+                            reply_markup=get_main_menu_keyboard(),
+                            parse_mode="Markdown"
+                        ),
+                        timeout=5.0
                     )
                     
                     menu_message_id = old_menu_message_id
                     logger.info(f"✅ [START] Успешно отредактирован caption msg_id={menu_message_id}")
                     
-                except Exception as e_cap:
+                except (asyncio.TimeoutError, Exception) as e_cap:
                     logger.warning(
-                        f"⚠️ [START] Не удалось отредактировать caption msg_id={old_menu_message_id}: {e_cap}, "
-                        f"создаём новое сообщение"
+                        f"⚠️ [START] Не удалось отредактировать caption msg_id={old_menu_message_id}: {type(e_cap).__name__}, "
+                        f"но используем его же (НЕ создаём новое)"
                     )
-                    menu_message_id = None
+                    # ✅ ФИХ: Используем старый msg_id при ошибке редактирования caption
+                    menu_message_id = old_menu_message_id
             
-            # Сообщение удалено, старое или другая ошибка — создаём новое
+            # Сообщение удалено, старое или другая ошибка
+            # ✅ ФИХ: Используем старый msg_id даже при этих ошибках
             else:
                 logger.warning(
-                    f"⚠️ [START] Не удалось отредактировать старое сообщение msg_id={old_menu_message_id}: {e}, "
-                    f"создаём новое"
+                    f"⚠️ [START] Ошибка редактирования msg_id={old_menu_message_id}: {e}, "
+                    f"но используем его же (НЕ создаём новое)"
                 )
-                menu_message_id = None
+                menu_message_id = old_menu_message_id
         
         except Exception as e:
             logger.error(
-                f"❌ [START] Неожиданная ошибка при редактировании msg_id={old_menu_message_id}: {e}, "
-                f"создаём новое сообщение"
+                f"❌ [START] Неожиданная ошибка при редактировании msg_id={old_menu_message_id}: {type(e).__name__}: {e}, "
+                f"но используем его же (НЕ создаём новое)"
             )
-            menu_message_id = None
+            # ✅ ФИХ: Используем старый msg_id при любой ошибке
+            menu_message_id = old_menu_message_id
     
-    # 3️⃣ Если не удалось отредактировать — создаём новое сообщение
+    # 3️⃣ Если не удалось отредактировать — создаём новое сообщение ТОЛЬКО если нет старого
     if menu_message_id is None:
         try:
-            logger.info(f"📝 [START] Создаём НОВОЕ сообщение для user_id={user_id}")
+            logger.info(f"📝 [START] Создаём НОВОЕ сообщение для user_id={user_id} (нет старого)")
             
-            menu_msg = await send_message_with_retry(
-                message,
-                text,
-                reply_markup=get_main_menu_keyboard(),
-                parse_mode="Markdown"
+            # ⏱️ ТАЙМАУТ: 5 сек на создание сообщения
+            menu_msg = await asyncio.wait_for(
+                send_message_with_retry(
+                    message,
+                    text,
+                    reply_markup=get_main_menu_keyboard(),
+                    parse_mode="Markdown"
+                ),
+                timeout=5.0
             )
             menu_message_id = menu_msg.message_id
             logger.info(f"✅ [START] Новое сообщение создано msg_id={menu_message_id}")
             
+        except asyncio.TimeoutError:
+            logger.error(f"❌ [START] TIMEOUT при создании нового сообщения")
+            raise
         except Exception as e:
-            logger.error(f"❌ [START] Ошибка при создании нового сообщения: {e}")
+            logger.error(f"❌ [START] Ошибка при создании нового сообщения: {type(e).__name__}: {e}")
             raise
     
     return menu_message_id
@@ -147,113 +186,148 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     user_id = message.from_user.id
     username = message.from_user.username
 
-    start_param = message.text.split()[1] if len(message.text.split()) > 1 else None
-
-    if start_param == "payment_success":
-        # ✅ payment_success остаётся как было
-        await db.delete_old_menu_if_exists(chat_id, message.bot)
-
-        user_data = await db.get_user_data(user_id)
-
-        if user_data:
-            balance = user_data.get('balance', 0)
-            text = f"✅ **Платёж успешен!**\n\n💎 Ваш баланс: **{balance}** генераций"
-
-            try:
-                menu_msg = await send_message_with_retry(
-                    message,
-                    text,
-                    reply_markup=get_profile_keyboard(),
-                    parse_mode="Markdown"
-                )
-            except Exception as e:
-                logger.error(f"Failed to send payment_success message: {e}")
-                return
-
-            await delete_message_safe(message)
-            await state.update_data(menu_message_id=menu_msg.message_id)
-            await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'profile')
-            logger.info(f"✅ [PAYMENT_SUCCESS] User {user_id}, msg_id={menu_msg.message_id}")
-            return
-
     # ════════════════════════════════════════════════════════════════════════════════
-    # 🔥 ОСНОВНОЙ ПУТЬ /start
+    # ✅ ФИХ 1: Per-user флаг обработки /start
     # ════════════════════════════════════════════════════════════════════════════════
-
-    # 1. Получаем старый menu_message_id ДО clear()
     data = await state.get_data()
-    old_menu_message_id_from_state = data.get('menu_message_id')
-
-    # 2. Очищаем FSM и устанавливаем флаг session_started
-    await state.clear()
-    await state.update_data(session_started=True)
-    logger.info(f"🔴 [/START] session_started=True для user_id={user_id}")
-
-    # 3. Получаем данные пользователя
-    user_data = await db.get_user_data(user_id)
-    is_new_user = user_data is None
-
-    if is_new_user:
-        logger.info(f"👤 [/START] Новый пользователь: user_id={user_id}")
-        
-        referrer_code = None
-        if start_param and start_param.startswith('ref_'):
-            referrer_code = start_param.replace('ref_', '')
-
-        await db.create_user(user_id, username, referrer_code)
-
-        if start_param and start_param.startswith("src_"):
-            source = start_param[4:]
-            await db.set_user_source(user_id, source)
-
-        try:
-            from loader import bot
-            admins_to_notify = await db.get_admins_for_notification("notify_new_users")
-            for admin_id in admins_to_notify:
-                try:
-                    await bot.send_message(
-                        admin_id,
-                        f"👤 Новый пользователь: ID `{user_id}`, username: @{username or 'не указан'}",
-                        parse_mode="Markdown"
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to notify admin {admin_id}: {e}")
-        except Exception as e:
-            logger.error(f"Error notifying admins: {e}")
-
-    # 4. Удаляем только сообщение пользователя /start (чтобы чистить экран от команд)
-    logger.info(f"🗑️ [/START] Удаляем сообщение /start от пользователя")
-    await delete_message_safe(message)
-
-    # 5. Собираем текст для SCREEN 0 с балансом и режимом
-    logger.info(f"📝 [/START] Формируем текст SCREEN 0")
-    text = await add_balance_and_mode_to_text(START_TEXT, user_id)
-
-    # 6. 🔥 КРИТИЧЕСКАЯ ЛОГИКА: редактируем старое или создаём новое
-    logger.info(f"⏱️ [/START] Начало операции РЕДАКТИРОВАНИЕ или СОЗДАНИЕ")
+    processing_start = data.get('processing_start', False)
+    
+    if processing_start:
+        logger.warning(
+            f"⚠️ [/START] User {user_id} уже обрабатывается /start, игнорируем повторное нажатие"
+        )
+        await delete_message_safe(message)
+        return
+    
+    # Устанавливаем флаг обработки
+    await state.update_data(processing_start=True)
     
     try:
-        menu_message_id = await edit_or_send_main_menu(
-            message=message,
-            chat_id=chat_id,
-            user_id=user_id,
-            text=text,
-            is_new_user=is_new_user
+        start_param = message.text.split()[1] if len(message.text.split()) > 1 else None
+
+        if start_param == "payment_success":
+            # ✅ payment_success остаётся как было
+            await db.delete_old_menu_if_exists(chat_id, message.bot)
+
+            user_data = await db.get_user_data(user_id)
+
+            if user_data:
+                balance = user_data.get('balance', 0)
+                text = f"✅ **Платёж успешен!**\n\n💎 Ваш баланс: **{balance}** генераций"
+
+                try:
+                    menu_msg = await asyncio.wait_for(
+                        send_message_with_retry(
+                            message,
+                            text,
+                            reply_markup=get_profile_keyboard(),
+                            parse_mode="Markdown"
+                        ),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"[PAYMENT_SUCCESS] TIMEOUT отправки сообщения для user {user_id}")
+                    return
+                except Exception as e:
+                    logger.error(f"Failed to send payment_success message: {e}")
+                    return
+
+                await delete_message_safe(message)
+                await state.update_data(menu_message_id=menu_msg.message_id)
+                await db.save_chat_menu(chat_id, user_id, menu_msg.message_id, 'profile')
+                logger.info(f"✅ [PAYMENT_SUCCESS] User {user_id}, msg_id={menu_msg.message_id}")
+            return
+
+        # ════════════════════════════════════════════════════════════════════════════════
+        # 🔥 ОСНОВНОЙ ПУТЬ /start
+        # ════════════════════════════════════════════════════════════════════════════════
+
+        # 1. Получаем старый menu_message_id ДО clear()
+        old_menu_message_id_from_state = data.get('menu_message_id')
+        logger.info(f"📌 [/START] old_menu_message_id из state: {old_menu_message_id_from_state}")
+
+        # 2. Очищаем FSM и устанавливаем флаг session_started
+        await state.clear()
+        await state.update_data(session_started=True)
+        logger.info(f"🔴 [/START] session_started=True для user_id={user_id}")
+
+        # 3. Получаем данные пользователя
+        user_data = await db.get_user_data(user_id)
+        is_new_user = user_data is None
+
+        if is_new_user:
+            logger.info(f"👤 [/START] Новый пользователь: user_id={user_id}")
+            
+            referrer_code = None
+            if start_param and start_param.startswith('ref_'):
+                referrer_code = start_param.replace('ref_', '')
+
+            await db.create_user(user_id, username, referrer_code)
+
+            if start_param and start_param.startswith("src_"):
+                source = start_param[4:]
+                await db.set_user_source(user_id, source)
+
+            try:
+                from loader import bot
+                admins_to_notify = await db.get_admins_for_notification("notify_new_users")
+                for admin_id in admins_to_notify:
+                    try:
+                        await bot.send_message(
+                            admin_id,
+                            f"👤 Новый пользователь: ID `{user_id}`, username: @{username or 'не указан'}",
+                            parse_mode="Markdown"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to notify admin {admin_id}: {e}")
+            except Exception as e:
+                logger.error(f"Error notifying admins: {e}")
+
+        # 4. Удаляем только сообщение пользователя /start (чтобы чистить экран от команд)
+        logger.info(f"🗑️ [/START] Удаляем сообщение /start от пользователя")
+        await delete_message_safe(message)
+
+        # 5. Собираем текст для SCREEN 0 с балансом и режимом
+        logger.info(f"📝 [/START] Формируем текст SCREEN 0")
+        text = await add_balance_and_mode_to_text(START_TEXT, user_id)
+
+        # 6. 🔥 КРИТИЧЕСКАЯ ЛОГИКА: редактируем старое или создаём новое
+        logger.info(f"⏱️ [/START] Начало операции РЕДАКТИРОВАНИЕ или СОЗДАНИЕ")
+        
+        try:
+            # ⏱️ ТАЙМАУТ 7 сек на всю операцию edit_or_send_main_menu
+            menu_message_id = await asyncio.wait_for(
+                edit_or_send_main_menu(
+                    message=message,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    text=text,
+                    is_new_user=is_new_user
+                ),
+                timeout=7.0
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"❌ [/START] TIMEOUT при редактировании/создании меню для user {user_id}")
+            return
+        except Exception as e:
+            logger.error(f"❌ [/START] Ошибка при редактировании/создании меню: {type(e).__name__}: {e}")
+            return
+
+        # 7. Обновляем FSM и БД с актуальным menu_message_id
+        logger.info(f"🔄 [/START] Обновляем FSM и БД с menu_message_id={menu_message_id}")
+        await state.update_data(menu_message_id=menu_message_id)
+        await db.save_chat_menu(chat_id, user_id, menu_message_id, 'main_menu')
+
+        logger.info(
+            f"✅ [START] Успешно: user_id={user_id}, msg_id={menu_message_id}, "
+            f"new={is_new_user}, SCREEN=0"
         )
-    except Exception as e:
-        logger.error(f"❌ [/START] Ошибка при редактировании/создании меню: {e}")
-        return
-
-    # 7. Обновляем FSM и БД с актуальным menu_message_id
-    logger.info(f"🔄 [/START] Обновляем FSM и БД с menu_message_id={menu_message_id}")
-    await state.update_data(menu_message_id=menu_message_id)
-    await db.save_chat_menu(chat_id, user_id, menu_message_id, 'main_menu')
-
-    logger.info(
-        f"✅ [START] Успешно: user_id={user_id}, msg_id={menu_message_id}, "
-        f"new={is_new_user}, SCREEN=0"
-    )
-    logger.info("=" * 80)
+        logger.info("=" * 80)
+        
+    finally:
+        # ✅ ФИХ: ВСЕГДА снимаем флаг обработки в finally
+        await state.update_data(processing_start=False)
+        logger.debug(f"🔓 [/START] Сняли флаг processing_start для user {user_id}")
 
 
 @router.callback_query(F.data == "main_menu")
